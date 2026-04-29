@@ -72,6 +72,8 @@ def main() -> None:
     parser.add_argument("--max-steps", type=int, default=CFG.cma_max_steps)
     parser.add_argument("--sigma", type=float, default=CFG.cma_init_sigma)
     parser.add_argument("--seed", type=int, default=CFG.seed)
+    parser.add_argument("--resume", action="store_true",
+                        help="seed the search from checkpoints/controller.pt")
     args = parser.parse_args()
 
     seed_everything(args.seed)
@@ -93,10 +95,17 @@ def main() -> None:
     ctrl = Controller().to(device)
     print(f"controller params: {ctrl.num_params}", flush=True)
 
+    best_score = -float("inf")
+    if args.resume and CFG.controller_path.exists():
+        ckpt = torch.load(CFG.controller_path, map_location=device)
+        ctrl.load_state_dict(ckpt["state_dict"])
+        # Anchor best_score so a single noisy gen can't overwrite a better checkpoint.
+        best_score = float(ckpt.get("best_score", -float("inf")))
+        print(f"resumed CMA-ES init from {CFG.controller_path}  (prior best_score={best_score:.1f})",
+              flush=True)
+
     x0 = ctrl.get_flat()
     es = cma.CMAEvolutionStrategy(x0, args.sigma, {"popsize": args.pop, "seed": args.seed, "verbose": -9})
-
-    best_score = -float("inf")
     best_flat = x0.copy()
     t0 = time.time()
     for gen in range(args.generations):
