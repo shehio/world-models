@@ -91,7 +91,7 @@ def main() -> None:
         p.requires_grad_(False)
 
     ctrl = Controller().to(device)
-    print(f"controller params: {ctrl.num_params}")
+    print(f"controller params: {ctrl.num_params}", flush=True)
 
     x0 = ctrl.get_flat()
     es = cma.CMAEvolutionStrategy(x0, args.sigma, {"popsize": args.pop, "seed": args.seed, "verbose": -9})
@@ -108,6 +108,7 @@ def main() -> None:
                          n_episodes=args.episodes, max_steps=args.max_steps,
                          seed=args.seed + gen * 1000 + i)
             scores.append(r)
+            print(f"  gen {gen+1} cand {i+1}/{len(candidates)}: r={r:+.1f}", flush=True)
         es.tell(candidates, [-s for s in scores])
         gen_best = max(scores)
         gen_mean = float(np.mean(scores))
@@ -117,11 +118,11 @@ def main() -> None:
             ctrl.set_flat(best_flat)
             torch.save({"state_dict": ctrl.state_dict(), "best_score": best_score}, CFG.controller_path)
         elapsed = time.time() - t0
-        print(f"gen {gen+1}/{args.generations} | mean={gen_mean:+.1f}  best_gen={gen_best:+.1f}  best_ever={best_score:+.1f}  t={elapsed:.0f}s")
+        print(f"gen {gen+1}/{args.generations} | mean={gen_mean:+.1f}  best_gen={gen_best:+.1f}  best_ever={best_score:+.1f}  t={elapsed:.0f}s", flush=True)
 
     ctrl.set_flat(best_flat)
     torch.save({"state_dict": ctrl.state_dict(), "best_score": best_score}, CFG.controller_path)
-    print(f"done. best return = {best_score:.1f}  -> {CFG.controller_path}")
+    print(f"done. best return = {best_score:.1f}  -> {CFG.controller_path}", flush=True)
 
 
 if __name__ == "__main__":

@@ -31,6 +31,8 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=CFG.vae_batch_size)
     parser.add_argument("--lr", type=float, default=CFG.vae_lr)
     parser.add_argument("--seed", type=int, default=CFG.seed)
+    parser.add_argument("--resume", action="store_true",
+                        help="continue training from existing checkpoint if present")
     args = parser.parse_args()
 
     seed_everything(args.seed)
@@ -42,6 +44,9 @@ def main() -> None:
     loader = DataLoader(ds, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True)
 
     model = VAE().to(device)
+    if args.resume and CFG.vae_path.exists():
+        model.load_state_dict(torch.load(CFG.vae_path, map_location=device)["state_dict"])
+        print(f"resumed from {CFG.vae_path}")
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     fixed = ds.frames[:16].to(device)  # for the recon-grid checkpoint
