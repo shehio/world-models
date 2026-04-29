@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Project artifacts
+data/
+checkpoints/
+videos/
+*.npz
+*.pt
+*.gif
+*.mp4
+
+# Allow small samples checked into the repo
+!assets/**
