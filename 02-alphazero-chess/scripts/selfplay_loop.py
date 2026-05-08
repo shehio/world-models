@@ -38,12 +38,17 @@ def main():
                    help="hard cap on game length (random play rarely mates; cap keeps wall-clock predictable)")
     p.add_argument("--batch-size", type=int, default=8,
                    help="MCTS batch size (K parallel descents per network call). 1 = sequential reference.")
+    p.add_argument("--n-blocks", type=int, default=5, help="ResNet trunk depth")
+    p.add_argument("--n-filters", type=int, default=64, help="ResNet trunk width (channels)")
     p.add_argument("--ckpt-dir", default="checkpoints")
     p.add_argument("--device", default=None, help="cpu | mps | cuda; default auto")
     p.add_argument("--resume", default=None, help="path to a .pt file to resume from")
     args = p.parse_args()
 
-    cfg = replace(Config(), sims_train=args.sims, sims_eval=args.eval_sims, max_plies=args.max_plies)
+    cfg = replace(Config(),
+                  sims_train=args.sims, sims_eval=args.eval_sims,
+                  max_plies=args.max_plies,
+                  n_res_blocks=args.n_blocks, n_filters=args.n_filters)
     device = torch.device(args.device) if args.device else get_device()
     print(f"device: {device}")
 
