@@ -80,6 +80,90 @@ network imitates a stronger target. Policy iteration.
    board.push(move)
 ```
 
+### Batched MCTS: same algorithm, K leaves per network call
+
+The diagram above is the **sequential** version (`run_mcts`): one
+descent → one network call → one backup, looped N times. Each network
+call is a batch-of-1, and each batch-of-1 wastes per-call overhead.
+
+The **batched** version (`run_mcts_batched`) runs the same algorithm but
+collects K leaves before the network call:
+
+```
+   sequential MCTS (run_mcts):                batched MCTS (run_mcts_batched):
+
+     for _ in range(50):                        for _ in range(50 / K):
+       descend ──> leaf                           descend K times in parallel:
+       ┌───────────────┐                            leaf₁ ─┐
+       │ network(leaf) │  ◄── 1 board                leaf₂ ─┤
+       └───────┬───────┘                              ...   ├── ┌─────────────────┐
+               ▼                                     leafₖ ─┘   │ network([leaf₁  │
+       backup leaf → root                                       │          ...    │  ◄── K boards
+                                                                │          leafₖ])│      one call
+   total network calls: 50                                      └────────┬────────┘
+   total wall: ~50 × (per-call overhead +                                ▼
+                       per-board work)                          backup K paths
+
+                                                  total network calls: 50/K
+                                                  total wall: (50/K) × (per-call overhead +
+                                                                         K × per-board work)
+                                                  → faster when per-call overhead dominates
+                                                  → measured: K=8 gives ~1.9× speedup
+```
+
+### Virtual loss: how K parallel descents avoid all picking the same path
+
+If we just descended K times naively, every descent would pick the same
+sequence of moves (same priors, same Q values, same PUCT scores).
+We'd hit one leaf K times instead of K different leaves — no benefit.
+
+**Virtual loss** is a tiny lie we tell ourselves during the batch:
+while a descent is still in flight (not yet backed up) passing through
+a child node, we *pretend* that descent already returned a "+1 from the
+child's POV" reward. The child's Q goes up; the parent's negated view
+of the child goes down; the next descent in the batch sees a less
+attractive child and picks something else.
+
+```
+   K=4 parallel descents through a shared tree:
+
+                     root
+                    / | | \                  PUCT scores at root before
+                   /  | |  \                 any in-flight descents:
+                  /   | |   \
+                a    b    c   d                  a: 0.40   ← highest
+              0.40 0.35 0.30 0.20
+
+   descent 1 picks a.  child a now has VL=1.
+   PUCT scores re-evaluated:
+                   a: -1.0+U   ← virtual loss made it less attractive
+                   b: 0.35     ← now highest
+                   c: 0.30
+                   d: 0.20
+   descent 2 picks b. child b now has VL=1. ... and so on.
+
+   After all 4 descents are backed up:
+     each child's VL is decremented from 1 back to 0.
+     each child's visit_count and value_sum reflect the REAL value
+     returned by the network, not the +1 lie.
+```
+
+```
+   Effective PUCT during a batch (each child has REAL N, W and pending VL):
+
+      Q(child, child's POV) = (W + VL) / (N + VL)   ← lie pulls Q up
+      Q(child, parent's POV) = -Q(child, child's POV) ← so parent sees lower Q
+
+   At VL=0 (no in-flight descents): identical to sequential MCTS.
+   At VL=1, no real visits yet:
+      Q(child, parent's POV) = -1
+      → maximally unattractive, parent picks a sibling.
+```
+
+The lie is exactly cancelled when the descent backs up: we apply the
+real value AND decrement virtual_loss. By the time MCTS returns,
+every node has `virtual_loss == 0` again. The unit tests verify this.
+
 ### How the network sees a position
 
 ```
@@ -170,7 +254,8 @@ just dressed up with a tree search.
 | Move encoding | 8×8×73 = 4672 | AlphaZero scheme; queen-promo encoded as queen-like |
 | Network | 5 ResNet blocks × 64 ch (~390k params) | Learning-first; trains in minutes on Mac CPU |
 | Inference device | CPU | Batch-1 MCTS calls are 3× faster on CPU than MPS for this net size |
-| MCTS sims | 30 train, 50 eval | Tight; raise once the loop is verified |
+| MCTS sims | 150 train, 80 eval | Up from 30/50 once batched MCTS unblocked the speedup |
+| MCTS batch K | 8 parallel descents per network call | ~1.9× wall-clock speedup on Mac CPU at this net size |
 | PUCT c | 1.5 | AZ used 1.25–4.0; 1.5 is mid-range |
 | Dirichlet | α=0.3, ε=0.25 at root | Standard AZ values |
 | Temperature | τ=1 first 30 plies, τ=0 after | Standard AZ |
@@ -182,7 +267,7 @@ just dressed up with a tree search.
 src/alphazero/
     board.py        chess.Board ↔ planes; move ↔ 4672-index; legal mask
     network.py      ResNet trunk + policy head + value head
-    mcts.py         PUCT MCTS, Dirichlet root noise, temperature select
+    mcts.py         PUCT MCTS — `run_mcts` (sequential reference) + `run_mcts_batched` (K leaves per network call, with virtual loss)
     selfplay.py     plays a game, yields (state, π, z) per ply
     replay.py       fixed-size deque, samples to torch tensors
     train.py        one SGD step: CE(π) + MSE(z)
@@ -193,11 +278,12 @@ scripts/
     eval_vs_random.py   honest eval against random
     elo.py              compute Elo vs random / Stockfish anchors
 tests/
-    test_board.py       move encoding round-trip
-    test_network.py     forward pass shapes
-    test_mcts.py        sim count, prior masking, terminal handling
-    test_selfplay.py    one-game smoke
-    test_arena.py       match runner with two random policies
+    test_board.py        move encoding round-trip
+    test_network.py      forward pass shapes
+    test_mcts.py         sim count, prior masking, terminal handling
+    test_mcts_batched.py virtual_loss invariants, equivalence at K=1, speedup
+    test_selfplay.py     one-game smoke
+    test_arena.py        match runner with two random policies
 ```
 
 ## Run
@@ -206,39 +292,51 @@ tests/
 cd 02-alphazero-chess
 uv sync
 
-# Tests (~5s)
+# Tests (~10s, all 28 pass)
 uv run python tests/test_board.py
 uv run python tests/test_network.py
 uv run python tests/test_mcts.py
+uv run python tests/test_mcts_batched.py
 uv run python tests/test_selfplay.py
 uv run python tests/test_arena.py
 
-# Training loop
+# Training loop with batched MCTS (--batch-size 8)
 uv run python scripts/selfplay_loop.py \
-    --iters 10 --games-per-iter 6 --sims 30 --train-steps 100 \
-    --eval-games 10 --device cpu
+    --iters 30 --games-per-iter 8 --sims 150 --train-steps 200 \
+    --batch-size 8 --eval-games 6 --eval-sims 80 --eval-every 2 \
+    --max-plies 200 --device cpu
 
 # Eval (after training)
-uv run python scripts/eval_vs_random.py --ckpt checkpoints/net_iter009.pt --games 50
+uv run python scripts/eval_vs_random.py --ckpt checkpoints/net_iter029.pt --games 50
 
 # Elo (anchors random=0; uses Stockfish if on PATH)
-uv run python scripts/elo.py --ckpt checkpoints/net_iter009.pt --games-vs-random 100
+uv run python scripts/elo.py --ckpt checkpoints/net_iter029.pt \
+    --games-vs-random 200 --games-vs-stockfish 50 --batch-size 8
 ```
+
+To use the **sequential** MCTS (the textbook PUCT version) instead of
+batched — for instance, to read it as a reference — pass `--batch-size 1`.
 
 ## Results
 
-After a **10-minute training run** (8 iters × 6 games × 25 sims × 80
-train steps), the agent's Elo over **100 games vs random** is
-**+24 Elo [95% CI: −44, +95]** — within noise of random. Loss decreased
-monotonically from 4.18 to 2.42, so the loop works; the agent is just
-under-trained. Full breakdown including Stockfish baselines: see
-[results.md](./results.md).
+After a **75-minute training run** with batched MCTS (30 iters × 8
+games × 150 sims × 200 train steps), the agent's Elo over **200 games
+vs random** is **+158 Elo [95% CI: +107, +215]** — significantly above
+random with a CI that does not cross zero. **89 wins, 107 draws, 4
+losses** out of 200 games. Full breakdown including Stockfish baselines:
+see [results.md](./results.md).
 
 | Opponent | N | W/D/L | Score | Elo |
 |---|---:|---:|---:|---:|
-| Random (anchor 0) | 100 | 16/75/9 | 0.535 | **+24 [−44, +95]** |
-| Stockfish skill=0 d=1 | 30 | 0/8/22 | 0.133 | gap −325 |
-| Stockfish UCI_Elo=1320 | 30 | 0/3/27 | 0.050 | upper bound ≈ 990 |
+| Random (anchor 0) | 200 | 89 / 107 / 4 | 0.713 | **+158 [+107, +215]** |
+| Stockfish skill=0 d=1 | 50 | 0 / 6 / 44 | 0.060 | gap −478 |
+| Stockfish UCI_Elo=1320 | 50 | 0 / 1 / 49 | 0.010 | upper bound ≈ 522 |
+
+For context: v1 (without batched MCTS, 10-minute training) was at +24
+[−44, +95], i.e. statistically indistinguishable from random. The v2
+result is **6.6× higher Elo** in **7.5× the wall-clock time**, which is
+*more* than linear — batching unlocks bigger sims/move, which unlocks
+better targets, which unlocks better learning per game.
 
 ## Open questions / decisions deferred
 

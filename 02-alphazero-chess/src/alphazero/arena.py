@@ -14,7 +14,7 @@ import chess.engine
 import torch
 
 from .config import Config
-from .mcts import run_mcts, select_move
+from .mcts import run_mcts, run_mcts_batched, select_move
 
 
 Policy = Callable[[chess.Board], chess.Move]
@@ -67,17 +67,34 @@ def stockfish_policy(engine: chess.engine.SimpleEngine, depth: int = 1) -> Polic
     return policy
 
 
-def network_policy(network, cfg: Config, device: torch.device, sims: int | None = None) -> Policy:
+def network_policy(
+    network,
+    cfg: Config,
+    device: torch.device,
+    sims: int | None = None,
+    batch_size: int = 1,
+) -> Policy:
+    """A policy callable wrapping (network + MCTS). batch_size>1 uses batched MCTS."""
     sims = sims if sims is not None else cfg.sims_eval
 
     def policy(board: chess.Board) -> chess.Move:
-        visits = run_mcts(
-            board, network,
-            num_sims=sims,
-            c_puct=cfg.c_puct,
-            add_root_noise=False,
-            device=device,
-        )
+        if batch_size > 1:
+            visits = run_mcts_batched(
+                board, network,
+                num_sims=sims,
+                c_puct=cfg.c_puct,
+                add_root_noise=False,
+                device=device,
+                batch_size=batch_size,
+            )
+        else:
+            visits = run_mcts(
+                board, network,
+                num_sims=sims,
+                c_puct=cfg.c_puct,
+                add_root_noise=False,
+                device=device,
+            )
         return select_move(visits, temperature=0.0)
 
     return policy

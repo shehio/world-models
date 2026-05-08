@@ -7,7 +7,7 @@ import torch
 
 from .board import encode_board
 from .config import Config
-from .mcts import run_mcts, select_move, visits_to_distribution
+from .mcts import run_mcts, run_mcts_batched, select_move, visits_to_distribution
 
 
 def play_game(
@@ -15,11 +15,16 @@ def play_game(
     cfg: Config,
     device: torch.device,
     sims: int | None = None,
+    batch_size: int = 1,
 ) -> tuple[list[tuple[np.ndarray, np.ndarray, float]], float, int]:
     """Returns (samples, z_white_pov, ply_count).
 
     samples: list of (state_planes, pi_4672, z_for_side_to_move) per ply.
     z_white_pov: +1 white won / -1 black won / 0 draw.
+
+    batch_size: when >1, uses run_mcts_batched (K parallel descents per
+                network call). batch_size=1 uses the sequential reference
+                implementation.
     """
     sims = sims if sims is not None else cfg.sims_train
     board = chess.Board()
@@ -27,15 +32,27 @@ def play_game(
     ply = 0
 
     while not board.is_game_over(claim_draw=True) and ply < cfg.max_plies:
-        visits = run_mcts(
-            board, network,
-            num_sims=sims,
-            c_puct=cfg.c_puct,
-            add_root_noise=True,
-            device=device,
-            dirichlet_alpha=cfg.dirichlet_alpha,
-            dirichlet_eps=cfg.dirichlet_eps,
-        )
+        if batch_size > 1:
+            visits = run_mcts_batched(
+                board, network,
+                num_sims=sims,
+                c_puct=cfg.c_puct,
+                add_root_noise=True,
+                device=device,
+                batch_size=batch_size,
+                dirichlet_alpha=cfg.dirichlet_alpha,
+                dirichlet_eps=cfg.dirichlet_eps,
+            )
+        else:
+            visits = run_mcts(
+                board, network,
+                num_sims=sims,
+                c_puct=cfg.c_puct,
+                add_root_noise=True,
+                device=device,
+                dirichlet_alpha=cfg.dirichlet_alpha,
+                dirichlet_eps=cfg.dirichlet_eps,
+            )
         pi = visits_to_distribution(visits, board)
         history.append((encode_board(board), pi, board.turn == chess.WHITE))
         temp = 1.0 if ply < cfg.temp_moves else 0.0

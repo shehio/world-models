@@ -83,6 +83,8 @@ def main():
     p.add_argument("--games-vs-random", type=int, default=100)
     p.add_argument("--games-vs-stockfish", type=int, default=30)
     p.add_argument("--sims", type=int, default=50)
+    p.add_argument("--batch-size", type=int, default=8,
+                   help="MCTS batch size for the agent. 1 = sequential.")
     p.add_argument("--device", default=None)
     p.add_argument("--max-plies", type=int, default=300)
     p.add_argument("--skip-stockfish", action="store_true")
@@ -96,7 +98,7 @@ def main():
     network.load_state_dict(torch.load(args.ckpt, map_location=device))
     network.eval()
     print(f"loaded ckpt: {args.ckpt}")
-    net_pol = network_policy(network, cfg, device, sims=args.sims)
+    net_pol = network_policy(network, cfg, device, sims=args.sims, batch_size=args.batch_size)
 
     rows = []
 

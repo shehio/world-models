@@ -36,6 +36,8 @@ def main():
     p.add_argument("--eval-every", type=int, default=1)
     p.add_argument("--max-plies", type=int, default=200,
                    help="hard cap on game length (random play rarely mates; cap keeps wall-clock predictable)")
+    p.add_argument("--batch-size", type=int, default=8,
+                   help="MCTS batch size (K parallel descents per network call). 1 = sequential reference.")
     p.add_argument("--ckpt-dir", default="checkpoints")
     p.add_argument("--device", default=None, help="cpu | mps | cuda; default auto")
     p.add_argument("--resume", default=None, help="path to a .pt file to resume from")
@@ -59,7 +61,8 @@ def main():
         t0 = time.time()
         results = []
         for g in range(args.games_per_iter):
-            samples, z, ply = play_game(network, cfg, device, sims=args.sims)
+            samples, z, ply = play_game(network, cfg, device, sims=args.sims,
+                                        batch_size=args.batch_size)
             replay.add_game(samples)
             results.append((z, ply))
             print(f"  iter {it} game {g}: z={z:+.0f} plies={ply}  buffer={len(replay)}")
@@ -87,7 +90,8 @@ def main():
         # --- Eval ---
         if (it + 1) % args.eval_every == 0:
             t0 = time.time()
-            net_pol = network_policy(network, cfg, device, sims=args.eval_sims)
+            net_pol = network_policy(network, cfg, device, sims=args.eval_sims,
+                                     batch_size=args.batch_size)
             stats = play_match(net_pol, random_policy, n_games=args.eval_games)
             ev_dt = time.time() - t0
             print(f"  iter {it} vs random ({ev_dt:.1f}s): {stats}")
