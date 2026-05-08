@@ -5,9 +5,12 @@ A policy is any callable: policy(board: chess.Board) -> chess.Move.
 from __future__ import annotations
 
 import random
-from typing import Callable
+import shutil
+from contextlib import contextmanager
+from typing import Callable, Iterator
 
 import chess
+import chess.engine
 import torch
 
 from .config import Config
@@ -19,6 +22,49 @@ Policy = Callable[[chess.Board], chess.Move]
 
 def random_policy(board: chess.Board) -> chess.Move:
     return random.choice(list(board.legal_moves))
+
+
+@contextmanager
+def stockfish_engine(
+    path: str | None = None,
+    *,
+    elo: int | None = None,
+    skill: int | None = None,
+    threads: int = 1,
+) -> Iterator[chess.engine.SimpleEngine]:
+    """Context manager that opens a Stockfish UCI engine and configures strength.
+
+    elo:    if set, enables UCI_LimitStrength and pins UCI_Elo (min 1320).
+    skill:  if set (0..20), passes Skill Level instead.
+
+    Use only one of elo/skill. depth/time limits are passed at .play() call.
+    """
+    binary = path or shutil.which("stockfish")
+    if binary is None:
+        raise FileNotFoundError("stockfish binary not on PATH")
+    eng = chess.engine.SimpleEngine.popen_uci(binary)
+    try:
+        opts: dict = {"Threads": threads}
+        if elo is not None:
+            opts["UCI_LimitStrength"] = True
+            opts["UCI_Elo"] = int(elo)
+        if skill is not None:
+            opts["Skill Level"] = int(skill)
+        eng.configure(opts)
+        yield eng
+    finally:
+        eng.quit()
+
+
+def stockfish_policy(engine: chess.engine.SimpleEngine, depth: int = 1) -> Policy:
+    """Wrap an opened Stockfish engine as a Policy."""
+    limit = chess.engine.Limit(depth=depth)
+
+    def policy(board: chess.Board) -> chess.Move:
+        result = engine.play(board, limit)
+        return result.move
+
+    return policy
 
 
 def network_policy(network, cfg: Config, device: torch.device, sims: int | None = None) -> Policy:

@@ -20,3 +20,6 @@ videos/
 
 # Allow small samples checked into the repo
 !assets/**
+
+# Local Claude Code state
+.claude/

@@ -33,7 +33,10 @@ The progression mirrors a real conceptual arc:
 
 - [x] **01** — runs end-to-end on Apple Silicon (~2h budget). Trained
   agent beats random on unseen seeds. See its [README](./01-ha-world-models/README.md).
-- [ ] **02** — scaffold up; implementation in progress.
+- [x] **02** — implemented end-to-end. 20 unit tests pass. After a
+  10-min training run, agent scores +24 Elo vs random [95% CI: −44, +95]
+  — within noise; loop works, just under-trained. See its
+  [results.md](./02-alphazero-chess/results.md).
 - [ ] **03** — scaffold up; depends on 02 (shares MCTS, board encoder).
 
 ## Layout

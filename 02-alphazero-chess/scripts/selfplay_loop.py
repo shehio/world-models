@@ -9,6 +9,7 @@ import argparse
 import os
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 # Make src/ importable when running as a script.
@@ -33,12 +34,14 @@ def main():
     p.add_argument("--eval-sims", type=int, default=50, help="MCTS sims during arena eval")
     p.add_argument("--eval-games", type=int, default=10)
     p.add_argument("--eval-every", type=int, default=1)
+    p.add_argument("--max-plies", type=int, default=200,
+                   help="hard cap on game length (random play rarely mates; cap keeps wall-clock predictable)")
     p.add_argument("--ckpt-dir", default="checkpoints")
     p.add_argument("--device", default=None, help="cpu | mps | cuda; default auto")
     p.add_argument("--resume", default=None, help="path to a .pt file to resume from")
     args = p.parse_args()
 
-    cfg = Config(sims_train=args.sims, sims_eval=args.eval_sims)
+    cfg = replace(Config(), sims_train=args.sims, sims_eval=args.eval_sims, max_plies=args.max_plies)
     device = torch.device(args.device) if args.device else get_device()
     print(f"device: {device}")
 
