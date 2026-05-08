@@ -85,12 +85,15 @@ def main():
     p.add_argument("--sims", type=int, default=50)
     p.add_argument("--batch-size", type=int, default=8,
                    help="MCTS batch size for the agent. 1 = sequential.")
+    p.add_argument("--n-blocks", type=int, default=5)
+    p.add_argument("--n-filters", type=int, default=64)
     p.add_argument("--device", default=None)
     p.add_argument("--max-plies", type=int, default=300)
     p.add_argument("--skip-stockfish", action="store_true")
     args = p.parse_args()
 
-    cfg = Config()
+    from dataclasses import replace
+    cfg = replace(Config(), n_res_blocks=args.n_blocks, n_filters=args.n_filters)
     device = torch.device(args.device) if args.device else get_device()
     print(f"device: {device}")
 

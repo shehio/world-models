@@ -57,7 +57,7 @@ import torch.multiprocessing as mp
 from alphazero.arena import network_policy, play_match, random_policy
 from alphazero.config import Config
 from alphazero.network import AlphaZeroNet
-from alphazero.replay import ReplayBuffer
+from alphazero.replay import ShardedReplayBuffer
 from alphazero.selfplay import play_game
 from alphazero.train import train_step
 
@@ -117,9 +117,11 @@ def main():
     p.add_argument("--n-blocks", type=int, default=10)
     p.add_argument("--n-filters", type=int, default=128)
     # Training
-    p.add_argument("--train-steps", type=int, default=300)
+    p.add_argument("--train-steps", type=int, default=40,
+                   help="SGD steps per iter. KataGo target ~4 samples-seen / new sample.")
     p.add_argument("--lr", type=float, default=1e-3)
-    p.add_argument("--replay-capacity", type=int, default=200_000)
+    p.add_argument("--replay-shards", type=int, default=20,
+                   help="how many recent iters to keep in the sharded replay (suragnair default 20)")
     # Eval
     p.add_argument("--eval-games", type=int, default=10)
     p.add_argument("--eval-sims", type=int, default=100)
@@ -137,7 +139,6 @@ def main():
                   max_plies=args.max_plies,
                   n_res_blocks=args.n_blocks, n_filters=args.n_filters,
                   batch_size=256,  # training batch
-                  replay_capacity=args.replay_capacity,
                   lr=args.lr)
 
     os.makedirs(args.ckpt_dir, exist_ok=True)
@@ -151,7 +152,9 @@ def main():
         print(f"resumed from {args.resume}", flush=True)
     optimizer = torch.optim.Adam(network.parameters(), lr=cfg.lr,
                                  weight_decay=cfg.weight_decay)
-    replay = ReplayBuffer(cfg.replay_capacity)
+    # Sliding-window-by-iteration buffer. We DROP the previous run's replay
+    # entirely because it's poisoned with iters 0-5 near-random play.
+    replay = ShardedReplayBuffer(max_shards=args.replay_shards)
 
     n_params = sum(p.numel() for p in network.parameters())
     print(f"network: {args.n_blocks} blocks × {args.n_filters} ch = {n_params:,} params",
@@ -193,15 +196,21 @@ def main():
             all_results = pool.map(selfplay_worker, worker_args)
             sp_dt = time.time() - t0
 
-            # Step 3: aggregate samples + log per-game stats.
+            # Step 3: aggregate ALL of this iter's samples into ONE shard.
+            # That way, when shard count exceeds max_shards, this whole
+            # iter's data drops as a unit — keeping the buffer fresh.
+            iter_samples = []
             iter_games = 0
             for results in all_results:
                 for r in results:
-                    replay.add_game(r["samples"])
+                    iter_samples.extend(r["samples"])
                     total_games += 1
                     iter_games += 1
-            print(f"iter {it}: {iter_games} games in {sp_dt:.1f}s  "
-                  f"buffer={len(replay)}  total_games={total_games}",
+            replay.add_iteration(iter_samples)
+            print(f"iter {it}: {iter_games} games ({len(iter_samples)} pos) "
+                  f"in {sp_dt:.1f}s  "
+                  f"buffer={len(replay)}/{replay.n_shards} shards  "
+                  f"total_games={total_games}",
                   flush=True)
 
             # Step 4: train.
