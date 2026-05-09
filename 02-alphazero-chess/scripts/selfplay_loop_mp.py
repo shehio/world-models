@@ -135,6 +135,15 @@ def main():
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--replay-shards", type=int, default=20,
                    help="how many recent iters to keep in the sharded replay (suragnair default 20)")
+    # Optimizer (paper-faithful options for AlphaZero)
+    p.add_argument("--optimizer", choices=["adam", "sgd"], default="adam",
+                   help="adam (educational default) or sgd+momentum (AZ paper)")
+    p.add_argument("--momentum", type=float, default=0.9,
+                   help="momentum for SGD (ignored if --optimizer adam)")
+    p.add_argument("--lr-decay-iters", type=str, default="",
+                   help="comma-separated iter boundaries to decay LR. e.g. '20,40' decays at iter 20 and 40. AZ paper used step decay.")
+    p.add_argument("--lr-decay-factor", type=float, default=0.1,
+                   help="multiplicative factor at each LR decay boundary (AZ paper used 0.1)")
     # Eval
     p.add_argument("--eval-games", type=int, default=10)
     p.add_argument("--eval-sims", type=int, default=100)
@@ -163,8 +172,26 @@ def main():
     if args.resume:
         network.load_state_dict(torch.load(args.resume, map_location=device))
         print(f"resumed from {args.resume}", flush=True)
-    optimizer = torch.optim.Adam(network.parameters(), lr=cfg.lr,
-                                 weight_decay=cfg.weight_decay)
+    if args.optimizer == "sgd":
+        optimizer = torch.optim.SGD(
+            network.parameters(),
+            lr=cfg.lr,
+            momentum=args.momentum,
+            weight_decay=cfg.weight_decay,
+        )
+        print(f"optimizer: SGD lr={cfg.lr} momentum={args.momentum} weight_decay={cfg.weight_decay}", flush=True)
+    else:
+        optimizer = torch.optim.Adam(network.parameters(), lr=cfg.lr,
+                                     weight_decay=cfg.weight_decay)
+        print(f"optimizer: Adam lr={cfg.lr} weight_decay={cfg.weight_decay}", flush=True)
+
+    # Parse LR decay boundaries — list of iters at which to multiply lr by lr_decay_factor.
+    lr_decay_iters = (
+        sorted(int(x) for x in args.lr_decay_iters.split(",") if x.strip())
+        if args.lr_decay_iters else []
+    )
+    if lr_decay_iters:
+        print(f"LR step-decay schedule: at iters {lr_decay_iters}, lr *= {args.lr_decay_factor}", flush=True)
     # Sliding-window-by-iteration buffer. We DROP the previous run's replay
     # entirely because it's poisoned with iters 0-5 near-random play.
     replay = ShardedReplayBuffer(max_shards=args.replay_shards)
@@ -198,6 +225,12 @@ def main():
             if elapsed >= args.time_budget:
                 print(f"time budget reached at iter {it} ({elapsed:.0f}s)", flush=True)
                 break
+
+            # Apply LR step decay if this iter hits a boundary.
+            if it in lr_decay_iters:
+                for pg in optimizer.param_groups:
+                    pg["lr"] *= args.lr_decay_factor
+                print(f"  LR decayed to {optimizer.param_groups[0]['lr']:.2e} at iter {it}", flush=True)
 
             # Step 1: write the latest checkpoint for workers.
             torch.save(network.state_dict(), current_ckpt)
