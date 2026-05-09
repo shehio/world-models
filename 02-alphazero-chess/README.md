@@ -319,24 +319,18 @@ batched — for instance, to read it as a reference — pass `--batch-size 1`.
 
 ## Results
 
-After a **75-minute training run** with batched MCTS (30 iters × 8
-games × 150 sims × 200 train steps), the agent's Elo over **200 games
-vs random** is **+158 Elo [95% CI: +107, +215]** — significantly above
-random with a CI that does not cross zero. **89 wins, 107 draws, 4
-losses** out of 200 games. Full breakdown including Stockfish baselines:
-see [results.md](./results.md).
+Three runs, each one fixing what the previous one taught us. Headline
+numbers vs random:
 
-| Opponent | N | W/D/L | Score | Elo |
-|---|---:|---:|---:|---:|
-| Random (anchor 0) | 200 | 89 / 107 / 4 | 0.713 | **+158 [+107, +215]** |
-| Stockfish skill=0 d=1 | 50 | 0 / 6 / 44 | 0.060 | gap −478 |
-| Stockfish UCI_Elo=1320 | 50 | 0 / 1 / 49 | 0.010 | upper bound ≈ 522 |
+| Run | Network | Wall | W/D/L | Elo (95% CI) |
+|---|---|---|---|---|
+| v1 (no batching, 10 min) | 5b × 64ch | 10 min | 16 / 75 / 9 of 100 | +24 [−44, +95] |
+| v2 (batched MCTS) | 5b × 64ch | 75 min | 89 / 107 / 4 of 200 | +158 [+107, +215] |
+| **v3b (multi-process + sharded buffer + reduced overtraining)** | **10b × 128ch** | **4h overnight + 4h fix** | **64 / 36 / 0 of 100** | **+263 [+186, +373]** |
 
-For context: v1 (without batched MCTS, 10-minute training) was at +24
-[−44, +95], i.e. statistically indistinguishable from random. The v2
-result is **6.6× higher Elo** in **7.5× the wall-clock time**, which is
-*more* than linear — batching unlocks bigger sims/move, which unlocks
-better targets, which unlocks better learning per game.
+The v3b result includes **zero losses against random** out of 100
+games. Full Elo breakdown, the v3a plateau diagnosis, and the
+diagnostic head-to-heads that revealed it: see [results.md](./results.md).
 
 ## Open questions / decisions deferred
 

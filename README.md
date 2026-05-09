@@ -34,10 +34,15 @@ The progression mirrors a real conceptual arc:
 - [x] **01** — runs end-to-end on Apple Silicon (~2h budget). Trained
   agent beats random on unseen seeds. See its [README](./01-ha-world-models/README.md).
 - [x] **02** — implemented end-to-end with batched MCTS (K=8 parallel
-  descents per network call, virtual loss, ~1.9× speedup). 28 unit tests
-  pass. After a 75-min training run, agent scores **+158 Elo vs random
-  [95% CI: +107, +215]** — significantly above random. 89W / 107D / 4L
-  out of 200 games. See its [results.md](./02-alphazero-chess/results.md).
+  descents per network call, virtual loss, ~1.9× speedup),
+  multi-process self-play (6 workers), and sharded replay buffer with
+  KataGo-style train-steps:games ratio. 28 unit tests pass.
+  After 4h overnight + 4h fix-and-resume training (10b × 128ch net),
+  agent scores **+263 Elo vs random [95% CI: +186, +373]** with **zero
+  losses** out of 100 games (64W / 36D / 0L). The fix run added +42 Elo
+  head-to-head over the overnight checkpoint. See its
+  [results.md](./02-alphazero-chess/results.md) for the full story
+  including the v3a plateau and the AZ-clone fixes that broke it.
 - [ ] **03** — scaffold up; depends on 02 (shares MCTS, board encoder).
 
 ## Layout
