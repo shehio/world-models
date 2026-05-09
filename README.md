@@ -33,6 +33,14 @@ The progression mirrors a real conceptual arc:
 
 - [x] **01** — runs end-to-end on Apple Silicon (~2h budget). Trained
   agent beats random on unseen seeds. See its [README](./01-ha-world-models/README.md).
+- [x] **02b** — *not faithful to AlphaZero*: experimental sibling project
+  on the merged `stockfish-distill` branch. Same network architecture
+  trained by **supervised distillation from Stockfish self-play games**
+  instead of pure RL. Result: **19 wins / 25 draws / 56 losses out of
+  100 games against Stockfish UCI_Elo=1320** (estimated agent ~1185 Elo).
+  Confirmed our network capacity was not the bottleneck for v3c — pure
+  self-play just couldn't generate strong-enough training targets in the
+  compute budget. See [02b/README](./02b-alphazero-stockfish-distill/README.md).
 - [x] **02** — implemented end-to-end through four progressive runs.
   Final agent (v3c) uses batched MCTS (K=8 parallel descents, virtual
   loss, 1.9× speedup), multi-process self-play (6 workers),
