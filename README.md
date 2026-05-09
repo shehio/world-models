@@ -33,16 +33,19 @@ The progression mirrors a real conceptual arc:
 
 - [x] **01** — runs end-to-end on Apple Silicon (~2h budget). Trained
   agent beats random on unseen seeds. See its [README](./01-ha-world-models/README.md).
-- [x] **02** — implemented end-to-end with batched MCTS (K=8 parallel
-  descents per network call, virtual loss, ~1.9× speedup),
-  multi-process self-play (6 workers), and sharded replay buffer with
-  KataGo-style train-steps:games ratio. 28 unit tests pass.
-  After 4h overnight + 4h fix-and-resume training (10b × 128ch net),
-  agent scores **+263 Elo vs random [95% CI: +186, +373]** with **zero
-  losses** out of 100 games (64W / 36D / 0L). The fix run added +42 Elo
-  head-to-head over the overnight checkpoint. See its
+- [x] **02** — implemented end-to-end through four progressive runs.
+  Final agent (v3c) uses batched MCTS (K=8 parallel descents, virtual
+  loss, 1.9× speedup), multi-process self-play (6 workers),
+  KataGo-style sharded replay buffer with conservative train-steps:games
+  ratio, and Playout Cap Randomization (cheap reduced-sim moves for play,
+  expensive full-sim moves only for target generation). 32 unit tests
+  pass.
+  Final Elo: **+315 vs random [95% CI: +275, +375]** combined estimate
+  across direct + h2h-via-v2 + h2h-via-v3b methods. **141W / 58D / 1L**
+  out of 200 games against random. See
   [results.md](./02-alphazero-chess/results.md) for the full story
-  including the v3a plateau and the AZ-clone fixes that broke it.
+  including the v3a plateau, the AZ-clone fixes that broke it, and the
+  PCR addition that pushed an extra +25 Elo.
 - [ ] **03** — scaffold up; depends on 02 (shares MCTS, board encoder).
 
 ## Layout

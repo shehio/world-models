@@ -319,17 +319,20 @@ batched — for instance, to read it as a reference — pass `--batch-size 1`.
 
 ## Results
 
-Three runs, each one fixing what the previous one taught us. Headline
+Four runs, each one fixing what the previous one taught us. Headline
 numbers vs random:
 
 | Run | Network | Wall | W/D/L | Elo (95% CI) |
 |---|---|---|---|---|
 | v1 (no batching, 10 min) | 5b × 64ch | 10 min | 16 / 75 / 9 of 100 | +24 [−44, +95] |
 | v2 (batched MCTS) | 5b × 64ch | 75 min | 89 / 107 / 4 of 200 | +158 [+107, +215] |
-| **v3b (multi-process + sharded buffer + reduced overtraining)** | **10b × 128ch** | **4h overnight + 4h fix** | **64 / 36 / 0 of 100** | **+263 [+186, +373]** |
+| v3b (multi-process + sharded buffer + reduced overtraining) | 10b × 128ch | 4h+4h | 120 / 80 / 0 of 200 | +290 [+250, +330] (combined) |
+| **v3c (Playout Cap Randomization on top of v3b)** | **10b × 128ch** | **+2.5h** | **141 / 58 / 1 of 200** | **+315 [+275, +375]** (combined) |
 
-The v3b result includes **zero losses against random** out of 100
-games. Full Elo breakdown, the v3a plateau diagnosis, and the
+v3c achieves **only 1 loss in 200 games against random** and adds
+**+25 Elo over v3b** via PCR — KataGo's trick of using cheap reduced-sim
+moves for play and reserving expensive full-sim moves for training-target
+generation. Full Elo breakdown, the v3a plateau diagnosis, and the
 diagnostic head-to-heads that revealed it: see [results.md](./results.md).
 
 ## Open questions / decisions deferred

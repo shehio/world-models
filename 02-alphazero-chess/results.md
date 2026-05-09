@@ -1,18 +1,20 @@
 # 02 — AlphaZero-chess: training run results
 
-Three training runs in chronological order. Each one fixed something the
+Four training runs in chronological order. Each one fixed something the
 previous one taught us.
 
-| Run | Network | Training compute | Headline result |
+| Run | Network | Training compute | Headline result (vs random) |
 |---|---|---|---|
-| v2 (single-process, batched MCTS) | 5 blocks × 64 ch (390k params) | 75 min | **+158 Elo vs random** [95% CI: +107, +215] |
-| v3a (multi-process, bigger net) | 10 blocks × 128 ch (3M params) | 4 hours | Plateaued; +35 Elo head-to-head over v2 baseline (statistically marginal) |
-| v3b (sharded buffer + reduced overtraining) | 10 blocks × 128 ch (3M params) | 4 hours, resumed from v3a | **+42 Elo head-to-head over v3a** with 7W/42D/1L of 50; absolute Elo see below |
+| v2 (single-process, batched MCTS) | 5b × 64 ch (390k params) | 75 min | **+158 Elo** [+107, +215]   89W/107D/4L of 200 |
+| v3a (multi-process, bigger net) | 10b × 128 ch (3M params) | 4h | Plateaued; +35 Elo h2h over v2 (marginal) |
+| v3b (sharded buffer + reduced overtraining) | 10b × 128 ch | 4h, resume from v3a | **+290 Elo** combined estimate [+250, +330] |
+| v3c (Playout Cap Randomization on top of v3b) | 10b × 128 ch | 2.5h, resume from v3b | **+315 Elo** combined estimate [+275, +375] |
 
-The story: v2 worked. v3a got bigger and parallelized but hit a plateau
-that I initially mistook for "model capacity." v3b diagnosed the actual
-problem (stale replay buffer + too many SGD steps per generated game)
-by reading what proven AZ-clones do, then fixed it.
+The story:
+- v2 worked.
+- v3a got bigger and parallelized but hit a plateau I initially mistook for "model capacity."
+- v3b diagnosed the actual problem (stale replay buffer + too many SGD steps per generated game) by reading what proven AZ-clones do, then fixed it.
+- v3c added KataGo's Playout Cap Randomization for sharper policy targets at the same compute. Modest +25 Elo gain on top of v3b (smaller than the paper's claimed +80-150 because we only ran 2.5h of additional training from an already-saturated checkpoint).
 
 ---
 
@@ -149,13 +151,86 @@ within noise on this many games.
 
 ---
 
-## Summary across the three runs
+---
 
-| Run | Network | Wall | Total games | Elo vs random |
+## v3c: Playout Cap Randomization (the +25 Elo on top of v3b)
+
+**Motivation:** v3b had plateaued. Researched what AZ-clones do for the
+"target sharpness" problem and found **Playout Cap Randomization
+(PCR)** from KataGo (paper §5.1, +80-150 Elo claimed at fixed compute).
+
+**The trick:** during self-play, on each move flip a coin (p=0.25):
+- **Heads (full):** use 400 MCTS sims + Dirichlet root noise. **Record** (state, π) as a training target.
+- **Tails (reduced):** use 80 MCTS sims, no noise. **Don't record** this position's policy target. Game continues.
+
+The policy target is only recorded for high-sim moves where MCTS produces a
+*meaningfully sharper* distribution than the network's prior. Low-sim
+moves are just for game progression — cheaper, faster, no learning waste.
+
+Plus: we still get value targets z (game outcome) for every recorded
+position. Just not policy targets.
+
+**Code:**
+- `src/alphazero/selfplay.py`: new `play_game_pcr()` alongside existing `play_game()`.
+- `scripts/selfplay_loop_mp.py`: `--pcr / --pcr-sims-full / --pcr-sims-reduced / --pcr-p-full` flags.
+- 4 unit tests in `tests/test_pcr.py`: structure valid, p_full=0 records nothing, p_full=1 records everything, average ratio ≈ p_full.
+
+**Run:** resumed from v3b final, 6 workers × 4 games × p_full=0.25 (full=400 sims, reduced=80 sims), 2.5h time budget, 26 iters total, 624 games.
+
+### Immediate signal: loss broke v3b's plateau on the very first batch
+
+| Iter | Policy CE |
+|---|---|
+| v3b plateau (before PCR) | 2.79 |
+| v3c iter 0 (40 SGD steps after applying PCR) | **2.47** ← −0.32 nat in one iter |
+| v3c iter 11 | 2.57 |
+| v3c iter 26 (final) | 2.59 |
+
+The 400-sim PCR targets are dramatically sharper than v3b's 200-sim
+non-PCR targets. v3b had been stuck at 2.79 for 30+ iters; PCR broke it
+in 40 SGD steps.
+
+### Score-vs-random during training (n=8 each, every 4 iters)
+
+| Iter | Score (W/D/L of 8) |
+|---|---|
+| 3 | 0.875 (7/1/0) |
+| 7 | 0.81 (5/3/0) |
+| 11 | **1.000 (8/0/0)** ← first perfect eval ever |
+| 15 | 0.875 |
+| 19 | 0.875 |
+| 23 | 0.9375 |
+
+Mean: **0.90** (vs v3b's 0.83 and v3a's 0.70).
+
+### Final Elo (200 games each, three independent measurements)
+
+| Method | W/D/L | Score | Elo (95% CI) |
+|---|---:|---:|---:|
+| Direct vs random | 141 / 58 / **1** | 0.850 | **+301 [+241, +381]** |
+| Via v3b anchor (gap +30) | 37 / 143 / 20 (vs v3b) | 0.542 | +320 [+272, +369] |
+| Via v2 anchor (gap +168) | 103 / 84 / 13 (vs v2) | 0.725 | +326 [+276, +385] |
+
+All three estimates cluster around **+315 Elo over random**, combined
+CI ~[+275, +375]. **Only 1 loss out of 200 games against random** — the
+agent essentially never blunders enough to lose to a random opponent.
+
+The +25 Elo gain over v3b is real but smaller than KataGo's claim.
+Likely because:
+- v3b was already at a saturation point against this self-play distribution.
+- Only 2.5h of additional training (vs KataGo's days-long runs).
+- Resume-from-checkpoint diminishing returns vs fresh run.
+
+---
+
+## Summary across the four runs
+
+| Run | Network | Wall | Total games | Elo vs random (combined estimate) |
 |---|---|---|---|---|
-| v2 | 5b × 64ch | 75 min | 240 | +158 [+107, +215]   (89W/107D/4L of 200) |
+| v2 | 5b × 64ch | 75 min | 240 | +158 [+107, +215]   (89/107/4 of 200) |
 | v3a (overnight, plateau) | 10b × 128ch | 4 h | 552 | not measured (plateau confirmed via h2h) |
-| v3b (resume, fixed) | 10b × 128ch | 4 h additional | 888 added | **+263 [+186, +373]   (64W/36D/0L of 100)** |
+| v3b (resume, sharded buffer + reduced train_steps) | 10b × 128ch | 4 h additional | 888 added | **+290 [+250, +330]**   (120/80/0 of 200 direct) |
+| **v3c (PCR on top of v3b)** | **10b × 128ch** | **2.5 h additional** | **624 added** | **+315 [+275, +375]**   (141/58/1 of 200 direct) |
 
 ## What I'd do differently next time
 
@@ -197,10 +272,12 @@ uv run python scripts/selfplay_loop_mp.py \
     --resume checkpoints_overnight/net_iter023.pt \
     --ckpt-dir checkpoints_resume
 
-# Final Elo on the v3b checkpoint
-uv run python scripts/elo.py \
-    --ckpt checkpoints_resume/final.pt \
-    --games-vs-random 200 --games-vs-stockfish 50 \
-    --sims 50 --batch-size 8 --n-blocks 10 --n-filters 128 \
-    --max-plies 200 --device cpu
+# v3c: same as v3b but with Playout Cap Randomization
+uv run python scripts/selfplay_loop_mp.py \
+    --workers 6 --games-per-worker 4 --batch-size 8 \
+    --n-blocks 10 --n-filters 128 --train-steps 40 --replay-shards 20 \
+    --time-budget 9000 --eval-every 4 --max-plies 200 \
+    --pcr --pcr-sims-full 400 --pcr-sims-reduced 80 --pcr-p-full 0.25 \
+    --resume checkpoints_resume/final.pt \
+    --ckpt-dir checkpoints_v3c
 ```
