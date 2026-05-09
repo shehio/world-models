@@ -58,26 +58,19 @@ from alphazero.arena import network_policy, play_match, random_policy
 from alphazero.config import Config
 from alphazero.network import AlphaZeroNet
 from alphazero.replay import ShardedReplayBuffer
-from alphazero.selfplay import play_game
+from alphazero.selfplay import play_game, play_game_pcr
 from alphazero.train import train_step
 
 
 def selfplay_worker(args: tuple) -> list:
-    """Worker process: load latest checkpoint, play games_per_worker games, return samples.
-
-    Each call to this function inside the Pool runs in a persistent worker
-    process (one of N spawned at Pool creation).
-
-    Note: we re-load the checkpoint every call. This is only a few MB
-    deserialization for our network — trivial vs the cost of the games.
-    """
-    worker_id, ckpt_path, games_per_worker, cfg, sims, batch_size = args
+    """Worker process: load latest checkpoint, play games_per_worker games, return samples."""
+    (worker_id, ckpt_path, games_per_worker, cfg, sims, batch_size,
+     use_pcr, sims_full, sims_reduced, p_full) = args
 
     # Inside the worker, force single-threaded torch so N workers don't
     # collectively oversubscribe CPU cores.
     torch.set_num_threads(1)
 
-    # Build network with the same architecture as the trainer's.
     network = AlphaZeroNet(cfg)
     network.load_state_dict(torch.load(ckpt_path, map_location="cpu"))
     network.eval()
@@ -87,14 +80,23 @@ def selfplay_worker(args: tuple) -> list:
 
     results = []
     for g in range(games_per_worker):
-        samples, z, ply = play_game(network, cfg_local, device,
-                                    sims=sims, batch_size=batch_size)
+        if use_pcr:
+            samples, z, ply, pcr_stats = play_game_pcr(
+                network, cfg_local, device,
+                sims_full=sims_full, sims_reduced=sims_reduced,
+                p_full=p_full, batch_size=batch_size,
+            )
+        else:
+            pcr_stats = None
+            samples, z, ply = play_game(network, cfg_local, device,
+                                        sims=sims, batch_size=batch_size)
         results.append({
             "worker_id": worker_id,
             "game_idx": g,
             "samples": samples,
             "z": z,
             "ply": ply,
+            "pcr_stats": pcr_stats,
         })
     return results
 
@@ -113,6 +115,17 @@ def main():
     p.add_argument("--sims", type=int, default=400)
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--max-plies", type=int, default=200)
+    # Playout Cap Randomization (KataGo). When --pcr is set, --sims is ignored
+    # and per-move sims are drawn from {sims_full with prob p_full, sims_reduced
+    # with prob 1-p_full}. Only full-sim moves contribute training samples.
+    p.add_argument("--pcr", action="store_true",
+                   help="enable Playout Cap Randomization (KataGo)")
+    p.add_argument("--pcr-sims-full", type=int, default=400,
+                   help="MCTS sims on the 'full' fraction of moves (target-recording)")
+    p.add_argument("--pcr-sims-reduced", type=int, default=80,
+                   help="MCTS sims on the 'reduced' fraction (play only, no target)")
+    p.add_argument("--pcr-p-full", type=float, default=0.25,
+                   help="probability a move uses full sims (KataGo default 0.25)")
     # Network
     p.add_argument("--n-blocks", type=int, default=10)
     p.add_argument("--n-filters", type=int, default=128)
@@ -162,6 +175,9 @@ def main():
     print(f"workers: {args.workers}  games/worker: {args.games_per_worker}  "
           f"sims: {args.sims}  batch K: {args.batch_size}",
           flush=True)
+    if args.pcr:
+        print(f"PCR ON: full={args.pcr_sims_full} reduced={args.pcr_sims_reduced} "
+              f"p_full={args.pcr_p_full}", flush=True)
     print(f"time budget: {args.time_budget}s  max iters: {args.max_iters}",
           flush=True)
 
@@ -190,7 +206,8 @@ def main():
             t0 = time.time()
             worker_args = [
                 (i, current_ckpt, args.games_per_worker,
-                 cfg, args.sims, args.batch_size)
+                 cfg, args.sims, args.batch_size,
+                 args.pcr, args.pcr_sims_full, args.pcr_sims_reduced, args.pcr_p_full)
                 for i in range(args.workers)
             ]
             all_results = pool.map(selfplay_worker, worker_args)
