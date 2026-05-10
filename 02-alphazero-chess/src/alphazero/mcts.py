@@ -37,7 +37,22 @@ import chess
 import numpy as np
 import torch
 
-from .board import encode_board, encode_move, legal_move_mask
+from .board import encode_board, encode_history, encode_move, legal_move_mask
+
+
+def _encode_state(boards: list[chess.Board], n_history: int) -> np.ndarray:
+    """Dispatch to the right encoder given history depth.
+
+    n_history=1 → legacy 19-plane (just the last board's pieces + meta).
+    n_history>1 → 8-step (or however many) history stack + current meta.
+
+    `boards` is ordered oldest-first, most-recent-last; only the last
+    n_history are used. Padding for short histories is handled inside
+    encode_history.
+    """
+    if n_history > 1:
+        return encode_history(boards, n_history=n_history)
+    return encode_board(boards[-1])
 
 
 @dataclass
@@ -70,9 +85,17 @@ def _expand(
     board: chess.Board,
     network,
     device: torch.device,
+    boards_history: list[chess.Board] | None = None,
+    n_history: int = 1,
 ) -> float:
-    """Run network on board; create child Nodes with masked priors. Returns value v from board's POV."""
-    state = encode_board(board)
+    """Run network on board; create child Nodes with masked priors. Returns value v from board's POV.
+
+    If n_history > 1, `boards_history` must be the list of boards leading
+    up to (and including) `board`; we pass it to the history encoder.
+    """
+    if boards_history is None:
+        boards_history = [board]
+    state = _encode_state(boards_history, n_history)
     state_t = torch.from_numpy(state).unsqueeze(0).to(device)
     network.eval()
     with torch.no_grad():
@@ -133,21 +156,33 @@ def run_mcts(
     device: torch.device,
     dirichlet_alpha: float = 0.3,
     dirichlet_eps: float = 0.25,
+    game_history: list[chess.Board] | None = None,
+    n_history: int = 1,
 ) -> dict[chess.Move, int]:
-    """Run num_sims simulations from `board`. Returns visit counts at root."""
+    """Run num_sims simulations from `board`. Returns visit counts at root.
+
+    `game_history` is the list of game positions BEFORE `board` (most
+    recent last). With n_history > 1, the network sees the last
+    n_history boards (game_history + descent path) at every leaf eval.
+    """
+    game_history = list(game_history or [])
+    root_history = game_history + [board.copy(stack=False)]
     root = Node()
-    _expand(root, board, network, device)
+    _expand(root, board, network, device,
+            boards_history=root_history, n_history=n_history)
     if add_root_noise:
         _add_dirichlet_noise(root, dirichlet_alpha, dirichlet_eps)
 
     for _ in range(num_sims):
         path = [root]
         sim_board = board.copy(stack=False)
+        descent_hist = list(root_history)  # boards from start of game through current leaf
         node = root
         # Selection: descend until a leaf or terminal.
         while node.is_expanded and not sim_board.is_game_over(claim_draw=True):
             move, child = _select_child(node, c_puct)
             sim_board.push(move)
+            descent_hist.append(sim_board.copy(stack=False))
             path.append(child)
             node = child
 
@@ -155,7 +190,8 @@ def run_mcts(
         if sim_board.is_game_over(claim_draw=True):
             value = _terminal_value(sim_board)
         else:
-            value = _expand(node, sim_board, network, device)
+            value = _expand(node, sim_board, network, device,
+                            boards_history=descent_hist, n_history=n_history)
 
         # Backup: each node stores from its own to-move POV; flip every ply.
         for n in reversed(path):
@@ -318,11 +354,17 @@ def run_mcts_batched(
     batch_size: int = 8,
     dirichlet_alpha: float = 0.3,
     dirichlet_eps: float = 0.25,
+    game_history: list[chess.Board] | None = None,
+    n_history: int = 1,
 ) -> dict[chess.Move, int]:
     """Batched PUCT MCTS. K parallel descents per batch, one batched network call.
 
     At batch_size=1 this behaves identically to `run_mcts` (no virtual loss
     ever activates because descent → backup happens within the same iter).
+
+    `game_history` and `n_history` carry through the same way as in
+    `run_mcts` — at each leaf evaluation, the network sees the last
+    n_history boards (game_history + descent path).
 
     Args
     ----
@@ -331,11 +373,15 @@ def run_mcts_batched(
         K=8 is a reasonable default on Mac CPU; bigger batches help less
         for tiny networks but more for bigger ones. Memory scales with K.
     """
+    game_history = list(game_history or [])
+    root_history = game_history + [board.copy(stack=False)]
+
     # Step 1 — Expand the root.
     # This is one (non-batched) network call. It's amortized over the
     # whole MCTS for this move, so batching it isn't worth the complexity.
     root = Node()
-    _expand(root, board, network, device)
+    _expand(root, board, network, device,
+            boards_history=root_history, n_history=n_history)
     if add_root_noise:
         _add_dirichlet_noise(root, dirichlet_alpha, dirichlet_eps)
 
@@ -349,30 +395,32 @@ def run_mcts_batched(
         # Each descent applies virtual_loss to the children it passes
         # through, so subsequent descents diversify into other parts of
         # the tree.
-        leaves: list[tuple[list[Node], chess.Board]] = []
+        leaves: list[tuple[list[Node], chess.Board, list[chess.Board]]] = []
         for _ in range(K):
             path = [root]
             sim_board = board.copy(stack=False)
+            descent_hist = list(root_history)
             node = root
             while node.is_expanded and not sim_board.is_game_over(claim_draw=True):
                 move, child = _select_child_with_virtual_loss(node, c_puct)
                 sim_board.push(move)
+                descent_hist.append(sim_board.copy(stack=False))
                 child.virtual_loss += 1  # mark this child as "in flight"
                 path.append(child)
                 node = child
-            leaves.append((path, sim_board))
+            leaves.append((path, sim_board, descent_hist))
 
         # Step 3 — split leaves into terminal (no network needed) and
         # non-terminal (needs network forward pass).
-        nonterm: list[tuple[list[Node], chess.Board]] = []
-        terminal: list[tuple[list[Node], chess.Board]] = []
-        for path, b in leaves:
-            (terminal if b.is_game_over(claim_draw=True) else nonterm).append((path, b))
+        nonterm: list[tuple[list[Node], chess.Board, list[chess.Board]]] = []
+        terminal: list[tuple[list[Node], chess.Board, list[chess.Board]]] = []
+        for path, b, hist in leaves:
+            (terminal if b.is_game_over(claim_draw=True) else nonterm).append((path, b, hist))
 
         # Step 4 — ONE batched network call for all non-terminal leaves.
         # This is the whole point of batching.
         if nonterm:
-            states = np.stack([encode_board(b) for _, b in nonterm])  # (K', 19, 8, 8)
+            states = np.stack([_encode_state(hist, n_history) for _, _, hist in nonterm])
             states_t = torch.from_numpy(states).to(device)
             network.eval()
             with torch.no_grad():
@@ -380,13 +428,13 @@ def run_mcts_batched(
             logits_np = logits_batch.cpu().numpy()         # (K', 4672)
             values_np = values_batch.cpu().numpy()         # (K',)
 
-            for i, (path, b) in enumerate(nonterm):
+            for i, (path, b, _hist) in enumerate(nonterm):
                 _expand_with_logits(path[-1], b, logits_np[i])
                 _backup_with_virtual_loss(path, float(values_np[i]))
 
         # Step 5 — terminal leaves get their value from the rules of chess
         # (no network call needed).
-        for path, b in terminal:
+        for path, b, _hist in terminal:
             _backup_with_virtual_loss(path, _terminal_value(b))
 
         sims_done += K

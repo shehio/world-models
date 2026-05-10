@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .board import N_INPUT_PLANES, N_MOVE_PLANES, N_POLICY
+from .board import N_MOVE_PLANES, N_POLICY
 from .config import Config
 
 
@@ -35,7 +35,7 @@ class AlphaZeroNet(nn.Module):
         super().__init__()
         f = cfg.n_filters
         self.stem = nn.Sequential(
-            nn.Conv2d(N_INPUT_PLANES, f, 3, padding=1, bias=False),
+            nn.Conv2d(cfg.n_input_planes, f, 3, padding=1, bias=False),
             nn.BatchNorm2d(f),
             nn.ReLU(inplace=True),
         )

@@ -24,26 +24,32 @@ import torch.multiprocessing as mp
 
 def worker(args: tuple) -> dict:
     (worker_id, ckpt_a, ckpt_b, n_games, sims, batch_size,
-     n_blocks, n_filters, max_plies) = args
+     n_blocks, n_filters, max_plies, n_history_a, n_history_b) = args
 
     torch.set_num_threads(1)
 
     from alphazero.arena import network_policy, play_match
+    from alphazero.board import N_INPUT_PLANES_HISTORY
     from alphazero.config import Config
     from alphazero.network import AlphaZeroNet
 
-    cfg = replace(Config(), n_res_blocks=n_blocks, n_filters=n_filters)
     device = torch.device("cpu")
 
-    net_a = AlphaZeroNet(cfg)
+    cfg_a = replace(Config(), n_res_blocks=n_blocks, n_filters=n_filters,
+                    n_input_planes=(N_INPUT_PLANES_HISTORY if n_history_a > 1 else 19))
+    net_a = AlphaZeroNet(cfg_a)
     net_a.load_state_dict(torch.load(ckpt_a, map_location="cpu"))
     net_a.eval()
-    pol_a = network_policy(net_a, cfg, device, sims=sims, batch_size=batch_size)
+    pol_a = network_policy(net_a, cfg_a, device, sims=sims, batch_size=batch_size,
+                           n_history=n_history_a)
 
-    net_b = AlphaZeroNet(cfg)
+    cfg_b = replace(Config(), n_res_blocks=n_blocks, n_filters=n_filters,
+                    n_input_planes=(N_INPUT_PLANES_HISTORY if n_history_b > 1 else 19))
+    net_b = AlphaZeroNet(cfg_b)
     net_b.load_state_dict(torch.load(ckpt_b, map_location="cpu"))
     net_b.eval()
-    pol_b = network_policy(net_b, cfg, device, sims=sims, batch_size=batch_size)
+    pol_b = network_policy(net_b, cfg_b, device, sims=sims, batch_size=batch_size,
+                           n_history=n_history_b)
 
     stats = play_match(pol_a, pol_b, n_games=n_games, max_plies=max_plies)
     stats["worker_id"] = worker_id
@@ -66,6 +72,8 @@ def main():
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--n-blocks", type=int, default=10)
     p.add_argument("--n-filters", type=int, default=128)
+    p.add_argument("--n-history-a", type=int, default=1, help="A's input history depth (1=19-plane, 8=103-plane)")
+    p.add_argument("--n-history-b", type=int, default=1, help="B's input history depth")
     p.add_argument("--max-plies", type=int, default=200)
     args = p.parse_args()
 
@@ -78,7 +86,8 @@ def main():
 
     worker_args = [
         (i, args.ckpt_a, args.ckpt_b, args.games_per_worker, args.sims, args.batch_size,
-         args.n_blocks, args.n_filters, args.max_plies)
+         args.n_blocks, args.n_filters, args.max_plies,
+         args.n_history_a, args.n_history_b)
         for i in range(args.workers)
     ]
 

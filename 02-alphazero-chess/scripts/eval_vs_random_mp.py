@@ -24,20 +24,24 @@ import torch.multiprocessing as mp
 
 def worker(args: tuple) -> dict:
     (worker_id, ckpt_path, n_games, sims, batch_size,
-     n_blocks, n_filters, max_plies) = args
+     n_blocks, n_filters, max_plies, n_history) = args
 
     torch.set_num_threads(1)
 
     from alphazero.arena import network_policy, play_match, random_policy
+    from alphazero.board import N_INPUT_PLANES_HISTORY
     from alphazero.config import Config
     from alphazero.network import AlphaZeroNet
 
-    cfg = replace(Config(), n_res_blocks=n_blocks, n_filters=n_filters)
+    n_input = N_INPUT_PLANES_HISTORY if n_history > 1 else 19
+    cfg = replace(Config(), n_res_blocks=n_blocks, n_filters=n_filters,
+                  n_input_planes=n_input)
     net = AlphaZeroNet(cfg)
     net.load_state_dict(torch.load(ckpt_path, map_location="cpu"))
     net.eval()
     device = torch.device("cpu")
-    agent_pol = network_policy(net, cfg, device, sims=sims, batch_size=batch_size)
+    agent_pol = network_policy(net, cfg, device, sims=sims, batch_size=batch_size,
+                               n_history=n_history)
 
     stats = play_match(agent_pol, random_policy, n_games=n_games, max_plies=max_plies)
     stats["worker_id"] = worker_id
@@ -59,6 +63,8 @@ def main():
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--n-blocks", type=int, default=10)
     p.add_argument("--n-filters", type=int, default=128)
+    p.add_argument("--n-history", type=int, default=1,
+                   help="1 = legacy 19-plane; 8 = AZ-paper 103-plane")
     p.add_argument("--max-plies", type=int, default=200)
     args = p.parse_args()
 
@@ -71,7 +77,7 @@ def main():
 
     worker_args = [
         (i, args.ckpt, args.games_per_worker, args.sims, args.batch_size,
-         args.n_blocks, args.n_filters, args.max_plies)
+         args.n_blocks, args.n_filters, args.max_plies, args.n_history)
         for i in range(args.workers)
     ]
 

@@ -26,14 +26,23 @@ import chess
 import numpy as np
 import torch
 
-from .board import encode_board
+from .board import encode_board, encode_history
 from .config import Config
 from .mcts import run_mcts, run_mcts_batched, select_move, visits_to_distribution
+
+
+def _encode_state_for_storage(boards: list[chess.Board], n_history: int) -> np.ndarray:
+    """Encoder used when stashing samples in the replay buffer."""
+    if n_history > 1:
+        return encode_history(boards, n_history=n_history)
+    return encode_board(boards[-1])
 
 
 def _run_mcts(
     board, network, sims, cfg, device,
     add_root_noise: bool, batch_size: int,
+    game_history: list[chess.Board] | None = None,
+    n_history: int = 1,
 ):
     """Internal: dispatches to batched or sequential MCTS based on batch_size."""
     if batch_size > 1:
@@ -41,11 +50,13 @@ def _run_mcts(
             board, network, num_sims=sims, c_puct=cfg.c_puct,
             add_root_noise=add_root_noise, device=device, batch_size=batch_size,
             dirichlet_alpha=cfg.dirichlet_alpha, dirichlet_eps=cfg.dirichlet_eps,
+            game_history=game_history, n_history=n_history,
         )
     return run_mcts(
         board, network, num_sims=sims, c_puct=cfg.c_puct,
         add_root_noise=add_root_noise, device=device,
         dirichlet_alpha=cfg.dirichlet_alpha, dirichlet_eps=cfg.dirichlet_eps,
+        game_history=game_history, n_history=n_history,
     )
 
 
@@ -55,25 +66,42 @@ def play_game(
     device: torch.device,
     sims: int | None = None,
     batch_size: int = 1,
+    n_history: int = 1,
 ) -> tuple[list[tuple[np.ndarray, np.ndarray, float]], float, int]:
     """Standard self-play: every move uses `sims` MCTS sims with root noise.
 
     Returns (samples, z_white_pov, ply_count).
     samples: list of (state_planes, pi_4672, z_for_side_to_move) per ply.
+
+    n_history: 1 → legacy 19-plane encoding (just current board).
+               >1 → encode_history with that many stacked positions.
     """
     sims = sims if sims is not None else cfg.sims_train
     board = chess.Board()
     history: list[tuple[np.ndarray, np.ndarray, bool]] = []
     ply = 0
+    # Boards before the current one (most recent last). Grows as game progresses.
+    game_history_boards: list[chess.Board] = []
 
     while not board.is_game_over(claim_draw=True) and ply < cfg.max_plies:
         visits = _run_mcts(board, network, sims, cfg, device,
-                           add_root_noise=True, batch_size=batch_size)
+                           add_root_noise=True, batch_size=batch_size,
+                           game_history=game_history_boards, n_history=n_history)
         pi = visits_to_distribution(visits, board)
-        history.append((encode_board(board), pi, board.turn == chess.WHITE))
+        # The state we record is what the network would see at this position.
+        full_history = game_history_boards + [board.copy(stack=False)]
+        state = _encode_state_for_storage(full_history, n_history)
+        history.append((state, pi, board.turn == chess.WHITE))
         temp = 1.0 if ply < cfg.temp_moves else 0.0
         move = select_move(visits, temperature=temp)
+        # Snapshot before push so this becomes part of the prior history.
+        game_history_boards.append(board.copy(stack=False))
         board.push(move)
+        # Cap history at last n_history-1 boards to keep memory bounded.
+        # encode_history only uses last n_history entries (game_history + current);
+        # we keep one extra so the caller can always append `board` to it.
+        if n_history > 1 and len(game_history_boards) > n_history:
+            game_history_boards = game_history_boards[-n_history:]
         ply += 1
 
     z_white = _outcome(board)
@@ -89,6 +117,7 @@ def play_game_pcr(
     sims_reduced: int = 50,
     p_full: float = 0.25,
     batch_size: int = 8,
+    n_history: int = 1,
 ) -> tuple[list[tuple[np.ndarray, np.ndarray, float]], float, int, dict]:
     """Self-play with Playout Cap Randomization.
 
@@ -107,6 +136,7 @@ def play_game_pcr(
     history: list[tuple[np.ndarray, np.ndarray, bool, bool]] = []
     ply = 0
     full_count = reduced_count = 0
+    game_history_boards: list[chess.Board] = []
 
     while not board.is_game_over(claim_draw=True) and ply < cfg.max_plies:
         is_full = random.random() < p_full
@@ -120,16 +150,22 @@ def play_game_pcr(
             reduced_count += 1
 
         visits = _run_mcts(board, network, sims, cfg, device,
-                           add_root_noise=add_root_noise, batch_size=batch_size)
+                           add_root_noise=add_root_noise, batch_size=batch_size,
+                           game_history=game_history_boards, n_history=n_history)
 
         # Only the FULL-sim positions become training samples.
         if is_full:
             pi = visits_to_distribution(visits, board)
-            history.append((encode_board(board), pi, board.turn == chess.WHITE, True))
+            full_history = game_history_boards + [board.copy(stack=False)]
+            state = _encode_state_for_storage(full_history, n_history)
+            history.append((state, pi, board.turn == chess.WHITE, True))
 
         temp = 1.0 if ply < cfg.temp_moves else 0.0
         move = select_move(visits, temperature=temp)
+        game_history_boards.append(board.copy(stack=False))
         board.push(move)
+        if n_history > 1 and len(game_history_boards) > n_history:
+            game_history_boards = game_history_boards[-n_history:]
         ply += 1
 
     z_white = _outcome(board)

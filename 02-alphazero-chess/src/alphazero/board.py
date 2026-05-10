@@ -5,7 +5,13 @@ Conventions
 Board orientation: always white's POV (no flipping). Side-to-move plane
 tells the network whose turn it is.
 
-Input planes (19 total):
+Two encoders live here:
+
+* `encode_board(b)` — 19 planes, single position. Used by v1-v4 runs.
+* `encode_history(boards)` — 103 planes, last 8 positions stacked plus
+  current-position metadata. Used by v5+ (paper-faithful).
+
+Input planes (19 total) — `encode_board`:
   0..5    : white pieces (P, N, B, R, Q, K) as 0/1
   6..11   : black pieces (P, N, B, R, Q, K) as 0/1
   12      : side-to-move (all 1 if white to move, else all 0)
@@ -15,6 +21,16 @@ Input planes (19 total):
   16      : black queenside castle right
   17      : en-passant target (one-hot)
   18      : halfmove clock / 100  (no-progress count, normalized)
+
+Input planes (103 total) — `encode_history`:
+  0..11   : t-7 piece planes (12 = 6 white + 6 black; all zero if game shorter)
+  12..23  : t-6 piece planes
+   ... (8 stacks of 12 piece planes = 96 planes; oldest first, current last)
+  84..95  : t   piece planes (current position)
+  96      : side-to-move (current)
+  97..100 : castling rights (current; W-K, W-Q, B-K, B-Q)
+  101     : en-passant target (current; one-hot)
+  102     : halfmove clock / 100 (current)
 
 Move encoding (8 * 8 * 73 = 4672):
   planes 0..55  : queen-like = 8 directions x 7 distances
@@ -37,6 +53,12 @@ import chess
 N_INPUT_PLANES = 19
 N_MOVE_PLANES = 73
 N_POLICY = 8 * 8 * N_MOVE_PLANES  # 4672
+
+# History encoder constants (paper-faithful)
+N_HISTORY = 8
+N_PIECE_PLANES_PER_BOARD = 12  # 6 piece types × 2 colors
+N_META_PLANES = 7  # side-to-move + 4 castling + ep + halfmove
+N_INPUT_PLANES_HISTORY = N_HISTORY * N_PIECE_PLANES_PER_BOARD + N_META_PLANES  # 103
 
 _PIECE_TYPES = (chess.PAWN, chess.KNIGHT, chess.BISHOP, chess.ROOK, chess.QUEEN, chess.KING)
 
@@ -72,6 +94,63 @@ def encode_board(board: chess.Board) -> np.ndarray:
         r, f = chess.square_rank(board.ep_square), chess.square_file(board.ep_square)
         planes[17, r, f] = 1.0
     planes[18, :, :] = min(board.halfmove_clock, 100) / 100.0
+    return planes
+
+
+def _fill_piece_planes(out: np.ndarray, board: chess.Board, offset: int) -> None:
+    """Write 12 piece planes for `board` into out[offset:offset+12]."""
+    for sq, piece in board.piece_map().items():
+        r, f = chess.square_rank(sq), chess.square_file(sq)
+        pt_idx = _PIECE_TYPES.index(piece.piece_type)
+        plane = pt_idx + (0 if piece.color == chess.WHITE else 6) + offset
+        out[plane, r, f] = 1.0
+
+
+def encode_history(boards: list[chess.Board], n_history: int = N_HISTORY) -> np.ndarray:
+    """Stack last `n_history` positions into a (103, 8, 8) input tensor.
+
+    `boards` is ordered oldest-first, most-recent-last. The last element is
+    the current position (the one whose move we're choosing). Earlier
+    elements are the prior plies.
+
+    If `len(boards) < n_history`, the leading slots are zero-padded —
+    early in the game we have fewer prior positions, which is fine.
+
+    Meta planes (side-to-move, castling, EP, halfmove clock) are taken
+    from the *current* board only — we don't carry stale meta from prior
+    plies.
+    """
+    if not boards:
+        raise ValueError("encode_history needs at least one board")
+
+    n_planes = n_history * N_PIECE_PLANES_PER_BOARD + N_META_PLANES
+    planes = np.zeros((n_planes, 8, 8), dtype=np.float32)
+
+    # Take the last n_history boards. If we have fewer, leave the leading
+    # piece-plane stacks all zero (oldest-first padding).
+    history = boards[-n_history:]
+    pad = n_history - len(history)
+    for i, b in enumerate(history):
+        offset = (pad + i) * N_PIECE_PLANES_PER_BOARD
+        _fill_piece_planes(planes, b, offset)
+
+    # Meta planes from the current (most recent) board only.
+    meta_offset = n_history * N_PIECE_PLANES_PER_BOARD  # 96
+    cur = boards[-1]
+    if cur.turn == chess.WHITE:
+        planes[meta_offset, :, :] = 1.0
+    if cur.has_kingside_castling_rights(chess.WHITE):
+        planes[meta_offset + 1, :, :] = 1.0
+    if cur.has_queenside_castling_rights(chess.WHITE):
+        planes[meta_offset + 2, :, :] = 1.0
+    if cur.has_kingside_castling_rights(chess.BLACK):
+        planes[meta_offset + 3, :, :] = 1.0
+    if cur.has_queenside_castling_rights(chess.BLACK):
+        planes[meta_offset + 4, :, :] = 1.0
+    if cur.ep_square is not None:
+        r, f = chess.square_rank(cur.ep_square), chess.square_file(cur.ep_square)
+        planes[meta_offset + 5, r, f] = 1.0
+    planes[meta_offset + 6, :, :] = min(cur.halfmove_clock, 100) / 100.0
     return planes
 
 

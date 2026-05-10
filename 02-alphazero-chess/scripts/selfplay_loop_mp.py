@@ -38,6 +38,7 @@ Run from project root:
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import sys
 import time
@@ -65,7 +66,7 @@ from alphazero.train import train_step
 def selfplay_worker(args: tuple) -> list:
     """Worker process: load latest checkpoint, play games_per_worker games, return samples."""
     (worker_id, ckpt_path, games_per_worker, cfg, sims, batch_size,
-     use_pcr, sims_full, sims_reduced, p_full) = args
+     use_pcr, sims_full, sims_reduced, p_full, n_history) = args
 
     # Inside the worker, force single-threaded torch so N workers don't
     # collectively oversubscribe CPU cores.
@@ -85,11 +86,13 @@ def selfplay_worker(args: tuple) -> list:
                 network, cfg_local, device,
                 sims_full=sims_full, sims_reduced=sims_reduced,
                 p_full=p_full, batch_size=batch_size,
+                n_history=n_history,
             )
         else:
             pcr_stats = None
             samples, z, ply = play_game(network, cfg_local, device,
-                                        sims=sims, batch_size=batch_size)
+                                        sims=sims, batch_size=batch_size,
+                                        n_history=n_history)
         results.append({
             "worker_id": worker_id,
             "game_idx": g,
@@ -144,6 +147,19 @@ def main():
                    help="comma-separated iter boundaries to decay LR. e.g. '20,40' decays at iter 20 and 40. AZ paper used step decay.")
     p.add_argument("--lr-decay-factor", type=float, default=0.1,
                    help="multiplicative factor at each LR decay boundary (AZ paper used 0.1)")
+    p.add_argument("--lr-schedule", choices=["step", "cosine"], default="step",
+                   help="step (uses --lr-decay-iters/factor) or cosine (smooth from --lr to --lr-min over --max-iters).")
+    p.add_argument("--lr-min", type=float, default=1e-5,
+                   help="floor LR for cosine schedule (paper trick: KataGo uses ~1e-5)")
+    # 8-step history (paper-faithful input encoding)
+    p.add_argument("--n-history", type=int, default=1,
+                   help="positions stacked in input encoding. 1 = legacy 19-plane; 8 = AZ-paper 103-plane.")
+    # Trainer device
+    p.add_argument("--train-device", choices=["cpu", "mps", "auto"], default="auto",
+                   help="device for the trainer's SGD step. 'auto' picks MPS if available.")
+    # Hourly model dumps (for evolution tracking)
+    p.add_argument("--hourly-dump", action="store_true",
+                   help="save net_hour_NNN.pt every wall-clock hour for later eval-vs-time analysis.")
     # Eval
     p.add_argument("--eval-games", type=int, default=10)
     p.add_argument("--eval-sims", type=int, default=100)
@@ -156,9 +172,17 @@ def main():
     # Use 'spawn' for cross-platform compat and to avoid forking PyTorch state.
     mp.set_start_method("spawn", force=True)
 
+    # n_input_planes depends on --n-history: 1 → 19, 8 → 103.
+    if args.n_history > 1:
+        from alphazero.board import N_HISTORY, N_PIECE_PLANES_PER_BOARD, N_META_PLANES
+        n_input_planes = args.n_history * N_PIECE_PLANES_PER_BOARD + N_META_PLANES
+    else:
+        n_input_planes = 19
+
     cfg = replace(Config(),
                   sims_train=args.sims, sims_eval=args.eval_sims,
                   max_plies=args.max_plies,
+                  n_input_planes=n_input_planes,
                   n_res_blocks=args.n_blocks, n_filters=args.n_filters,
                   batch_size=256,  # training batch
                   lr=args.lr)
@@ -167,7 +191,16 @@ def main():
     current_ckpt = os.path.join(args.ckpt_dir, "current.pt")
 
     # --- Trainer-side setup ---
-    device = torch.device("cpu")  # trainer also CPU; bigger nets aren't faster on MPS at this scale
+    if args.train_device == "auto":
+        if torch.backends.mps.is_available():
+            device = torch.device("mps")
+        elif torch.cuda.is_available():
+            device = torch.device("cuda")
+        else:
+            device = torch.device("cpu")
+    else:
+        device = torch.device(args.train_device)
+    print(f"trainer device: {device}", flush=True)
     network = AlphaZeroNet(cfg).to(device)
     if args.resume:
         network.load_state_dict(torch.load(args.resume, map_location=device))
@@ -190,7 +223,9 @@ def main():
         sorted(int(x) for x in args.lr_decay_iters.split(",") if x.strip())
         if args.lr_decay_iters else []
     )
-    if lr_decay_iters:
+    if args.lr_schedule == "cosine":
+        print(f"LR cosine schedule: {args.lr:.2e} → {args.lr_min:.2e} over {args.max_iters} iters", flush=True)
+    elif lr_decay_iters:
         print(f"LR step-decay schedule: at iters {lr_decay_iters}, lr *= {args.lr_decay_factor}", flush=True)
     # Sliding-window-by-iteration buffer. We DROP the previous run's replay
     # entirely because it's poisoned with iters 0-5 near-random play.
@@ -218,6 +253,8 @@ def main():
     # --- Main loop ---
     start = time.time()
     total_games = 0
+    next_hourly_save = start + 3600  # save first hourly checkpoint at t = +1h
+    hourly_idx = 0
 
     try:
         for it in range(args.max_iters):
@@ -226,21 +263,29 @@ def main():
                 print(f"time budget reached at iter {it} ({elapsed:.0f}s)", flush=True)
                 break
 
-            # Apply LR step decay if this iter hits a boundary.
-            if it in lr_decay_iters:
+            # Apply LR schedule.
+            if args.lr_schedule == "cosine":
+                # Cosine from args.lr → args.lr_min over the full max_iters horizon.
+                progress = min(it / max(1, args.max_iters), 1.0)
+                cur_lr = args.lr_min + 0.5 * (args.lr - args.lr_min) * (1 + math.cos(math.pi * progress))
+                for pg in optimizer.param_groups:
+                    pg["lr"] = cur_lr
+            elif it in lr_decay_iters:
                 for pg in optimizer.param_groups:
                     pg["lr"] *= args.lr_decay_factor
                 print(f"  LR decayed to {optimizer.param_groups[0]['lr']:.2e} at iter {it}", flush=True)
 
             # Step 1: write the latest checkpoint for workers.
-            torch.save(network.state_dict(), current_ckpt)
+            # Move to CPU before save so workers (CPU-only) can load directly.
+            torch.save({k: v.cpu() for k, v in network.state_dict().items()}, current_ckpt)
 
             # Step 2: dispatch games_per_worker games to each of N workers.
             t0 = time.time()
             worker_args = [
                 (i, current_ckpt, args.games_per_worker,
                  cfg, args.sims, args.batch_size,
-                 args.pcr, args.pcr_sims_full, args.pcr_sims_reduced, args.pcr_p_full)
+                 args.pcr, args.pcr_sims_full, args.pcr_sims_reduced, args.pcr_p_full,
+                 args.n_history)
                 for i in range(args.workers)
             ]
             all_results = pool.map(selfplay_worker, worker_args)
@@ -285,7 +330,8 @@ def main():
                 t0 = time.time()
                 net_pol = network_policy(network, cfg, device,
                                          sims=args.eval_sims,
-                                         batch_size=args.batch_size)
+                                         batch_size=args.batch_size,
+                                         n_history=args.n_history)
                 stats = play_match(net_pol, random_policy,
                                    n_games=args.eval_games,
                                    max_plies=args.max_plies)
@@ -293,11 +339,20 @@ def main():
                 print(f"  vs random ({ev_dt:.1f}s): {stats}", flush=True)
 
                 ckpt_path = os.path.join(args.ckpt_dir, f"net_iter{it:03d}.pt")
-                torch.save(network.state_dict(), ckpt_path)
+                torch.save({k: v.cpu() for k, v in network.state_dict().items()}, ckpt_path)
                 print(f"  saved {ckpt_path}", flush=True)
 
+            # Step 6: hourly checkpoint dump (for evolution tracking across the whole run).
+            if args.hourly_dump and time.time() >= next_hourly_save:
+                hourly_path = os.path.join(args.ckpt_dir, f"net_hour_{hourly_idx:03d}.pt")
+                torch.save({k: v.cpu() for k, v in network.state_dict().items()}, hourly_path)
+                print(f"  saved {hourly_path} (hourly @ iter {it})", flush=True)
+                hourly_idx += 1
+                next_hourly_save += 3600  # next at +1h from this one (not from now)
+
             print(f"  total elapsed: {(time.time()-start)/60:.1f} min  "
-                  f"({(time.time()-start)/args.time_budget*100:.0f}% of budget)",
+                  f"({(time.time()-start)/args.time_budget*100:.0f}% of budget)  "
+                  f"lr={optimizer.param_groups[0]['lr']:.2e}",
                   flush=True)
     finally:
         # Always shut workers down cleanly.
@@ -305,7 +360,7 @@ def main():
         pool.join()
         # Final checkpoint
         final_path = os.path.join(args.ckpt_dir, "final.pt")
-        torch.save(network.state_dict(), final_path)
+        torch.save({k: v.cpu() for k, v in network.state_dict().items()}, final_path)
         print(f"saved final: {final_path}", flush=True)
         print(f"total wall: {(time.time()-start)/60:.1f} min  "
               f"total games: {total_games}",

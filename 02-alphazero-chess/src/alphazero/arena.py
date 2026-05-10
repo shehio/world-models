@@ -67,17 +67,43 @@ def stockfish_policy(engine: chess.engine.SimpleEngine, depth: int = 1) -> Polic
     return policy
 
 
+def _reconstruct_game_history(board: chess.Board, n_history: int) -> list[chess.Board]:
+    """Walk back through `board.move_stack` to recover the last n_history-1 prior positions.
+
+    Returned list is ordered oldest-first, most-recent-last, NOT including the
+    current `board` (the caller passes that separately to MCTS).
+    """
+    if n_history <= 1 or not board.move_stack:
+        return []
+    b = board.copy(stack=True)
+    history: list[chess.Board] = []
+    for _ in range(n_history - 1):
+        if not b.move_stack:
+            break
+        b.pop()
+        history.append(b.copy(stack=False))
+    history.reverse()
+    return history
+
+
 def network_policy(
     network,
     cfg: Config,
     device: torch.device,
     sims: int | None = None,
     batch_size: int = 1,
+    n_history: int = 1,
 ) -> Policy:
-    """A policy callable wrapping (network + MCTS). batch_size>1 uses batched MCTS."""
+    """A policy callable wrapping (network + MCTS). batch_size>1 uses batched MCTS.
+
+    n_history > 1 enables the AZ-paper 8-step input encoding. The policy
+    reconstructs prior board states from `board.move_stack` at every call,
+    so callers don't need to track game history themselves.
+    """
     sims = sims if sims is not None else cfg.sims_eval
 
     def policy(board: chess.Board) -> chess.Move:
+        gh = _reconstruct_game_history(board, n_history) if n_history > 1 else None
         if batch_size > 1:
             visits = run_mcts_batched(
                 board, network,
@@ -86,6 +112,8 @@ def network_policy(
                 add_root_noise=False,
                 device=device,
                 batch_size=batch_size,
+                game_history=gh,
+                n_history=n_history,
             )
         else:
             visits = run_mcts(
@@ -94,6 +122,8 @@ def network_policy(
                 c_puct=cfg.c_puct,
                 add_root_noise=False,
                 device=device,
+                game_history=gh,
+                n_history=n_history,
             )
         return select_move(visits, temperature=0.0)
 

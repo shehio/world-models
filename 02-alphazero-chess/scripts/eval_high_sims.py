@@ -32,7 +32,7 @@ import torch.multiprocessing as mp
 def worker(args: tuple) -> dict:
     """One worker: load network, open its own Stockfish, play n_games."""
     (worker_id, ckpt_path, n_games, sims, batch_size,
-     n_blocks, n_filters,
+     n_blocks, n_filters, n_history,
      sf_elo, sf_skill, sf_depth, max_plies) = args
 
     torch.set_num_threads(1)
@@ -42,15 +42,19 @@ def worker(args: tuple) -> dict:
         network_policy, play_match,
         stockfish_engine, stockfish_policy,
     )
+    from alphazero.board import N_INPUT_PLANES_HISTORY
     from alphazero.config import Config
     from alphazero.network import AlphaZeroNet
 
-    cfg = replace(Config(), n_res_blocks=n_blocks, n_filters=n_filters)
+    n_input = N_INPUT_PLANES_HISTORY if n_history > 1 else 19
+    cfg = replace(Config(), n_res_blocks=n_blocks, n_filters=n_filters,
+                  n_input_planes=n_input)
     net = AlphaZeroNet(cfg)
     net.load_state_dict(torch.load(ckpt_path, map_location="cpu"))
     net.eval()
     device = torch.device("cpu")
-    agent_pol = network_policy(net, cfg, device, sims=sims, batch_size=batch_size)
+    agent_pol = network_policy(net, cfg, device, sims=sims, batch_size=batch_size,
+                               n_history=n_history)
 
     sf_kwargs = {"threads": 1}
     if sf_elo is not None:
@@ -81,6 +85,8 @@ def main():
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--n-blocks", type=int, default=10)
     p.add_argument("--n-filters", type=int, default=128)
+    p.add_argument("--n-history", type=int, default=1,
+                   help="1 = legacy 19-plane; 8 = AZ-paper 103-plane")
     p.add_argument("--stockfish-elo", type=int, default=1320,
                    help="UCI_Elo for Stockfish; -1 to skip")
     p.add_argument("--stockfish-skill", type=int, default=None)
@@ -98,7 +104,7 @@ def main():
 
     worker_args = [
         (i, args.ckpt, args.games_per_worker, args.sims, args.batch_size,
-         args.n_blocks, args.n_filters,
+         args.n_blocks, args.n_filters, args.n_history,
          elo, args.stockfish_skill, args.stockfish_depth, args.max_plies)
         for i in range(args.workers)
     ]
