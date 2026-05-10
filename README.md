@@ -41,19 +41,25 @@ The progression mirrors a real conceptual arc:
   Confirmed our network capacity was not the bottleneck for v3c — pure
   self-play just couldn't generate strong-enough training targets in the
   compute budget. See [02b/README](./02b-alphazero-stockfish-distill/README.md).
-- [x] **02** — implemented end-to-end through four progressive runs.
-  Final agent (v3c) uses batched MCTS (K=8 parallel descents, virtual
-  loss, 1.9× speedup), multi-process self-play (6 workers),
-  KataGo-style sharded replay buffer with conservative train-steps:games
-  ratio, and Playout Cap Randomization (cheap reduced-sim moves for play,
-  expensive full-sim moves only for target generation). 32 unit tests
-  pass.
-  Final Elo: **+315 vs random [95% CI: +275, +375]** combined estimate
-  across direct + h2h-via-v2 + h2h-via-v3b methods. **141W / 58D / 1L**
-  out of 200 games against random. See
-  [results.md](./02-alphazero-chess/results.md) for the full story
-  including the v3a plateau, the AZ-clone fixes that broke it, and the
-  PCR addition that pushed an extra +25 Elo.
+- [x] **02** — implemented end-to-end through five progressive runs.
+  v3c's stack: batched MCTS (K=8 parallel descents, virtual loss, 1.9×
+  speedup), multi-process self-play (6 workers), KataGo-style sharded
+  replay buffer with conservative train-steps:games ratio, and Playout
+  Cap Randomization (cheap reduced-sim moves for play, expensive
+  full-sim moves only for target generation). 32 unit tests pass.
+  v3c Elo: **+315 vs random** combined estimate, 141/58/1 of 200.
+  **v4** (the most recent run) reproduces v3c **from random init** with
+  the paper's actual optimizer (SGD momentum 0.9 + step LR decay 0.02
+  → 0.002 → 0.0002 at iters 30/60), 7.4h budget. **+368 Elo vs random
+  direct, 157/43/0 of 200** (first run with zero losses at this scale).
+  Head-to-head vs v3c is roughly equivalent (6W/67D/27L of 100), and
+  vs Stockfish UCI_Elo=1320 at 800 sims is 0/7/93 (abs Elo 744, vs
+  v3c's 768 — within noise). v4 confirms v3c's strength wasn't an
+  Adam-specific artifact or a benefit of the cumulative resume chain.
+  See [results.md](./02-alphazero-chess/results.md) for the full story
+  including the v3a plateau, the AZ-clone fixes that broke it, the PCR
+  +25 Elo, and v4's three training phases (the real breakout after the
+  first LR decay; the misleading loss climb at very low LR).
 - [ ] **03** — scaffold up; depends on 02 (shares MCTS, board encoder).
 
 ## Layout

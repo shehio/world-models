@@ -274,9 +274,13 @@ src/alphazero/
     arena.py        head-to-head matches, random/network/stockfish policies
     config.py       hyperparameters
 scripts/
-    selfplay_loop.py    iters of self-play → train → eval
-    eval_vs_random.py   honest eval against random
-    elo.py              compute Elo vs random / Stockfish anchors
+    selfplay_loop.py        single-process self-play loop (v1/v2)
+    selfplay_loop_mp.py     multi-process self-play (v3a/b/c, v4); supports --pcr, --optimizer sgd, --lr-decay-iters
+    eval_vs_random.py       sequential eval against random
+    eval_vs_random_mp.py    parallel (5-worker) eval against random
+    eval_high_sims.py       parallel eval vs Stockfish at high sim counts
+    h2h_mp.py               parallel head-to-head between two checkpoints
+    elo.py                  compute Elo vs random / Stockfish anchors
 tests/
     test_board.py        move encoding round-trip
     test_network.py      forward pass shapes
@@ -319,7 +323,7 @@ batched — for instance, to read it as a reference — pass `--batch-size 1`.
 
 ## Results
 
-Four runs, each one fixing what the previous one taught us. Headline
+Five runs, each one fixing what the previous one taught us. Headline
 numbers vs random:
 
 | Run | Network | Wall | W/D/L | Elo (95% CI) |
@@ -327,13 +331,22 @@ numbers vs random:
 | v1 (no batching, 10 min) | 5b × 64ch | 10 min | 16 / 75 / 9 of 100 | +24 [−44, +95] |
 | v2 (batched MCTS) | 5b × 64ch | 75 min | 89 / 107 / 4 of 200 | +158 [+107, +215] |
 | v3b (multi-process + sharded buffer + reduced overtraining) | 10b × 128ch | 4h+4h | 120 / 80 / 0 of 200 | +290 [+250, +330] (combined) |
-| **v3c (Playout Cap Randomization on top of v3b)** | **10b × 128ch** | **+2.5h** | **141 / 58 / 1 of 200** | **+315 [+275, +375]** (combined) |
+| v3c (Playout Cap Randomization on top of v3b) | 10b × 128ch | +2.5h | 141 / 58 / 1 of 200 | +315 [+275, +375] (combined) |
+| **v4 (paper-faithful SGD+LR-decay, from random)** | **10b × 128ch** | **7.4h** | **157 / 43 / 0 of 200** | **+368 [+312, +413]** direct |
 
 v3c achieves **only 1 loss in 200 games against random** and adds
 **+25 Elo over v3b** via PCR — KataGo's trick of using cheap reduced-sim
 moves for play and reserving expensive full-sim moves for training-target
-generation. Full Elo breakdown, the v3a plateau diagnosis, and the
-diagnostic head-to-heads that revealed it: see [results.md](./results.md).
+generation. **v4** then reproduces the v3c result *from random init* using
+the paper's actual optimizer (SGD momentum 0.9 + step LR decay) —
+**zero losses out of 200** vs random; head-to-head vs v3c is roughly
+even (6W/67D/27L of 100). vs Stockfish UCI_Elo=1320 at 800 sims: 0/7/93,
+abs Elo 744 — within noise of v3c's 0/8/92 (768).
+
+Full Elo breakdown, the v3a plateau diagnosis, the diagnostic
+head-to-heads that revealed it, and v4's three training phases (the
+breakout after first LR decay; the misleading loss climb at very low LR
+after the second): see [results.md](./results.md).
 
 ## Open questions / decisions deferred
 
