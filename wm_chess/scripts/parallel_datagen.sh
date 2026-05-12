@@ -43,8 +43,12 @@ LIB_DIR="$REPO_ROOT/library"
 : "${T:=1.0}"
 : "${SF_VERSION:=18}"
 : "${BASE_SEED:=42}"
-: "${INSTANCE_TYPE:=c7i.8xlarge}"
+: "${INSTANCE_TYPES:=c7i.8xlarge c6i.8xlarge c7a.8xlarge c5.9xlarge m7i.8xlarge}"
 : "${VOLUME_GB:=80}"
+: "${USE_SPOT:=true}"
+# Allow capacity fallback through these AZ + instance-type combinations.
+# AWS sometimes runs out of spot capacity for a specific (type, AZ) pair
+# even when others have plenty; this fallback handles that.
 
 KEY_PATH="$HOME/.ssh/${KEY_NAME}.pem"
 [ -f "$KEY_PATH" ] || { echo "FATAL: $KEY_PATH not found"; exit 1; }
@@ -85,17 +89,25 @@ log "AMI: $AMI_ID"
 VPC_ID="$(aws ec2 describe-vpcs --region "$REGION" --filters Name=is-default,Values=true --query 'Vpcs[0].VpcId' --output text)"
 log "default VPC: $VPC_ID"
 
-# Pick subnets that offer the instance type.
-SUBNET_AZS="$(aws ec2 describe-instance-type-offerings --region "$REGION" \
-    --location-type availability-zone --filters "Name=instance-type,Values=$INSTANCE_TYPE" \
-    --query 'InstanceTypeOfferings[*].Location' --output text)"
-# Pick the first AZ's default subnet.
-FIRST_AZ="$(echo "$SUBNET_AZS" | awk '{print $1}')"
-SUBNET_ID="$(aws ec2 describe-subnets --region "$REGION" \
-    --filters "Name=vpc-id,Values=$VPC_ID" "Name=availability-zone,Values=$FIRST_AZ" \
-              "Name=default-for-az,Values=true" \
-    --query 'Subnets[0].SubnetId' --output text)"
-log "subnet (AZ $FIRST_AZ): $SUBNET_ID"
+# Build (type, az, subnet_id) candidate list across all AZs that offer
+# any of $INSTANCE_TYPES. Will try them in order until each VM gets one.
+declare -a CANDIDATES_TYPE CANDIDATES_AZ CANDIDATES_SUBNET
+for itype in $INSTANCE_TYPES; do
+    AZS="$(aws ec2 describe-instance-type-offerings --region "$REGION" \
+        --location-type availability-zone --filters "Name=instance-type,Values=$itype" \
+        --query 'InstanceTypeOfferings[*].Location' --output text 2>/dev/null)"
+    for az in $AZS; do
+        sid="$(aws ec2 describe-subnets --region "$REGION" \
+            --filters "Name=vpc-id,Values=$VPC_ID" "Name=availability-zone,Values=$az" \
+                      "Name=default-for-az,Values=true" \
+            --query 'Subnets[0].SubnetId' --output text 2>/dev/null)"
+        [ "$sid" = "None" ] && continue
+        CANDIDATES_TYPE+=("$itype")
+        CANDIDATES_AZ+=("$az")
+        CANDIDATES_SUBNET+=("$sid")
+    done
+done
+log "candidate (type, AZ) combos: ${#CANDIDATES_TYPE[@]}"
 
 # Security group: dedicated to parallel runs.
 MY_CIDR="$(curl -s -4 ifconfig.me)/32"
@@ -131,24 +143,73 @@ EOF
 )
 USER_DATA_B64="$(printf '%s' "$USER_DATA" | base64 | tr -d '\n')"
 
-> "$RUN_DIR/instances.txt"  # format: instance_id  seed  games
+> "$RUN_DIR/instances.txt"  # format: instance_id  seed  games  type  az
 
-log "launching $N_VMS × $INSTANCE_TYPE spot in $REGION ..."
+log "launching $N_VMS VMs (fallback across ${#CANDIDATES_TYPE[@]} (type, AZ) combos) ..."
+market_args=()
+if [ "$USE_SPOT" = "true" ]; then
+    market_args=(--instance-market-options 'MarketType=spot')
+fi
+
+try_launch_one() {
+    # Try each candidate (type, AZ) until one succeeds. Echo the IID line
+    # ("IID seed games type az") to stdout, or empty string on total failure.
+    local seed="$1" games="$2" vmi="$3"
+    for k in "${!CANDIDATES_TYPE[@]}"; do
+        local itype="${CANDIDATES_TYPE[$k]}"
+        local az="${CANDIDATES_AZ[$k]}"
+        local sid="${CANDIDATES_SUBNET[$k]}"
+        local out
+        out="$(aws ec2 run-instances --region "$REGION" \
+            --image-id "$AMI_ID" --instance-type "$itype" \
+            --key-name "$KEY_NAME" --security-group-ids "$SG_ID" \
+            --subnet-id "$sid" \
+            --associate-public-ip-address \
+            "${market_args[@]}" \
+            --user-data "$USER_DATA_B64" \
+            --block-device-mappings "[{\"DeviceName\":\"/dev/sda1\",\"Ebs\":{\"VolumeSize\":$VOLUME_GB,\"VolumeType\":\"gp3\",\"DeleteOnTermination\":true}}]" \
+            --tag-specifications "ResourceType=instance,Tags=[{Key=Project,Value=wm-chess-parallel},{Key=Name,Value=wm-chess-vm${vmi}-d${DEPTH}},{Key=RunTimestamp,Value=$RUN_TS}]" \
+            --query 'Instances[0].InstanceId' --output text 2>&1)"
+        if [[ "$out" =~ ^i-[0-9a-f]+$ ]]; then
+            echo "$out $seed $games $itype $az"
+            return 0
+        fi
+        log "    vm$vmi try $itype@$az → fail (${out:0:80}...)"
+    done
+    return 1
+}
+
+n_launched=0
 for i in $(seq 0 $((N_VMS - 1))); do
     SEED=$(( BASE_SEED + i * 1000 ))
-    IID="$(aws ec2 run-instances --region "$REGION" \
-        --image-id "$AMI_ID" --instance-type "$INSTANCE_TYPE" \
-        --key-name "$KEY_NAME" --security-group-ids "$SG_ID" \
-        --subnet-id "$SUBNET_ID" \
-        --associate-public-ip-address \
-        --instance-market-options 'MarketType=spot' \
-        --user-data "$USER_DATA_B64" \
-        --block-device-mappings "[{\"DeviceName\":\"/dev/sda1\",\"Ebs\":{\"VolumeSize\":$VOLUME_GB,\"VolumeType\":\"gp3\",\"DeleteOnTermination\":true}}]" \
-        --tag-specifications "ResourceType=instance,Tags=[{Key=Project,Value=wm-chess-parallel},{Key=Name,Value=wm-chess-vm$i-d$DEPTH},{Key=RunTimestamp,Value=$RUN_TS}]" \
-        --query 'Instances[0].InstanceId' --output text 2>&1)"
-    echo "$IID $SEED $GAMES_PER_VM" >> "$RUN_DIR/instances.txt"
-    log "  vm$i: $IID  (seed=$SEED  games=$GAMES_PER_VM)"
+    line="$(try_launch_one "$SEED" "$GAMES_PER_VM" "$i")"
+    if [ -z "$line" ]; then
+        log "  vm$i: ALL candidates failed (out of capacity)"
+        continue
+    fi
+    echo "$line" >> "$RUN_DIR/instances.txt"
+    n_launched=$((n_launched + 1))
+    IID="${line%% *}"
+    rest="${line#* }"; SEED2="${rest%% *}"
+    type_az="${rest#* * }"  # leftover after seed games
+    log "  vm$i: $IID  (seed=$SEED  games=$GAMES_PER_VM  $type_az)"
 done
+
+if [ "$n_launched" -lt "$N_VMS" ]; then
+    log "WARNING: only $n_launched / $N_VMS instances launched. Continuing with what we have."
+    if [ "$n_launched" -eq 0 ]; then
+        log "FATAL: zero instances launched. Aborting."
+        exit 1
+    fi
+    # Recompute games per launched VM so total stays at TOTAL_GAMES.
+    GAMES_PER_VM=$(( TOTAL_GAMES / n_launched ))
+    log "redistributed: $GAMES_PER_VM games per VM across $n_launched VMs"
+    # Rewrite the games column in instances.txt for each launched VM.
+    tmpf="$RUN_DIR/instances.txt.new"
+    awk -v g="$GAMES_PER_VM" '{print $1, $2, g, $4, $5}' "$RUN_DIR/instances.txt" > "$tmpf"
+    mv "$tmpf" "$RUN_DIR/instances.txt"
+fi
+N_VMS="$n_launched"
 
 # Wait for all instances to be running and have public IPs.
 log "waiting for all instances to enter 'running' state ..."
