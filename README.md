@@ -1,90 +1,85 @@
-# Learning World Models — a three-project journey
+# Learning World Models — a chess and self-play journey
 
 A self-paced study of model-based reinforcement learning, working up from
 the original "World Models" paper to MuZero, with chess as the testbed
-for the latter two.
+for the latter two — plus two siblings that stress-test the *training
+procedure* on the same architecture (supervised distillation from
+Stockfish, vanilla and scaled).
 
 The thesis: world-model methods all share the same skeleton — *learn a
 compressed state, learn how it evolves, plan or act in that learned
 space* — but they make wildly different choices about **what the latent
 is for**. Implementing them side-by-side makes those choices concrete.
 
-| # | Project | Latent trained for | Planning | Env |
-|---|---|---|---|---|
-| 01 | [Ha & Schmidhuber, *World Models*](./01-ha-world-models/) | Pixel reconstruction (VAE) | None — reactive policy | CarRacing-v3 |
-| 02 | [AlphaZero-chess](./02-alphazero-chess/) | (no latent — true board state) | MCTS over the real env | Chess |
-| 03 | [MuZero-chess](./03-muzero-chess/) | Predicting value/policy/reward | MCTS in **learned latent space** | Chess |
+| # | Project | Latent trained for | Planning | Env | Training signal |
+|---|---|---|---|---|---|
+| 01 | [Ha & Schmidhuber, *World Models*](./01-ha-world-models/) | Pixel reconstruction (VAE) | None — reactive policy | CarRacing-v3 | Random rollouts |
+| 02 | [AlphaZero-chess](./02-alphazero-chess/) | (no latent — true board state) | MCTS over the real env | Chess | Self-play RL |
+| 02b | [Stockfish distillation](./02b-alphazero-stockfish-distill/) | Same as 02 | MCTS at eval only | Chess | **Supervised** from SF hard targets |
+| 02c | [Scaled distillation](./02c-distill-scaled/) | Same as 02 (bigger) | MCTS at eval only | Chess | **Supervised** from SF multipv soft targets |
+| 03 | [MuZero-chess](./03-muzero-chess/) | Predicting value/policy/reward | MCTS in **learned latent space** | Chess | Self-play + dynamics fit |
 
-The progression mirrors a real conceptual arc:
-
-1. **Ha** shows you can learn a usable world model from random data, but
-   the model is trained for reconstruction — it remembers things the
-   policy doesn't care about. The controller is reactive.
-2. **AlphaZero** drops perception entirely (chess is symbolic) and
-   focuses on the other half of the story: search-augmented policy
-   improvement via MCTS over the *true* environment.
-3. **MuZero** is the synthesis. Like Ha, it learns a model. Like
-   AlphaZero, it plans with MCTS. Unlike Ha, the latent is trained only
-   to support value/policy/reward prediction — no decoder, no
-   reconstruction loss. The planner never queries the real env after the
-   first move.
+How 02 vs 02b vs 02c relate — same network, different training
+procedure, different ceiling — is laid out in
+[DISTILLATION_VS_ALPHAZERO.md](./DISTILLATION_VS_ALPHAZERO.md).
 
 ## Status
 
 - [x] **01** — runs end-to-end on Apple Silicon (~2h budget). Trained
-  agent beats random on unseen seeds. See its [README](./01-ha-world-models/README.md).
-- [x] **02b** — *not faithful to AlphaZero*: experimental sibling project
-  on the merged `stockfish-distill` branch. Same network architecture
-  trained by **supervised distillation from Stockfish self-play games**
-  (hard one-hot targets) instead of pure RL. Result: **19 wins / 25 draws / 56
-  losses out of 100 games against Stockfish UCI_Elo=1320** (estimated agent
-  ~1185 Elo). Confirmed our network capacity was not the bottleneck for v3c
-  — pure self-play just couldn't generate strong-enough training targets in
-  the compute budget. See [02b/README](./02b-alphazero-stockfish-distill/README.md).
-- [ ] **02c** — scaled distillation: 20×256 ResNet (paper-sized, ~21M
-  params) trained on Stockfish d10 with **multipv=8 soft policy targets**
-  (the full top-8 move distribution per position, not just SF's argmax).
-  Tests whether bigger capacity + richer targets can narrow the
-  student-teacher gap further. First 10-epoch run on AWS landed at real
-  Elo ~998 (under 02b's 1185); 30-epoch follow-up is in progress.
-  See [02c/README](./02c-distill-scaled/README.md).
-- **How 02b/02c relate to real AlphaZero** is laid out in
-  [DISTILLATION_VS_ALPHAZERO.md](./DISTILLATION_VS_ALPHAZERO.md) — same
-  architecture, different training procedure, different ceiling.
-- [x] **02** — implemented end-to-end through five progressive runs.
-  v3c's stack: batched MCTS (K=8 parallel descents, virtual loss, 1.9×
-  speedup), multi-process self-play (6 workers), KataGo-style sharded
-  replay buffer with conservative train-steps:games ratio, and Playout
-  Cap Randomization (cheap reduced-sim moves for play, expensive
-  full-sim moves only for target generation). 32 unit tests pass.
-  v3c Elo: **+315 vs random** combined estimate, 141/58/1 of 200.
-  **v4** (the most recent run) reproduces v3c **from random init** with
-  the paper's actual optimizer (SGD momentum 0.9 + step LR decay 0.02
-  → 0.002 → 0.0002 at iters 30/60), 7.4h budget. **+368 Elo vs random
-  direct, 157/43/0 of 200** (first run with zero losses at this scale).
-  Head-to-head vs v3c is roughly equivalent (6W/67D/27L of 100), and
-  vs Stockfish UCI_Elo=1320 at 800 sims is 0/7/93 (abs Elo 744, vs
-  v3c's 768 — within noise). v4 confirms v3c's strength wasn't an
-  Adam-specific artifact or a benefit of the cumulative resume chain.
-  See [results.md](./02-alphazero-chess/results.md) for the full story
-  including the v3a plateau, the AZ-clone fixes that broke it, the PCR
-  +25 Elo, and v4's three training phases (the real breakout after the
-  first LR decay; the misleading loss climb at very low LR).
-- [ ] **03** — scaffold up; depends on 02 (shares MCTS, board encoder).
+  agent beats random on unseen seeds.
+  See [01/README](./01-ha-world-models/README.md).
+
+- [x] **02** — five progressive runs (v1 → v5). v3c was the strongest
+  Adam-trained run; **v4 reproduced it from scratch with the paper's
+  SGD+momentum+step-LR optimizer**: +368 Elo vs random direct, 157/43/0
+  of 200 (first run with zero losses at this scale). 32 unit tests pass.
+  Head-to-head vs Stockfish UCI_Elo=1320 at 800 sims: 0/7/93 (abs Elo
+  744). See [02/results.md](./02-alphazero-chess/results.md) for the
+  full v3a-plateau-then-PCR-then-v4 arc.
+
+- [x] **02b** — same architecture, trained by **supervised distillation
+  from Stockfish self-play games with hard one-hot targets**. At
+  Stockfish depth=10: 19W/25D/56L of 100 vs SF UCI_Elo=1320 → **real Elo
+  1185**. Confirmed network capacity was not the bottleneck for v3c —
+  pure self-play just couldn't generate strong-enough training targets
+  in the compute budget.
+  See [02b/README](./02b-alphazero-stockfish-distill/README.md).
+
+- [x] **02c** — **negative result, documented in full.** Scaled
+  distillation: 20×256 ResNet (~21M params, paper-sized) trained on
+  Stockfish d10 with **multipv=8 soft policy targets** for 30 epochs on
+  AWS. Result: real Elo **1086** — ~130 Elo *behind* 02b's 1185 at the
+  same teacher quality. Bigger net + richer targets, fully trained, lost
+  to smaller net + hard one-hot. Three honest hypotheses (soft targets
+  dilute signal at d10, undertrained-per-parameter, T=1 too smooth) and
+  follow-up experiments (A/B/C/D) queued. Crash-safe data library +
+  checkpoint indexing scheme designed after the run so the next one is
+  reproducible end-to-end.
+  See [02c/README](./02c-distill-scaled/README.md) and
+  [02c/results.md](./02c-distill-scaled/results.md).
+
+- [ ] **03** — scaffold up; depends on 02 (shares MCTS, board encoder,
+  ResNet trunk).
 
 ## Layout
 
 ```
 .
-├── 01-ha-world-models/   World Models (2018) on CarRacing-v3
-├── 02-alphazero-chess/   AlphaZero on chess via python-chess
-└── 03-muzero-chess/      MuZero on chess
+├── 01-ha-world-models/                  World Models (2018) on CarRacing-v3
+├── 02-alphazero-chess/                  Self-play AlphaZero on chess (5 runs, v1..v5)
+├── 02b-alphazero-stockfish-distill/     Distillation, 10×128 + hard targets
+├── 02c-distill-scaled/                  Distillation, 20×256 + multipv soft targets
+├── 03-muzero-chess/                     MuZero (scaffold only)
+├── infra/                               Terraform: one-EC2-box AWS experiment harness
+├── DISTILLATION_VS_ALPHAZERO.md         How 02 / 02b / 02c training procedures differ
+├── dashboard.html                       Self-contained run-evolution dashboard
+└── README.md
 ```
 
-Each subfolder is a self-contained project with its own `pyproject.toml`
-and README. Run them independently with `uv`.
+Each `0*` subfolder is a self-contained project with its own
+`pyproject.toml` and README. Run them independently with `uv`.
 
-## Why chess for 02 and 03
+## Why chess for 02 / 02b / 02c / 03
 
 - **Symbolic state**, so we can skip perception and focus on search +
   value learning.
@@ -92,12 +87,24 @@ and README. Run them independently with `uv`.
   dynamics network actually assumes.
 - **Cheap to simulate** — `python-chess` does ~10⁶ legal-move generations
   per second, so MCTS isn't bottlenecked by env speed.
-- **Honest evaluation** is easy: play vs. Stockfish at depth 1–3, vs.
-  random, vs. each prior checkpoint.
+- **Honest evaluation** is easy: play vs Stockfish at depth 1–3, vs
+  random, vs each prior checkpoint.
 
 The goal is *learning*, not SOTA. Each project should fit on a Mac in
-hours, not weeks. Beating random + a weak Stockfish baseline is a
-success criterion; reproducing AlphaZero's published Elo is not.
+hours, not weeks (with AWS as an option when an experiment genuinely
+needs a GPU). Beating random + a weak Stockfish baseline is a success
+criterion; reproducing AlphaZero's published Elo is not.
+
+## Infrastructure
+
+[`infra/`](./infra/) is a single Terraform module that provisions one
+EC2 instance for running the 02c pipeline (or any other project that
+needs a GPU): default VPC, single security group, AZ-filtered subnet,
+AWS Deep Learning Base GPU AMI, spot-or-on-demand toggle, idempotent
+first-boot bootstrap that installs Stockfish + uv. `var.instance_type`
+is the single dial for scale. Architecture diagram and trade-offs are
+in
+[02c/README § AWS / cloud architecture](./02c-distill-scaled/README.md#aws--cloud-architecture).
 
 ## References
 
