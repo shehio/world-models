@@ -55,6 +55,107 @@ top-1 even when the teacher was much stronger than the student —
 classic capacity-bound symptom. The paper-sized 20×256 (~21M params)
 gives the student room to actually fit teacher behavior.
 
+## Network architecture
+
+A standard AlphaZero-style ResNet with two heads. All shapes assume
+batch size `B`, `f = n_filters`, `R = n_res_blocks`. Default is `f=256`,
+`R=20`.
+
+```
+        input board planes
+        (B, 19, 8, 8)
+              │
+              ▼
+        ┌───────────────────────┐
+        │ STEM                  │
+        │  Conv 3×3  19 → f     │  (padding=1, stride=1)
+        │  BatchNorm2d(f)       │
+        │  ReLU                 │
+        └───────────────────────┘
+              │  (B, f, 8, 8)
+              ▼
+        ┌───────────────────────┐
+        │ TRUNK — R × ResBlock  │
+        │                       │
+        │   x ──┬──────────────┐│   each ResBlock:
+        │      │              ││     Conv 3×3 f→f
+        │      ▼              ││     BN → ReLU
+        │   Conv3x3 → BN → ReLU││     Conv 3×3 f→f
+        │      │              ││     BN
+        │      ▼              ││     + x  (residual)
+        │   Conv3x3 → BN      ││     ReLU
+        │      │              ││
+        │      +──────────────┘│
+        │      ▼ ReLU          │
+        │   x_out              │
+        └───────────────────────┘
+              │  (B, f, 8, 8)
+              │
+              ├─────────────────────────┐
+              ▼                         ▼
+   ┌─────────────────┐        ┌─────────────────┐
+   │ POLICY HEAD     │        │ VALUE HEAD      │
+   │  Conv 1×1 f→73  │        │  Conv 1×1 f→1   │
+   │  (B,73,8,8)     │        │  BatchNorm      │
+   │  flatten        │        │  ReLU           │
+   │                 │        │  flatten (B,64) │
+   │                 │        │  FC 64→64 → ReLU│
+   │                 │        │  FC 64→1 → tanh │
+   ▼                 ▼        ▼                 ▼
+ logits (B, 4672)            value (B,) ∈ [-1, +1]
+```
+
+**Move encoding (4672 = 8 × 8 × 73):**
+- planes 0..55: queen-like (8 directions × 7 distances)
+- planes 56..63: 8 knight jumps
+- planes 64..72: underpromotion (3 pieces × 3 directions)
+- queen-promotion lives in the queen-like planes (pawn forward to last rank)
+- index = `plane * 64 + from_square`
+
+**Board encoding (19 planes, white's POV):**
+- 0..5: white P, N, B, R, Q, K (one-hot per square)
+- 6..11: black P, N, B, R, Q, K
+- 12: side-to-move (all-ones plane if white to move)
+- 13..16: castling rights (W-king, W-queen, B-king, B-queen)
+- 17: en-passant target (one-hot)
+- 18: halfmove clock / 100 (no-progress count)
+
+**Param count by config**
+
+| Config | n_blocks | n_filters | ~Params | Used by |
+|---|---:|---:|---:|---|
+| 02b small | 10 | 128 | ~3.0M | 02b d10 (1185 Elo) |
+| 02c default | 20 | 256 | ~21M | 02c-30ep run (1086 Elo) |
+
+Per ResBlock: `2 × (f²·9 + 2f) ≈ 2f² · 9` (dominant term), so doubling
+filters quadruples each block. Doubling blocks doubles trunk cost
+linearly. 20×256 vs 10×128 ≈ 8× params, ≈ 16× FLOPs per forward pass.
+
+## Checkpoint indexing
+
+A `.pt` file alone is **not self-describing** — to load it you need to
+know `(n_blocks, n_filters)` and the data provenance. The library
+path-scheme used for datasets (see "Dataset library" below) is mirrored
+for checkpoints:
+
+```
+checkpoints/
+  sf-<v>/d<D>-mpv<K>-T<T>/g<N>-seed<S>/        ← which data produced these weights
+    net-<R>x<F>/                                ← which arch (R blocks × F filters)
+      <run-id>/                                 ← target-shape + run timestamp
+        manifest.json          ← {arch, data_path, training_args, git_sha}
+        epoch_NNN.pt           ← state_dict only
+        latest.pt              ← symlink to newest epoch
+        train_history.json
+```
+
+**Current status: not yet implemented.** Today's ckpt dirs across the
+repo are free-form (`checkpoints_v3c/`, `checkpoints_v4/`,
+`aws_results/run02_30ep/`, …) and contain no architecture sidecar, so
+loading any of them requires the user to pass `--n-blocks/--n-filters`
+explicitly. The scheme above is the planned fix; see the open question
+at the end of this README.
+
 ## Layout
 
 ```
@@ -69,6 +170,29 @@ scripts/
     run_overnight.sh     — full pipeline: generate → train → eval
 data/, checkpoints/      — gitignored outputs
 ```
+
+## Dataset library
+
+Data generation now supports a structured library indexed by Stockfish
+metadata, so multiple data runs coexist without filename collisions and
+can be cross-referenced from checkpoints:
+
+```
+data/library/
+  sf-<version>/d<D>-mpv<K>-T<T>/g<N>-seed<S>/
+    data.npz            ← assembled tensors (same schema as before)
+    games.pgn           ← all games in PGN form
+    metadata.json       ← {sf_version, depth, multipv, T, host, timestamps, …}
+    chunks/             ← per-worker checkpoint files (every chunk_size games)
+      worker_NN_chunk_MMMM.npz
+      worker_NN.pgn
+```
+
+Workers flush a chunk every `--chunk-size` games (default 50), so a
+crash (spot reclamation, OOM, anything) loses at most that many games
+per worker. `--finalize-only` re-assembles whatever chunks exist into
+`data.npz` + `games.pgn`. The legacy `--output flat.npz` mode is still
+supported for backward compatibility.
 
 ## NPZ schema
 
@@ -120,6 +244,16 @@ Or run the whole pipeline overnight:
 ```bash
 bash scripts/run_overnight.sh
 ```
+
+## Open questions
+
+**Should we adopt the checkpoint-indexing scheme above?** Pros: every
+ckpt becomes self-describing (auto-load without `--n-blocks`/
+`--n-filters`); every model is traceable back to the exact dataset that
+produced it; multiple runs on the same data don't collide. Cons:
+breaking change to ckpt loading (old ckpts need an explicit migration
+or a fallback path); more directory nesting. Open for decision before
+the next training run.
 
 ## Expected outcome (pre-registration)
 
