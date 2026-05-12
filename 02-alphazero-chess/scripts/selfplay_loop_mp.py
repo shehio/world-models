@@ -63,6 +63,18 @@ from alphazero.selfplay import play_game, play_game_pcr
 from alphazero.train import train_step
 
 
+def _load_net_weights(path: str, map_location):
+    """Load just the network state_dict from either format.
+
+    Legacy checkpoints: a raw state_dict.
+    New checkpoints   : {"net": state_dict, "opt": ..., "iter": ..., "hour": ...}
+    """
+    obj = torch.load(path, map_location=map_location)
+    if isinstance(obj, dict) and "net" in obj and isinstance(obj["net"], dict):
+        return obj["net"]
+    return obj
+
+
 def selfplay_worker(args: tuple) -> list:
     """Worker process: load latest checkpoint, play games_per_worker games, return samples."""
     (worker_id, ckpt_path, games_per_worker, cfg, sims, batch_size,
@@ -73,7 +85,7 @@ def selfplay_worker(args: tuple) -> list:
     torch.set_num_threads(1)
 
     network = AlphaZeroNet(cfg)
-    network.load_state_dict(torch.load(ckpt_path, map_location="cpu"))
+    network.load_state_dict(_load_net_weights(ckpt_path, "cpu"))
     network.eval()
 
     device = torch.device("cpu")
@@ -160,6 +172,13 @@ def main():
     # Hourly model dumps (for evolution tracking)
     p.add_argument("--hourly-dump", action="store_true",
                    help="save net_hour_NNN.pt every wall-clock hour for later eval-vs-time analysis.")
+    # Resume bookkeeping: pick up cosine-LR progress, iter filenames, and hourly
+    # numbering where the previous run left off. The model weights resume via
+    # --resume; these flags restore the loop's index state.
+    p.add_argument("--start-iter", type=int, default=0,
+                   help="logical iter number for the first iteration of this run. Used for cosine LR progress and iter checkpoint filenames.")
+    p.add_argument("--start-hour", type=int, default=0,
+                   help="starting index for net_hour_NNN.pt filenames when resuming an hourly-dump run.")
     # Eval
     p.add_argument("--eval-games", type=int, default=10)
     p.add_argument("--eval-sims", type=int, default=100)
@@ -189,6 +208,7 @@ def main():
 
     os.makedirs(args.ckpt_dir, exist_ok=True)
     current_ckpt = os.path.join(args.ckpt_dir, "current.pt")
+    state_ckpt = os.path.join(args.ckpt_dir, "state.pt")  # full {net,opt,iter,hour} for resume
 
     # --- Trainer-side setup ---
     if args.train_device == "auto":
@@ -202,9 +222,23 @@ def main():
         device = torch.device(args.train_device)
     print(f"trainer device: {device}", flush=True)
     network = AlphaZeroNet(cfg).to(device)
+
+    # Load network weights from --resume. The blob may be legacy (raw state_dict)
+    # or new format ({"net", "opt", "iter", "hour"}). We extract the net here and
+    # defer optimizer restoration until after the optimizer object exists.
+    resume_blob = None
     if args.resume:
-        network.load_state_dict(torch.load(args.resume, map_location=device))
-        print(f"resumed from {args.resume}", flush=True)
+        blob = torch.load(args.resume, map_location=device)
+        if isinstance(blob, dict) and "net" in blob and isinstance(blob["net"], dict):
+            network.load_state_dict(blob["net"])
+            resume_blob = blob
+            has_opt = "opt" in blob
+            print(f"resumed from {args.resume} (full state: opt={'yes' if has_opt else 'no'}, "
+                  f"iter={blob.get('iter', '-')}, hour={blob.get('hour', '-')})", flush=True)
+        else:
+            network.load_state_dict(blob)
+            print(f"resumed from {args.resume} (legacy weights-only)", flush=True)
+
     if args.optimizer == "sgd":
         optimizer = torch.optim.SGD(
             network.parameters(),
@@ -217,6 +251,22 @@ def main():
         optimizer = torch.optim.Adam(network.parameters(), lr=cfg.lr,
                                      weight_decay=cfg.weight_decay)
         print(f"optimizer: Adam lr={cfg.lr} weight_decay={cfg.weight_decay}", flush=True)
+
+    # Restore optimizer state and auto-fill start-iter/start-hour from the checkpoint
+    # if the CLI didn't override them.
+    if resume_blob is not None:
+        if "opt" in resume_blob:
+            try:
+                optimizer.load_state_dict(resume_blob["opt"])
+                print(f"  restored optimizer state (momentum buffers preserved)", flush=True)
+            except Exception as e:
+                print(f"  WARN: could not restore optimizer state ({e}); momentum will re-warm", flush=True)
+        if args.start_iter == 0 and "iter" in resume_blob:
+            args.start_iter = int(resume_blob["iter"]) + 1
+            print(f"  auto-set --start-iter {args.start_iter} from checkpoint", flush=True)
+        if args.start_hour == 0 and "hour" in resume_blob:
+            args.start_hour = int(resume_blob["hour"])
+            print(f"  auto-set --start-hour {args.start_hour} from checkpoint", flush=True)
 
     # Parse LR decay boundaries — list of iters at which to multiply lr by lr_decay_factor.
     lr_decay_iters = (
@@ -254,10 +304,14 @@ def main():
     start = time.time()
     total_games = 0
     next_hourly_save = start + 3600  # save first hourly checkpoint at t = +1h
-    hourly_idx = 0
+    hourly_idx = args.start_hour
+    if args.start_iter:
+        print(f"resuming at logical iter {args.start_iter} (cosine progress {args.start_iter / max(1, args.max_iters):.3f})",
+              flush=True)
 
     try:
-        for it in range(args.max_iters):
+        for offset in range(args.max_iters - args.start_iter):
+            it = args.start_iter + offset
             elapsed = time.time() - start
             if elapsed >= args.time_budget:
                 print(f"time budget reached at iter {it} ({elapsed:.0f}s)", flush=True)
@@ -325,6 +379,15 @@ def main():
                       f"val={loss_acc['value_loss']/n:.3f}",
                       flush=True)
 
+            # Save full state (net + optimizer + counters) for crash-safe resume.
+            # Written every iter so a restart loses at most one iter of progress.
+            torch.save({
+                "net": {k: v.cpu() for k, v in network.state_dict().items()},
+                "opt": optimizer.state_dict(),
+                "iter": it,
+                "hour": hourly_idx,
+            }, state_ckpt)
+
             # Step 5: periodic eval + save iter checkpoint.
             if (it + 1) % args.eval_every == 0:
                 t0 = time.time()
@@ -358,9 +421,14 @@ def main():
         # Always shut workers down cleanly.
         pool.close()
         pool.join()
-        # Final checkpoint
+        # Final checkpoint: full state so future runs can resume the optimizer.
         final_path = os.path.join(args.ckpt_dir, "final.pt")
-        torch.save({k: v.cpu() for k, v in network.state_dict().items()}, final_path)
+        torch.save({
+            "net": {k: v.cpu() for k, v in network.state_dict().items()},
+            "opt": optimizer.state_dict(),
+            "iter": locals().get("it", args.start_iter),
+            "hour": hourly_idx,
+        }, final_path)
         print(f"saved final: {final_path}", flush=True)
         print(f"total wall: {(time.time()-start)/60:.1f} min  "
               f"total games: {total_games}",
