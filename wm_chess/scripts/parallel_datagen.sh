@@ -234,7 +234,7 @@ while IFS=' ' read -r IID IP SEED GAMES; do
     (
         deadline=$(( $(date +%s) + 600 ))
         while [ $(date +%s) -lt $deadline ]; do
-            if ssh "${SSH_OPTS[@]}" "ubuntu@$IP" 'test -f /home/ubuntu/BOOTSTRAP_COMPLETE' 2>/dev/null; then
+            if ssh -n "${SSH_OPTS[@]}" "ubuntu@$IP" 'test -f /home/ubuntu/BOOTSTRAP_COMPLETE' 2>/dev/null; then
                 echo "[bootstrap] $IID ($IP) ready"
                 exit 0
             fi
@@ -258,12 +258,12 @@ while IFS=' ' read -r IID IP SEED GAMES; do
         rsync -az -e "ssh ${SSH_OPTS[*]}" \
             --exclude='__pycache__' --exclude='.venv' --exclude='.pytest_cache' --exclude='data/' \
             "$REPO_ROOT/experiments/distill-soft/" "ubuntu@$IP:~/distill-soft/" >/dev/null
-        ssh "${SSH_OPTS[@]}" "ubuntu@$IP" 'cd ~/distill-soft && ~/.local/bin/uv sync' >/dev/null 2>&1
+        ssh -n "${SSH_OPTS[@]}" "ubuntu@$IP" 'cd ~/distill-soft && ~/.local/bin/uv sync' >/dev/null 2>&1
         # nproc - 2 workers, fall back to 1 if tiny
-        NPROC=$(ssh "${SSH_OPTS[@]}" "ubuntu@$IP" 'nproc')
+        NPROC=$(ssh -n "${SSH_OPTS[@]}" "ubuntu@$IP" 'nproc')
         WORKERS=$((NPROC - 2)); [ $WORKERS -lt 1 ] && WORKERS=1
         # Run in tmux so we can survive ssh hiccups; tail the log via ssh later.
-        ssh "${SSH_OPTS[@]}" "ubuntu@$IP" "tmux new-session -d -s gen \"
+        ssh -n "${SSH_OPTS[@]}" "ubuntu@$IP" "tmux new-session -d -s gen \"
             cd ~/distill-soft && ~/.local/bin/uv run python scripts/generate_data.py \\
                 --n-games $GAMES --workers $WORKERS \\
                 --depth $DEPTH --multipv $MULTIPV --temperature-pawns $T \\
@@ -285,7 +285,7 @@ while true; do
     n_total=0
     while IFS=' ' read -r IID IP SEED GAMES; do
         n_total=$((n_total + 1))
-        if ! ssh "${SSH_OPTS[@]}" -o ConnectTimeout=5 "ubuntu@$IP" 'tmux has-session -t gen 2>/dev/null' 2>/dev/null; then
+        if ! ssh -n "${SSH_OPTS[@]}" -o ConnectTimeout=5 "ubuntu@$IP" 'tmux has-session -t gen 2>/dev/null' 2>/dev/null; then
             n_done=$((n_done + 1))
         fi
     done < "$RUN_DIR/ips.txt"
@@ -300,7 +300,7 @@ log "rsync library shards back to laptop ..."
 mkdir -p "$LIB_DIR/games"
 while IFS=' ' read -r IID IP SEED GAMES; do
     rsync -az -e "ssh ${SSH_OPTS[*]}" "ubuntu@$IP:~/library/games/" "$LIB_DIR/games/" || true
-    ssh "${SSH_OPTS[@]}" "ubuntu@$IP" 'cat /tmp/gen.log' > "$RUN_DIR/gen_${IID}.log" 2>/dev/null || true
+    ssh -n "${SSH_OPTS[@]}" "ubuntu@$IP" 'cat /tmp/gen.log' > "$RUN_DIR/gen_${IID}.log" 2>/dev/null || true
 done < "$RUN_DIR/ips.txt"
 
 # ---------- terminate ----------
