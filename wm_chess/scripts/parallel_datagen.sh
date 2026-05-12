@@ -257,14 +257,14 @@ while IFS=' ' read -r IID IP SEED GAMES; do
             "$REPO_ROOT/wm_chess/" "ubuntu@$IP:~/wm_chess/" >/dev/null
         rsync -az -e "ssh ${SSH_OPTS[*]}" \
             --exclude='__pycache__' --exclude='.venv' --exclude='.pytest_cache' --exclude='data/' \
-            "$REPO_ROOT/experiments/distill-soft/" "ubuntu@$IP:~/distill-soft/" >/dev/null
-        ssh -n "${SSH_OPTS[@]}" "ubuntu@$IP" 'cd ~/distill-soft && ~/.local/bin/uv sync' >/dev/null 2>&1
+            "$REPO_ROOT/experiments/distill-soft/" "ubuntu@$IP:~/experiments/distill-soft/" >/dev/null
+        ssh -n "${SSH_OPTS[@]}" "ubuntu@$IP" 'cd ~/experiments/distill-soft && ~/.local/bin/uv sync' >/dev/null 2>&1
         # nproc - 2 workers, fall back to 1 if tiny
         NPROC=$(ssh -n "${SSH_OPTS[@]}" "ubuntu@$IP" 'nproc')
         WORKERS=$((NPROC - 2)); [ $WORKERS -lt 1 ] && WORKERS=1
         # Run in tmux so we can survive ssh hiccups; tail the log via ssh later.
         ssh -n "${SSH_OPTS[@]}" "ubuntu@$IP" "tmux new-session -d -s gen \"
-            cd ~/distill-soft && ~/.local/bin/uv run python scripts/generate_data.py \\
+            cd ~/experiments/distill-soft && ~/.local/bin/uv run python scripts/generate_data.py \\
                 --n-games $GAMES --workers $WORKERS \\
                 --depth $DEPTH --multipv $MULTIPV --temperature-pawns $T \\
                 --seed $SEED --chunk-size 50 \\
