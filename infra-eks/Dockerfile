@@ -3,7 +3,7 @@
 # derived from JOB_COMPLETION_INDEX; `merge` runs merge_shards.py against
 # S3-staged shards.
 
-FROM python:3.12-slim-bookworm
+FROM public.ecr.aws/docker/library/python:3.12-slim-bookworm
 
 # System deps: stockfish + AWS CLI (for S3 I/O).
 RUN apt-get update && \
