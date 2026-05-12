@@ -36,11 +36,21 @@ The progression mirrors a real conceptual arc:
 - [x] **02b** — *not faithful to AlphaZero*: experimental sibling project
   on the merged `stockfish-distill` branch. Same network architecture
   trained by **supervised distillation from Stockfish self-play games**
-  instead of pure RL. Result: **19 wins / 25 draws / 56 losses out of
-  100 games against Stockfish UCI_Elo=1320** (estimated agent ~1185 Elo).
-  Confirmed our network capacity was not the bottleneck for v3c — pure
-  self-play just couldn't generate strong-enough training targets in the
-  compute budget. See [02b/README](./02b-alphazero-stockfish-distill/README.md).
+  (hard one-hot targets) instead of pure RL. Result: **19 wins / 25 draws / 56
+  losses out of 100 games against Stockfish UCI_Elo=1320** (estimated agent
+  ~1185 Elo). Confirmed our network capacity was not the bottleneck for v3c
+  — pure self-play just couldn't generate strong-enough training targets in
+  the compute budget. See [02b/README](./02b-alphazero-stockfish-distill/README.md).
+- [ ] **02c** — scaled distillation: 20×256 ResNet (paper-sized, ~21M
+  params) trained on Stockfish d10 with **multipv=8 soft policy targets**
+  (the full top-8 move distribution per position, not just SF's argmax).
+  Tests whether bigger capacity + richer targets can narrow the
+  student-teacher gap further. First 10-epoch run on AWS landed at real
+  Elo ~998 (under 02b's 1185); 30-epoch follow-up is in progress.
+  See [02c/README](./02c-distill-scaled/README.md).
+- **How 02b/02c relate to real AlphaZero** is laid out in
+  [DISTILLATION_VS_ALPHAZERO.md](./DISTILLATION_VS_ALPHAZERO.md) — same
+  architecture, different training procedure, different ceiling.
 - [x] **02** — implemented end-to-end through five progressive runs.
   v3c's stack: batched MCTS (K=8 parallel descents, virtual loss, 1.9×
   speedup), multi-process self-play (6 workers), KataGo-style sharded
