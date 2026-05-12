@@ -64,7 +64,7 @@ mkdir -p "$RUN_DIR"
 RUNLOG="$RUN_DIR/run.log"
 exec > >(tee -a "$RUNLOG") 2>&1
 
-log() { echo "[$(date -u +%H:%M:%S)] $*"; }
+log() { echo "[$(date -u +%H:%M:%S)] $*" >&2; }  # stderr only: command-substitution $() captures stdout, so log() MUST stay off stdout or its lines will be returned as function "results"
 
 cleanup_on_exit() {
     local rc=$?
