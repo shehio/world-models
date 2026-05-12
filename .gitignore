@@ -23,3 +23,7 @@ videos/
 
 # Local Claude Code state
 .claude/
+# Datasets and chunks live here; the CATALOG.md alongside is tracked.
+library/games/
+library/runs/
+

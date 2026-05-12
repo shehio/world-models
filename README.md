@@ -15,9 +15,9 @@ makes the disagreement concrete.
 | # | Project | Headline result | Latent | Planning | Training signal |
 |---|---|---|---|---|---|
 | **01** | [Ha & Schmidhuber *World Models*](./01-ha-world-models/) | Beats random on CarRacing-v3 (2h budget on M-series Mac) | VAE (pixel recon) | none (reactive) | Random rollouts |
-| **02** | [AlphaZero-chess](./02-alphazero-chess/) | v4: +368 Elo vs random, 0 losses of 200 ([results](./02-alphazero-chess/results.md)) | (true board state) | MCTS over real env | Self-play RL |
-| **02b** | [Stockfish distillation](./02b-alphazero-stockfish-distill/) | Real Elo 1185 (19W/25D/56L vs SF1320) | same as 02 | MCTS at eval only | **Hard** targets from SF d10 |
-| **02c** | [Scaled distillation](./02c-distill-scaled/) | Real Elo 1086 — **negative result**, bigger net + soft targets lost ([results](./02c-distill-scaled/results.md)) | same as 02 (bigger) | MCTS at eval only | **Multipv soft** targets from SF d10 |
+| **02** | [AlphaZero-chess](./experiments/selfplay/) | v4: +368 Elo vs random, 0 losses of 200 ([results](./experiments/selfplay/results.md)) | (true board state) | MCTS over real env | Self-play RL |
+| **02b** | [Stockfish distillation](./experiments/distill-hard/) | Real Elo 1185 (19W/25D/56L vs SF1320) | same as 02 | MCTS at eval only | **Hard** targets from SF d10 |
+| **02c** | [Scaled distillation](./experiments/distill-soft/) | Real Elo 1086 — **negative result**, bigger net + soft targets lost ([results](./experiments/distill-soft/results.md)) | same as 02 (bigger) | MCTS at eval only | **Multipv soft** targets from SF d10 |
 | **03** | [MuZero-chess](./03-muzero-chess/) | scaffold only | Predicts value/policy/reward | MCTS in **learned** latent | Self-play + dynamics |
 
 The 02 → 02b → 02c arc holds *architecture* constant (AlphaZero ResNet)
@@ -30,32 +30,38 @@ hits are in
 
 ```
 .
-├── 01-ha-world-models/              VAE + MDN-RNN + controller (CarRacing-v3)
-├── 02-alphazero-chess/              Self-play AlphaZero (5 progressive runs)
-├── 02b-alphazero-stockfish-distill/ Distillation: 10×128 + hard targets
-├── 02c-distill-scaled/              Distillation: 20×256 + multipv soft targets
-├── 03-muzero-chess/                 MuZero (scaffold)
-├── infra/                           Terraform: one-EC2-box AWS harness
-├── DISTILLATION_VS_ALPHAZERO.md     02 vs 02b vs 02c training procedures
-├── dashboard.html                   Self-contained run-evolution dashboard
-└── README.md                        you are here
+├── 01-ha-world-models/             World Models (2018) on CarRacing-v3
+├── wm_chess/                       Shared chess core (board, network,
+│                                     MCTS, arena, config) — used by all
+│                                     three chess experiments below
+├── experiments/
+│   ├── selfplay/                   Self-play AlphaZero (5 progressive runs)
+│   ├── distill-hard/               Distillation: 10×128 + hard targets
+│   └── distill-soft/               Distillation: 20×256 + multipv soft targets
+├── 03-muzero-chess/                MuZero (scaffold only)
+├── library/                        Indexed game library + auto-generated CATALOG
+├── infra/                          Terraform: one-EC2-box AWS harness
+├── DISTILLATION_VS_ALPHAZERO.md    02 vs 02b vs 02c training procedures
+├── dashboard.html                  Self-contained run-evolution dashboard
+└── README.md                       you are here
 ```
 
-Each `0*` subfolder is a self-contained project with its own
-`pyproject.toml` and README. Run them independently with `uv`.
+Each project under `experiments/` is a self-contained `uv` package that
+imports the canonical board/network/MCTS/arena/config from
+`wm_chess/`. Run them independently with `uv run ...`.
 
 ## Navigation by interest
 
-- **Want to see the diagrams** → [02c/README — Network architecture](./02c-distill-scaled/README.md#network-architecture)
+- **Want to see the diagrams** → [02c/README — Network architecture](./experiments/distill-soft/README.md#network-architecture)
   (Mermaid; renders inline on GitHub). Same architecture used across
   02 / 02b / 02c.
-- **Want the cheapest way to run the AWS pipeline** → [02c/README — Two-box split pipeline](./02c-distill-scaled/README.md#two-box-split-pipeline-the-cheapest-end-to-end)
+- **Want the cheapest way to run the AWS pipeline** → [02c/README — Two-box split pipeline](./experiments/distill-soft/README.md#two-box-split-pipeline-the-cheapest-end-to-end)
   (~$1.15 end-to-end vs ~$9 on a single GPU box).
 - **Want to understand multipv / softmax T / hard-vs-soft targets** →
-  [02c/README — Vocabulary](./02c-distill-scaled/README.md#vocabulary-multipv-softmax-t-in-pawns-target-shape).
-- **Want the AWS infra story** → [02c/README — AWS / cloud architecture](./02c-distill-scaled/README.md#aws--cloud-architecture).
-- **Want to see the negative result** → [02c/results.md](./02c-distill-scaled/results.md).
-- **Want the AlphaZero self-play story (v1 → v5)** → [02/results.md](./02-alphazero-chess/results.md).
+  [02c/README — Vocabulary](./experiments/distill-soft/README.md#vocabulary-multipv-softmax-t-in-pawns-target-shape).
+- **Want the AWS infra story** → [02c/README — AWS / cloud architecture](./experiments/distill-soft/README.md#aws--cloud-architecture).
+- **Want to see the negative result** → [02c/results.md](./experiments/distill-soft/results.md).
+- **Want the AlphaZero self-play story (v1 → v5)** → [02/results.md](./experiments/selfplay/results.md).
 
 ## Why chess (for 02 / 02b / 02c / 03)
 
@@ -69,16 +75,21 @@ experiment genuinely needs a GPU). Beating random and a weak Stockfish
 baseline is the success criterion; reproducing AlphaZero's published
 Elo is not.
 
-## Tests
+## Tests + CI
 
-| Project | Tests | Wall |
+GitHub Actions runs all four test suites on every push to main
+(see `.github/workflows/ci.yml`).
+
+| Package | Tests | Wall |
 |---|---:|---:|
-| 02-alphazero-chess | 42 | 4.4 s |
-| 02b-alphazero-stockfish-distill | 6 | 2.4 s |
-| 02c-distill-scaled | 63 | 2.1 s |
-| **Total** | **111** | **~9 s** |
+| `wm_chess` (shared core + catalog) | 61 (+1 skipped) | ~3 s |
+| `experiments/selfplay` | 42 | ~4 s |
+| `experiments/distill-hard` | 6 | ~2 s |
+| `experiments/distill-soft` | 63 | ~2 s |
+| **Total** | **172** | **~11 s** |
 
-Run them with `uv run python -m pytest tests/` in each subproject.
+Run any one with `uv run python -m pytest tests/` from that package's
+directory.
 
 ## References
 

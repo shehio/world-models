@@ -1,0 +1,14 @@
+# Three overnight data-gen configs for distill-soft experiments.
+# Each line: depth  multipv  T  n_games  seed
+#
+# Estimated cost on c7i.8xlarge spot (32 vCPU, ~$0.34/h):
+#   d10 mpv8 T=1.0  g4000  ~30 min  ~$0.17  (baseline; reproduces 02c)
+#   d15 mpv8 T=1.0  g4000  ~3 h     ~$1.00  (depth-15 teacher; Exp C)
+#   d10 mpv8 T=0.3  g4000  ~30 min  ~$0.17  (sharper softmax; Exp B)
+#   + bootstrap x 3                  ~$0.10
+#   ─────────────────────────────────────────
+#   Total                            ~$1.45  in ~4.5h
+#
+10	8	1.0	4000	42
+15	8	1.0	4000	42
+10	8	0.3	4000	42

@@ -127,8 +127,8 @@ the student can't replicate in one forward pass.
 3. **Phase 3a — eval at baseline sims.** 120 games of the trained net vs Stockfish UCI_Elo=1350 at 800 MCTS sims/move. Apples-to-apples with 02b.
 4. **Phase 3b — stretch eval.** Same 120 games but at 1600 sims/move. Measures the search-budget bonus on top of the trained model.
 
-See [02c-distill-scaled/README.md](./02c-distill-scaled/README.md) for
-runbook details and [02b-alphazero-stockfish-distill/README.md](./02b-alphazero-stockfish-distill/README.md)
+See [experiments/distill-soft/README.md](./experiments/distill-soft/README.md) for
+runbook details and [experiments/distill-hard/README.md](./experiments/distill-hard/README.md)
 for the original hard-target distillation results.
 
 ## Why the ceiling is *teacher − search*

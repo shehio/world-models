@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: pytest — ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: wm_chess
+            dir: wm_chess
+          - package: selfplay
+            dir: experiments/selfplay
+          - package: distill-hard
+            dir: experiments/distill-hard
+          - package: distill-soft
+            dir: experiments/distill-soft
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stockfish (needed for live-engine tests)
+        run: sudo apt-get update -y && sudo apt-get install -y stockfish
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: latest
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync dependencies (${{ matrix.dir }})
+        working-directory: ${{ matrix.dir }}
+        run: uv sync --extra test
+
+      - name: Run pytest
+        working-directory: ${{ matrix.dir }}
+        run: uv run python -m pytest tests/ -v --tb=short
+
+  catalog:
+    name: catalog generator smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: latest
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+      - name: Sync wm_chess
+        working-directory: wm_chess
+        run: uv sync --extra test
+      - name: Run catalog (empty library)
+        run: uv run --project wm_chess python wm_chess/scripts/catalog.py --quiet
+      - name: Verify CATALOG.md was produced
+        run: test -f library/CATALOG.md && head -5 library/CATALOG.md
+
+  shellcheck:
+    name: shellcheck bash scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update -y && sudo apt-get install -y shellcheck
+      - name: Lint scripts
+        run: |
+          set -e
+          for f in $(git ls-files '*.sh'); do
+            echo "=== $f ==="
+            shellcheck -e SC2086,SC2046,SC1091 "$f" || true
+          done
