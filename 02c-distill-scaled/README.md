@@ -21,6 +21,54 @@ of teaching the student "Stockfish played e4 here," we teach it
 "e4 ≈ 38%, Nf3 ≈ 28%, c4 ≈ 18%, ..." Each position now carries the
 teacher's full ranking, not just its argmax.
 
+## Vocabulary: multipv, softmax T in pawns, target shape
+
+Three terms come up everywhere in this README. Quick definitions:
+
+**multipv (multi-PV)** — a standard chess-engine setting. By default
+`MultiPV=1` returns the engine's single best move + continuation +
+score. With `MultiPV=K` Stockfish returns its **top-K moves**, each
+with its own continuation and centipawn score. Stockfish shares the
+alpha-beta tree across the K lines, so `MultiPV=8` is only ~1.3–1.7×
+slower than `MultiPV=1` at the same depth — not 8× slower. We use it
+to record SF's whole top-of-ranking, not just its argmax.
+
+**Softmax T in pawns** — the temperature used to convert SF's
+centipawn scores into a probability distribution:
+
+> `p_i ∝ exp(score_i_cp / (100 · T))`
+
+The `/100` rescales centipawns to pawns, so `T` has units of **pawns
+of evaluation** — intuitive at the chess scale.
+
+| T (pawns) | 50cp gap → split | 200cp gap → split | What it looks like |
+|---:|---:|---:|---|
+| ∞ | 50/50 | 50/50 | uniform over top-K |
+| 1.0 | 62/38 | 88/12 | what 02c used; "still listening" |
+| 0.3 | 84/16 | 99.9/0.1 | sharper; "committing but hedging" |
+| 0.05 | ~100/0 | ~100/0 | effectively hard one-hot |
+
+Mate scores get clipped to ±1000 cp before softmaxing so a forced
+mate doesn't collapse the distribution to one-hot — that would erase
+information about non-mating-but-still-good alternatives.
+
+**Target shape** — the *shape* of the per-position probability
+distribution the student tries to match. Two regimes you can run on
+identical data:
+
+| Target shape | Per-position target | Loss | Used by |
+|---|---|---|---|
+| **Hard one-hot** | `played_move = 1.0`, all others = 0 | `F.cross_entropy(logits, played_move)` | 02b |
+| **Soft multipv** | softmax(scores/100T) over top-K, 0 elsewhere | `-Σ p · log_softmax(logits)` | 02c |
+
+Spike vs bell. Information-theoretically the soft target carries
+more bits per position; empirically at d10 teacher quality, the spike
+actually trains a stronger player at 800 sims (the *hedging failure
+mode* in [results.md](./results.md) hypothesis #1). That's what makes
+Experiment A (same 02c data + 20×256 net, but hard targets) the
+single-variable ablation that pins blame on either the target shape
+or the network size.
+
 ## How multipv soft targets work
 
 For each visited position we call
@@ -61,48 +109,33 @@ A standard AlphaZero-style ResNet with two heads. All shapes assume
 batch size `B`, `f = n_filters`, `R = n_res_blocks`. Default is `f=256`,
 `R=20`.
 
+```mermaid
+flowchart TD
+    IN["input board planes<br/>(B, 19, 8, 8)"]
+    STEM["<b>STEM</b><br/>Conv 3×3  19 → f  (pad=1)<br/>BatchNorm2d(f)<br/>ReLU"]
+    TRUNK["<b>TRUNK</b> — R × ResBlock<br/>(B, f, 8, 8) preserved end-to-end"]
+    POL["<b>POLICY HEAD</b><br/>Conv 1×1  f → 73<br/>flatten"]
+    VAL["<b>VALUE HEAD</b><br/>Conv 1×1  f → 1<br/>BN → ReLU<br/>flatten (B, 64)<br/>FC 64→64 → ReLU<br/>FC 64→1 → tanh"]
+    LOGITS["logits (B, 4672)"]
+    VALUE["value (B,) ∈ [-1, +1]"]
+
+    IN --> STEM --> TRUNK
+    TRUNK --> POL --> LOGITS
+    TRUNK --> VAL --> VALUE
 ```
-        input board planes
-        (B, 19, 8, 8)
-              │
-              ▼
-        ┌───────────────────────┐
-        │ STEM                  │
-        │  Conv 3×3  19 → f     │  (padding=1, stride=1)
-        │  BatchNorm2d(f)       │
-        │  ReLU                 │
-        └───────────────────────┘
-              │  (B, f, 8, 8)
-              ▼
-        ┌───────────────────────┐
-        │ TRUNK — R × ResBlock  │
-        │                       │
-        │   x ──┬──────────────┐│   each ResBlock:
-        │      │              ││     Conv 3×3 f→f
-        │      ▼              ││     BN → ReLU
-        │   Conv3x3 → BN → ReLU││     Conv 3×3 f→f
-        │      │              ││     BN
-        │      ▼              ││     + x  (residual)
-        │   Conv3x3 → BN      ││     ReLU
-        │      │              ││
-        │      +──────────────┘│
-        │      ▼ ReLU          │
-        │   x_out              │
-        └───────────────────────┘
-              │  (B, f, 8, 8)
-              │
-              ├─────────────────────────┐
-              ▼                         ▼
-   ┌─────────────────┐        ┌─────────────────┐
-   │ POLICY HEAD     │        │ VALUE HEAD      │
-   │  Conv 1×1 f→73  │        │  Conv 1×1 f→1   │
-   │  (B,73,8,8)     │        │  BatchNorm      │
-   │  flatten        │        │  ReLU           │
-   │                 │        │  flatten (B,64) │
-   │                 │        │  FC 64→64 → ReLU│
-   │                 │        │  FC 64→1 → tanh │
-   ▼                 ▼        ▼                 ▼
- logits (B, 4672)            value (B,) ∈ [-1, +1]
+
+Each `ResBlock` (R of them stacked, default R=20):
+
+```mermaid
+flowchart LR
+    X["x<br/>(B, f, 8, 8)"]
+    C1["Conv 3×3 f→f<br/>BN<br/>ReLU"]
+    C2["Conv 3×3 f→f<br/>BN"]
+    ADD(("+"))
+    R["ReLU"]
+    OUT["x_out<br/>(B, f, 8, 8)"]
+    X --> C1 --> C2 --> ADD --> R --> OUT
+    X -- "residual skip" --> ADD
 ```
 
 **Move encoding (4672 = 8 × 8 × 73):**
@@ -275,6 +308,56 @@ end-to-end on `g5.8xlarge` spot was ≈ $9. The risk is reclamation
 mid-run: that's why the data-gen chunking refactor exists (see "Dataset
 library" above) — a spot kill now loses ≤ `chunk_size` games per
 worker, not the whole run.
+
+### Two-box split pipeline (the cheapest end-to-end)
+
+The 02c-30ep `g5.8xlarge` run cost ~$9 but ~60% of that bill went to
+**GPU idle time** during the CPU-bound phases (data gen, eval).
+Sizing each phase to the cheapest instance that fits its bottleneck
+brings the bill down to **~$1.15** for the same pipeline:
+
+| Phase | Bottleneck | Instance | Spot $/h | ~Wall | ~Cost |
+|---|---|---|---:|---:|---:|
+| 1: data gen | Stockfish CPU | `c7i.8xlarge` (32 vCPU CPU only) | $0.34 | 28 min | $0.16 |
+| 2: training | A10G GPU | `g5.xlarge` (1 A10G, 4 vCPU) | $0.30 | 75 min | $0.38 |
+| 3: eval × 2 sim budgets | MCTS + SF CPU | `c7i.8xlarge` | $0.34 | 90 min | $0.51 |
+| Bootstrap overhead | 3 × ~3 min | | | | $0.10 |
+| **Total** | | | | **~3h** | **~$1.15** |
+
+That's **~7–8× cheaper** than the all-on-one-GPU box. The orchestrator
+that drives this is [`scripts/run_split_pipeline.sh`](./scripts/run_split_pipeline.sh):
+
+```bash
+# Required: an AWS EC2 key pair you've already created in the region.
+KEY_NAME=mykey bash scripts/run_split_pipeline.sh
+```
+
+What it does, per phase:
+
+1. `terraform apply` with the right `instance_type` for the phase
+2. Waits for `/home/ubuntu/BOOTSTRAP_COMPLETE` (proves user_data is done)
+3. `rsync` the project up; `uv sync` to install deps
+4. `rsync` any input artifact up (dataset for Phase 2, ckpt for Phase 3)
+5. Runs the phase remotely, streaming stdout back to your terminal
+6. `rsync` outputs back to the laptop (`data/`, `checkpoints/`, logs)
+7. `terraform destroy` — no resource left billing
+
+Each handoff is one small file: dataset NPZ ~1.5GB (Phase 1 → 2),
+checkpoint .pt ~80MB (Phase 2 → 3). No S3 needed; the laptop is the
+intermediary.
+
+**Resumability.** Each phase is idempotent if you keep the local
+artifacts: `START_PHASE=2` skips Phase 1 and uses `data/<existing>.npz`.
+If Phase 2 dies mid-training, any per-epoch ckpt that was saved before
+the crash is pulled back; re-run with `START_PHASE=2` to retry on a
+fresh GPU box.
+
+**Risk it doesn't address.** A spot reclamation **during** a phase
+still aborts that phase. For Phase 1, the chunked data library means
+≤ `--chunk-size` games per worker are lost. For Phase 2, you keep all
+already-saved epoch checkpoints (saved every 5 epochs by default), so
+you lose at most 5 epochs of training. For Phase 3, you lose only the
+in-progress sim budget — the other one survived.
 
 ## Layout
 
