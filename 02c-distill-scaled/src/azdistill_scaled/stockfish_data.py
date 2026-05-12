@@ -224,10 +224,22 @@ def play_one_game(
     )
 
 
+def _write_progress(progress_path: str, payload: dict) -> None:
+    """Atomic progress write. Workers in mp.Pool don't pipe stdout back to the
+    parent (with `spawn` start method), so we expose per-worker progress via
+    on-disk JSON instead. Polled externally by scripts/progress.py.
+    """
+    import json
+    tmp = progress_path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(payload, f)
+    os.replace(tmp, progress_path)
+
+
 def _worker_generate(args) -> dict:
     (worker_id, n_games, stockfish_path, sf_elo, sf_skill,
      depth, max_plies, random_opening_plies, multipv,
-     temperature_pawns, seed) = args
+     temperature_pawns, seed, progress_dir) = args
 
     eng_kwargs: dict = {"Threads": 1}
     if sf_elo is not None:
@@ -236,12 +248,27 @@ def _worker_generate(args) -> dict:
     if sf_skill is not None:
         eng_kwargs["Skill Level"] = int(sf_skill)
 
+    progress_path = (
+        os.path.join(progress_dir, f".progress_w{worker_id:02d}.json")
+        if progress_dir else None
+    )
+
     rng = random.Random(seed)
     engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
+    t_start = time.time()
     try:
         engine.configure(eng_kwargs)
         all_states, all_played, all_mpv_idx, all_mpv_logp, all_zs = [], [], [], [], []
         total_below_k = 0
+        total_plies = 0
+
+        if progress_path:
+            _write_progress(progress_path, {
+                "worker_id": worker_id, "games_done": 0, "games_total": n_games,
+                "positions": 0, "plies": 0, "elapsed_s": 0.0, "ts": time.time(),
+                "phase": "start",
+            })
+
         for g in range(n_games):
             states, played, mpv_idx, mpv_logp, zs, stats = play_one_game(
                 engine,
@@ -258,6 +285,27 @@ def _worker_generate(args) -> dict:
             all_mpv_logp.extend(mpv_logp)
             all_zs.extend(zs)
             total_below_k += stats.n_below_k
+            total_plies += stats.plies
+
+            if progress_path:
+                _write_progress(progress_path, {
+                    "worker_id": worker_id,
+                    "games_done": g + 1,
+                    "games_total": n_games,
+                    "positions": len(all_states),
+                    "plies": total_plies,
+                    "elapsed_s": time.time() - t_start,
+                    "ts": time.time(),
+                    "phase": "running",
+                })
+
+        if progress_path:
+            _write_progress(progress_path, {
+                "worker_id": worker_id, "games_done": n_games, "games_total": n_games,
+                "positions": len(all_states), "plies": total_plies,
+                "elapsed_s": time.time() - t_start, "ts": time.time(),
+                "phase": "done",
+            })
 
         return {
             "worker_id": worker_id,
@@ -290,6 +338,7 @@ def generate_dataset_parallel(
     multipv: int = 8,
     temperature_pawns: float = 1.0,
     seed: int = 0,
+    progress_dir: str | None = None,
 ) -> dict:
     """Run n_games of Stockfish self-play across n_workers processes,
     capturing multipv-soft-target NPZ at output_path.
@@ -309,10 +358,18 @@ def generate_dataset_parallel(
     for i in range(n_games % n_workers):
         games_per_worker[i] += 1
 
+    if progress_dir:
+        os.makedirs(progress_dir, exist_ok=True)
+        # Clear stale progress files from any prior run.
+        for f in os.listdir(progress_dir):
+            if f.startswith(".progress_w") and f.endswith(".json"):
+                try: os.remove(os.path.join(progress_dir, f))
+                except OSError: pass
+
     worker_args = [
         (i, games_per_worker[i], stockfish_path, sf_elo, sf_skill,
          depth, max_plies, random_opening_plies, multipv, temperature_pawns,
-         seed + i * 10007)
+         seed + i * 10007, progress_dir)
         for i in range(n_workers)
     ]
 

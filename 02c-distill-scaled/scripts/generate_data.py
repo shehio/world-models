@@ -35,10 +35,17 @@ def main():
                    help="softmax T in pawns. T=1 → 50cp gap ≈ 62/38 split. Lower = sharper.")
     p.add_argument("--output", default="data/sf_multipv.npz")
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--progress-dir", default=None,
+                   help="if set, each worker writes .progress_wNN.json here every game (defaults to dir of --output)")
     args = p.parse_args()
 
     print(f"generating {args.n_games} games | depth={args.depth} | multipv={args.multipv} "
           f"| T={args.temperature_pawns}pw | workers={args.workers}", flush=True)
+
+    import os as _os
+    progress_dir = args.progress_dir or _os.path.dirname(args.output) or "."
+    print(f"progress files: {progress_dir}/.progress_wNN.json  "
+          f"(poll with `scripts/progress.py {progress_dir}`)", flush=True)
 
     meta = generate_dataset_parallel(
         output_path=args.output,
@@ -52,6 +59,7 @@ def main():
         multipv=args.multipv,
         temperature_pawns=args.temperature_pawns,
         seed=args.seed,
+        progress_dir=progress_dir,
     )
     print(f"\ndone in {meta['wall_seconds']/60:.1f} min")
     print(f"  positions:           {meta['n_positions']:,}")
