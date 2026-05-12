@@ -103,15 +103,19 @@ def train_step(
     batch,
     device,
     value_weight: float = 1.0,
+    hard_targets: bool = False,
 ) -> dict[str, float]:
     """One SGD step on a multipv-soft-targets batch.
 
     Batch is (states, mpv_indices, mpv_logprobs, played_moves, zs) — the
     five arrays from MultipvDataset.
 
-    Policy loss is the cross-entropy of the softmax over network logits
-    against Stockfish's sparse distribution. The played-move column is
-    kept ONLY for the top-1-accuracy diagnostic.
+    Policy loss:
+      - hard_targets=False (default): soft-CE against Stockfish's sparse
+        distribution (top-K with softmax-over-cp logprobs).
+      - hard_targets=True: standard CE against Stockfish's actually-played
+        move (one-hot). Same loss as 02b. Lets us A/B the target shape
+        on identical data + identical architecture.
     """
     states_np, mpv_idx_np, mpv_logp_np, played_np, zs_np = batch
 
@@ -125,14 +129,20 @@ def train_step(
     network.train()
     logits, value_pred = network(states)
 
-    # Build the dense target distribution from the sparse (indices, probs) pair.
-    target_dist = _scatter_sparse_target_to_dense(
-        mpv_indices, mpv_logprobs, n_actions=N_POLICY, device=device,
-    )
-
-    # Soft-target cross-entropy: -sum_i p_target_i * log_softmax(logits)_i
-    log_probs = F.log_softmax(logits, dim=-1)
-    policy_loss = -(target_dist * log_probs).sum(dim=-1).mean()
+    if hard_targets:
+        # Same loss as 02b: standard CE against the actually-played move.
+        policy_loss = F.cross_entropy(logits, played)
+        # For the diagnostic block below we still want a "target_dist" of
+        # sorts; build a delta on the played move so target-entropy reads 0.
+        target_dist = F.one_hot(played, num_classes=N_POLICY).float()
+    else:
+        # Soft-target cross-entropy against Stockfish's multipv distribution:
+        # -sum_i p_target_i * log_softmax(logits)_i
+        target_dist = _scatter_sparse_target_to_dense(
+            mpv_indices, mpv_logprobs, n_actions=N_POLICY, device=device,
+        )
+        log_probs = F.log_softmax(logits, dim=-1)
+        policy_loss = -(target_dist * log_probs).sum(dim=-1).mean()
 
     value_loss = F.mse_loss(value_pred, zs)
 

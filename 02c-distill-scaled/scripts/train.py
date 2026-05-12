@@ -46,6 +46,10 @@ def main():
     p.add_argument("--init-from", default=None,
                    help="optional .pt to warm-start from")
     p.add_argument("--save-every", type=int, default=5)
+    p.add_argument("--hard-targets", action="store_true",
+                   help="use standard CE against the actually-played move "
+                        "instead of soft-CE over the multipv distribution. "
+                        "Ablation: same data, same net, different target shape.")
     args = p.parse_args()
 
     cfg = replace(Config(), n_res_blocks=args.n_blocks, n_filters=args.n_filters)
@@ -130,6 +134,7 @@ def main():
             losses = train_step(
                 network, optimizer, batch, device,
                 value_weight=args.value_weight,
+                hard_targets=args.hard_targets,
             )
             for k, v in losses.items():
                 loss_acc[k] += v
