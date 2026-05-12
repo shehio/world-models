@@ -54,10 +54,25 @@ data "aws_vpc" "default" {
   default = true
 }
 
+# Not every AZ in a region offers every instance type. g5.24xlarge for
+# example is unavailable in us-east-1e. We look up the AZs that DO offer
+# the chosen instance_type, then filter default subnets to those AZs.
+data "aws_ec2_instance_type_offerings" "supported" {
+  filter {
+    name   = "instance-type"
+    values = [var.instance_type]
+  }
+  location_type = "availability-zone"
+}
+
 data "aws_subnets" "default" {
   filter {
     name   = "vpc-id"
     values = [data.aws_vpc.default.id]
+  }
+  filter {
+    name   = "availability-zone"
+    values = data.aws_ec2_instance_type_offerings.supported.locations
   }
 }
 
