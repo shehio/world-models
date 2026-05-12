@@ -20,12 +20,20 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import chess
+import chess.engine
+
 from azdistill_scaled.board import N_INPUT_PLANES
 from azdistill_scaled.stockfish_data import (
+    MATE_CP,
     _SF_HEADER_RE,
     _append_worker_pgn,
     _atomic_npz_save,
+    _board_to_pgn,
+    _multipv_to_distribution,
     _save_worker_chunk,
+    _score_to_cp,
+    _stockfish_path_or_die,
     detect_stockfish_version,
     finalize_library_path,
     library_dataset_path,
@@ -179,6 +187,171 @@ class TestFinalize:
         with pytest.raises(FileNotFoundError):
             finalize_library_path(str(tmp_path / "no_such"), multipv=8,
                                   temperature_pawns=1.0)
+
+
+# ---------------------------------------------------------------------------
+# Score → cp conversion + multipv → distribution
+# ---------------------------------------------------------------------------
+
+
+class TestScoreToCp:
+    def test_centipawn_score(self):
+        sc = chess.engine.PovScore(chess.engine.Cp(123), chess.WHITE)
+        assert _score_to_cp(sc) == 123.0
+
+    def test_negative_centipawn(self):
+        sc = chess.engine.PovScore(chess.engine.Cp(-45), chess.WHITE)
+        assert _score_to_cp(sc) == -45.0
+
+    def test_mate_for_is_large_positive(self):
+        # Mate in 3 from STM POV → close to +MATE_CP (python-chess uses
+        # mate_score - distance, so Mate(+3) → 997 when mate_score=1000).
+        sc = chess.engine.PovScore(chess.engine.Mate(3), chess.WHITE)
+        val = _score_to_cp(sc)
+        assert MATE_CP - 10 <= val <= MATE_CP
+
+    def test_mate_against_is_large_negative(self):
+        sc = chess.engine.PovScore(chess.engine.Mate(-2), chess.WHITE)
+        val = _score_to_cp(sc)
+        assert -MATE_CP <= val <= -MATE_CP + 10
+
+
+class TestMultipvToDistribution:
+    def _info(self, score_cp: int, move: chess.Move) -> dict:
+        return {"score": chess.engine.PovScore(chess.engine.Cp(score_cp),
+                                                chess.WHITE),
+                "pv": [move]}
+
+    def test_padding_when_fewer_than_K(self):
+        b = chess.Board()
+        moves = list(b.legal_moves)[:3]
+        info_list = [self._info(50 - i * 20, m) for i, m in enumerate(moves)]
+        idx, logp, n_valid = _multipv_to_distribution(
+            info_list, b, temperature_pawns=1.0, K=8,
+        )
+        assert n_valid == 3
+        assert len(idx) == 8
+        assert idx[3:] == [-1] * 5
+        # Last K-n_valid slots are -inf.
+        assert np.isinf(logp[3:]).all()
+
+    def test_distribution_sums_to_one(self):
+        b = chess.Board()
+        moves = list(b.legal_moves)[:4]
+        info_list = [self._info(50 - i * 30, m) for i, m in enumerate(moves)]
+        idx, logp, n_valid = _multipv_to_distribution(
+            info_list, b, temperature_pawns=1.0, K=4,
+        )
+        probs = np.exp(logp[:n_valid])
+        assert abs(probs.sum() - 1.0) < 1e-5
+
+    def test_temperature_sharper_concentrates(self):
+        """T=0.3 should put more mass on the best move than T=1.0 for the
+        same cp gaps."""
+        b = chess.Board()
+        moves = list(b.legal_moves)[:3]
+        info_list = [self._info(50 - i * 30, m) for i, m in enumerate(moves)]
+        _, logp_smooth, _ = _multipv_to_distribution(
+            info_list, b, temperature_pawns=1.0, K=3,
+        )
+        _, logp_sharp, _ = _multipv_to_distribution(
+            info_list, b, temperature_pawns=0.3, K=3,
+        )
+        p_smooth_top = float(np.exp(logp_smooth[0]))
+        p_sharp_top = float(np.exp(logp_sharp[0]))
+        assert p_sharp_top > p_smooth_top
+
+    def test_empty_info_list(self):
+        """Defensive: pathological "no PVs at all". Should not crash."""
+        b = chess.Board()
+        idx, logp, n_valid = _multipv_to_distribution(
+            [], b, temperature_pawns=1.0, K=4,
+        )
+        assert n_valid == 0
+        assert idx == [-1] * 4
+        assert np.isinf(logp).all()
+
+    def test_illegal_pv_dropped(self):
+        """If Stockfish hands us a PV whose first move isn't legal, drop it."""
+        b = chess.Board()
+        # Construct an illegal move (knight to its own square).
+        illegal = chess.Move(chess.E2, chess.E2)
+        legal = list(b.legal_moves)[0]
+        info_list = [self._info(20, illegal), self._info(10, legal)]
+        idx, logp, n_valid = _multipv_to_distribution(
+            info_list, b, temperature_pawns=1.0, K=4,
+        )
+        assert n_valid == 1  # illegal dropped, only the legal one survives
+
+
+# ---------------------------------------------------------------------------
+# PGN rendering
+# ---------------------------------------------------------------------------
+
+
+class TestBoardToPgn:
+    def test_writes_headers_and_result(self):
+        b = chess.Board()
+        moves = [chess.Move.from_uci("e2e4"),
+                 chess.Move.from_uci("e7e5"),
+                 chess.Move.from_uci("g1f3")]
+        pgn = _board_to_pgn(b, moves, outcome_white_pov=1.0,
+                            headers={"Event": "smoke test",
+                                     "White": "A", "Black": "B"})
+        assert '[Event "smoke test"]' in pgn
+        assert '[Result "1-0"]' in pgn
+        assert "1. e4 e5" in pgn
+
+    def test_draw_outcome(self):
+        pgn = _board_to_pgn(chess.Board(), [], outcome_white_pov=0.0,
+                            headers={"Event": "draw"})
+        assert '[Result "1/2-1/2"]' in pgn
+
+    def test_loss_outcome(self):
+        pgn = _board_to_pgn(chess.Board(), [], outcome_white_pov=-1.0,
+                            headers={"Event": "loss"})
+        assert '[Result "0-1"]' in pgn
+
+    def test_stops_at_illegal_move(self):
+        """If the move list goes bad partway through, the PGN should still
+        be syntactically valid up to the break point."""
+        import chess.pgn as _pgn  # local-only; don't shadow outer `chess`.
+        b = chess.Board()
+        moves = [chess.Move.from_uci("e2e4"),
+                 chess.Move.from_uci("g1f6")]  # nonsense knight jump
+        pgn_text = _board_to_pgn(b, moves, outcome_white_pov=0.0,
+                                 headers={"Event": "partial"})
+        game = _pgn.read_game(io.StringIO(pgn_text))
+        assert game is not None
+        played = list(game.mainline_moves())
+        assert played[0].uci() == "e2e4"
+
+
+# ---------------------------------------------------------------------------
+# Stockfish path resolver
+# ---------------------------------------------------------------------------
+
+
+class TestStockfishPath:
+    def test_explicit_path_returned(self, tmp_path):
+        # Make a fake "binary" file — _stockfish_path_or_die doesn't
+        # validate executability, just existence-via-shutil-which path.
+        # When given an explicit path, it should return it as-is.
+        fake = tmp_path / "stockfish"
+        fake.write_text("#!/bin/sh\n")
+        result = _stockfish_path_or_die(str(fake))
+        assert result == str(fake)
+
+    def test_none_finds_on_path_or_dies(self):
+        # If `stockfish` is on PATH (it is in dev), returns its path.
+        # If not, raises FileNotFoundError.
+        import shutil
+        on_path = shutil.which("stockfish")
+        if on_path:
+            assert _stockfish_path_or_die(None) == on_path
+        else:
+            with pytest.raises(FileNotFoundError):
+                _stockfish_path_or_die(None)
 
 
 # ---------------------------------------------------------------------------
