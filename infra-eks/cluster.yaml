@@ -1,0 +1,66 @@
+# EKS cluster for wm-chess parallel datagen + merge.
+#
+# Design choices:
+#   - Single managed node group with **spot diversification across 6
+#     instance types**. AWS rebalances pods across the family when one
+#     pool hits InsufficientInstanceCapacity. Solves the reclamation-
+#     storm problem the raw-EC2 loop hit.
+#   - capacityType: SPOT (default) with on-demand fallback baked into
+#     the diversified pool.
+#   - 256-vCPU max — matches our spot quota.
+#   - No Karpenter dependency (would require additional setup); the
+#     managed node group with multiple types gives ~80% of the same
+#     resilience for free.
+#
+# Apply with: eksctl create cluster -f cluster.yaml
+# Tear down:  eksctl delete cluster -f cluster.yaml
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: wm-chess
+  region: us-east-1
+  version: "1.31"
+  tags:
+    Project: wm-chess
+    ManagedBy: eksctl
+
+# Default IAM is fine for our basic workload (no AWS service calls from pods).
+iam:
+  withOIDC: true
+
+# One managed node group; spot diversification handled by allowing
+# multiple instance types in the same group.
+managedNodeGroups:
+  - name: workers-spot
+    instanceTypes:
+      - c7i.8xlarge      # 32 vCPU, $0.34/h spot ideal
+      - c6i.8xlarge
+      - c7a.8xlarge      # AMD variant
+      - c5.9xlarge       # older Intel, often more capacity
+      - m7i.8xlarge
+      - m6i.8xlarge
+    spot: true
+    desiredCapacity: 0   # scale up via the Job's resource requests
+    minSize: 0
+    maxSize: 8           # 8 × ~32 vCPU = 256 vCPU = our quota
+    volumeSize: 80
+    volumeType: gp3
+    ssh:
+      enableSsm: true    # SSM lets us session-manager into nodes if needed (no key, no SG ports)
+    labels:
+      role: worker
+      capacityType: spot
+    taints: []
+    tags:
+      Project: wm-chess
+
+# Add-ons we need.
+addons:
+  - name: vpc-cni
+  - name: coredns
+  - name: kube-proxy
+  - name: aws-ebs-csi-driver       # for any PVCs (used by merge job)
+    wellKnownPolicies:
+      ebsCSIController: true

@@ -1,0 +1,63 @@
+# Indexed parallel Job: 8 pods, each generates one shard.
+#
+# - JOB_COMPLETION_INDEX is auto-injected (0..7); entrypoint.sh maps it
+#   to seed = BASE_SEED + IDX * 1000.
+# - completionMode: Indexed gives each pod a stable identity. Reclaimed
+#   pods are restarted with the same index by the Job controller (when
+#   backoffLimit isn't exceeded).
+# - backoffLimit: 24 lets us absorb up to ~3 reclamations per pod
+#   on average before we give up.
+# - ttlSecondsAfterFinished: 3600 → resources clean up automatically.
+#
+# Apply: kubectl apply -f k8s/job-gen.yaml
+# Watch: kubectl get pods -l job-name=wm-chess-gen -w
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wm-chess-gen
+  labels:
+    app: wm-chess
+    role: gen
+spec:
+  parallelism: 8
+  completions: 8
+  completionMode: Indexed
+  backoffLimit: 24
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: wm-chess
+        role: gen
+    spec:
+      restartPolicy: Never            # pod-level retries handled by Job controller
+      serviceAccountName: wm-chess-runner
+      nodeSelector:
+        role: worker
+      containers:
+        - name: gen
+          image: PLACEHOLDER_IMAGE     # filled in by run.sh
+          args: ["gen"]
+          env:
+            - name: S3_BUCKET
+              value: PLACEHOLDER_BUCKET
+            - name: S3_PREFIX
+              value: PLACEHOLDER_PREFIX
+            - name: BASE_SEED
+              value: "42"
+            - name: GAMES_PER_POD
+              value: "12500"
+            - name: DEPTH
+              value: "15"
+            - name: MULTIPV
+              value: "8"
+            - name: T_PAWNS
+              value: "1.0"
+          resources:
+            requests:
+              cpu: "30"                # 30 of 32 vCPU per c7i.8xlarge
+              memory: "20Gi"
+            limits:
+              cpu: "32"
+              memory: "60Gi"

@@ -1,0 +1,53 @@
+# Merge Job — runs after wm-chess-gen completes.
+#
+# This is a single-pod Job (parallelism=1). It pulls every shard from
+# s3://$S3_BUCKET/$S3_PREFIX/shards/, concatenates them via the existing
+# merge_shards.py, and uploads the merged dataset back to
+# s3://$S3_BUCKET/$S3_PREFIX/merged/.
+#
+# Triggered by run.sh after `kubectl wait --for=condition=complete job/wm-chess-gen`.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wm-chess-merge
+  labels:
+    app: wm-chess
+    role: merge
+spec:
+  parallelism: 1
+  completions: 1
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: wm-chess
+        role: merge
+    spec:
+      restartPolicy: Never
+      serviceAccountName: wm-chess-runner
+      nodeSelector:
+        role: worker
+      containers:
+        - name: merge
+          image: PLACEHOLDER_IMAGE
+          args: ["merge"]
+          env:
+            - name: S3_BUCKET
+              value: PLACEHOLDER_BUCKET
+            - name: S3_PREFIX
+              value: PLACEHOLDER_PREFIX
+            - name: N_PODS
+              value: "8"
+            - name: MULTIPV
+              value: "8"
+            - name: T_PAWNS
+              value: "1.0"
+          resources:
+            requests:
+              cpu: "2"
+              memory: "8Gi"
+            limits:
+              cpu: "4"
+              memory: "16Gi"
