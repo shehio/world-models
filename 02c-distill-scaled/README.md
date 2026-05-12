@@ -139,15 +139,41 @@ path-scheme used for datasets (see "Dataset library" below) is mirrored
 for checkpoints:
 
 ```
-checkpoints/
-  sf-<v>/d<D>-mpv<K>-T<T>/g<N>-seed<S>/        ← which data produced these weights
-    net-<R>x<F>/                                ← which arch (R blocks × F filters)
-      <run-id>/                                 ← target-shape + run timestamp
-        manifest.json          ← {arch, data_path, training_args, git_sha}
-        epoch_NNN.pt           ← state_dict only
-        latest.pt              ← symlink to newest epoch
-        train_history.json
+checkpoints/sf-<v>/d<D>-mpv<K>-T<T>/g<N>-seed<S>/net-<R>x<F>/<run-id>/
 ```
+
+**Each segment means:**
+
+| Segment | Stands for | Example | Source |
+|---|---|---|---|
+| `sf-<v>` | Stockfish **teacher** version | `sf-18`, `sf-14.1` | detected from UCI banner |
+| `d<D>-mpv<K>-T<T>` | Dataset config: search depth, multipv width, softmax T in pawns | `d10-mpv8-T1`, `d15-mpv8-T0.3` | gen args |
+| `g<N>-seed<S>` | Games + RNG seed used to generate them | `g4000-seed42` | gen args |
+| `net-<R>x<F>` | ResNet config: R blocks × F filters per block | `net-10x128` (~3M), `net-20x256` (~21M) | training args |
+| `<run-id>` | Target shape + timestamp (so re-runs don't collide) | `soft-2026-05-12T15Z`, `hard-2026-05-13T09Z` | training args |
+
+**Worked example.** This concrete path:
+
+```
+checkpoints/sf-18/d10-mpv8-T1/g4000-seed42/net-20x256/soft-2026-05-12T15Z/
+    manifest.json
+    epoch_000.pt
+    epoch_005.pt
+    epoch_029.pt
+    latest.pt -> epoch_029.pt
+    train_history.json
+```
+
+…fully decodes to: "Stockfish-18 teacher at depth 10, multipv 8,
+softmax T=1 pawn, 4000 games with seed 42, distilled into a 20×256
+ResNet (≈21M params) using soft cross-entropy targets, training started
+2026-05-12 15:00 UTC, last saved epoch is 029." Anyone (or any script)
+can derive every hyperparameter from the path alone.
+
+**Symmetry with the data library.** The first three segments are
+identical to `data/library/sf-<v>/d<D>-mpv<K>-T<T>/g<N>-seed<S>/`, so
+stripping the last two path components gives you the dataset the model
+was trained on — no separate index needed.
 
 **Current status: not yet implemented.** Today's ckpt dirs across the
 repo are free-form (`checkpoints_v3c/`, `checkpoints_v4/`,
@@ -155,6 +181,100 @@ repo are free-form (`checkpoints_v3c/`, `checkpoints_v4/`,
 loading any of them requires the user to pass `--n-blocks/--n-filters`
 explicitly. The scheme above is the planned fix; see the open question
 at the end of this README.
+
+## AWS / cloud architecture
+
+Everything lives in `infra/` and is one `terraform apply` away. The
+shape of the deployment — explicitly minimal so it's a one-shot
+experiment box, not production infra:
+
+```
+   developer laptop                         AWS  (us-east-1 by default)
+   ┌────────────────────┐
+   │  infra/*.tf        │ ── terraform plan/apply ──▶ AWS API
+   │  AWS creds in env  │                              │
+   └─────────┬──────────┘                              │ provisions
+             │                                          ▼
+             │                              ┌──────────────────────────┐
+             │                              │  Default VPC (per region)│
+             │                              │                          │
+             │                              │  ┌─ Security Group ──┐   │
+             │                              │  │ ingress 22/tcp    │   │
+             │                              │  │  from var.allowed_│   │
+             │                              │  │  ssh_cidr         │   │
+             │                              │  │ egress all (apt,  │   │
+             │                              │  │  pip, github)     │   │
+             │                              │  └───────────────────┘   │
+             │                              │                          │
+             │                              │  Subnet (filtered to     │
+             │                              │   AZs where var.instance │
+             │                              │   _type is actually      │
+             │                              │   offered — uses         │
+             │                              │   aws_ec2_instance_type_ │
+             │                              │   offerings data source) │
+             │                              │           │              │
+             │                              │           │ launches     │
+             │                              │           ▼              │
+             │                              │  ┌────────────────────┐  │
+             │   ssh / rsync / scp          │  │ EC2 instance       │  │
+             ├─────────────────────────────▶│  │  AMI: AWS DL Base  │  │
+             │      (public IPv4)           │  │   GPU AMI (Ubuntu) │  │
+             │                              │  │  type: var.        │  │
+             │                              │  │   instance_type    │  │
+             │                              │  │  market: spot or   │  │
+             │                              │  │   on-demand        │  │
+             │                              │  │   (var.use_spot)   │  │
+             │                              │  │                    │  │
+             │                              │  │  user_data.sh:     │  │
+             │                              │  │   apt: stockfish,  │  │
+             │                              │  │     htop, tmux, jq │  │
+             │                              │  │   uv install       │  │
+             │                              │  │                    │  │
+             │                              │  │  Root EBS:         │  │
+             │                              │  │   gp3, 200 GB,     │  │
+             │                              │  │   delete-on-       │  │
+             │                              │  │   termination      │  │
+             │                              │  └────────┬───────────┘  │
+             │                              │           │              │
+             │                              │           │ work dir:    │
+             │                              │           ▼              │
+             │                              │  ~/02c-distill-scaled/   │
+             │                              │     data/library/...     │
+             │                              │     checkpoints/...      │
+             │                              │     scripts/run_         │
+             │                              │       overnight.sh       │
+             │                              └──────────────────────────┘
+             │
+             ▼ on teardown:
+   `terraform destroy -auto-approve`  →  instance, SG, EBS all deleted
+```
+
+**What this gets us:**
+- One command (`terraform apply`) → everything provisioned.
+- One command (`terraform destroy`) → everything billed gone.
+- `terraform output rsync_command` and `ssh_command` give paste-ready
+  strings, so there's no infra-state in your head between sessions.
+- `var.instance_type` is the single dial for scale; the Terraform
+  module auto-filters subnets to AZs where that instance type is
+  actually offered (we hit this with `g5.24xlarge` not being in
+  `us-east-1e`, lost an hour to it once — the filter is the fix).
+
+**What's deliberately NOT in this architecture:**
+
+| Not included | Why |
+|---|---|
+| S3 / shared storage | One-shot box; pull results back via `scp`. No "team-shared" experiments. |
+| Custom VPC, NAT, IAM roles | Default VPC + SSH key is enough. Don't run this in a prod account; use a sandbox. |
+| Auto-scaling group / multiple instances | Single experiment, single box. Multi-host coordination isn't worth it at this scale. |
+| Stateful Terraform backend (S3 + DynamoDB) | `terraform.tfstate` is local; fine for one engineer running occasional experiments. |
+| SSM Session Manager / IAM instance profile | Plain SSH key access is simpler. (Cost: when an instance can't be SSHed to, you can't recover it — happened once.) |
+| Code baked into AMI or pulled via user_data | `rsync` from laptop after boot — lets you iterate locally without re-provisioning. |
+
+**Cost discipline.** Spot is default (~70% off on-demand). 02c-30ep
+end-to-end on `g5.8xlarge` spot was ≈ $9. The risk is reclamation
+mid-run: that's why the data-gen chunking refactor exists (see "Dataset
+library" above) — a spot kill now loses ≤ `chunk_size` games per
+worker, not the whole run.
 
 ## Layout
 
