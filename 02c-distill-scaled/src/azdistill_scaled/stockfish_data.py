@@ -53,6 +53,8 @@ from dataclasses import dataclass
 
 import chess
 import chess.engine
+import chess.pgn
+import io
 import numpy as np
 
 from .board import N_INPUT_PLANES, N_POLICY, encode_board, encode_move
@@ -141,6 +143,26 @@ def _multipv_to_distribution(
     return out_indices, out_logprobs, n_valid
 
 
+def _board_to_pgn(board_initial: chess.Board, moves: list[chess.Move],
+                  outcome_white_pov: float, headers: dict) -> str:
+    """Replay a sequence of moves from the initial position and emit a PGN
+    string. Used to build the game-library archive alongside the NPZ.
+    """
+    game = chess.pgn.Game()
+    for k, v in headers.items():
+        game.headers[k] = str(v)
+    node = game
+    b = board_initial.copy()
+    for mv in moves:
+        if mv not in b.legal_moves:
+            break  # paranoia
+        node = node.add_variation(mv)
+        b.push(mv)
+    result_str = "1-0" if outcome_white_pov > 0 else "0-1" if outcome_white_pov < 0 else "1/2-1/2"
+    game.headers["Result"] = result_str
+    return str(game)
+
+
 def play_one_game(
     engine: chess.engine.SimpleEngine,
     depth: int,
@@ -149,7 +171,7 @@ def play_one_game(
     multipv: int,
     temperature_pawns: float,
     rng: random.Random,
-) -> tuple[list[np.ndarray], list[int], list[list[int]], list[np.ndarray], list[float], GameStats]:
+) -> tuple[list[np.ndarray], list[int], list[list[int]], list[np.ndarray], list[float], GameStats, str]:
     """Play one Stockfish self-play game with multipv-soft-target recording.
 
     Returns
@@ -163,6 +185,11 @@ def play_one_game(
     """
     board = chess.Board()
 
+    # Track every move played (random opening + Stockfish moves) so we can
+    # emit a complete PGN for the game library.
+    initial_board = board.copy()
+    all_moves_played: list[chess.Move] = []
+
     # Random opening plies for diversity. We don't *record* these — Stockfish
     # didn't choose them — but it doesn't matter that they're random because
     # all targets come from Stockfish's subsequent search.
@@ -170,7 +197,9 @@ def play_one_game(
         if board.is_game_over(claim_draw=True):
             break
         moves = list(board.legal_moves)
-        board.push(rng.choice(moves))
+        mv = rng.choice(moves)
+        all_moves_played.append(mv)
+        board.push(mv)
 
     states: list[np.ndarray] = []
     played_moves: list[int] = []
@@ -207,6 +236,7 @@ def play_one_game(
         multipv_indices.append(mpv_idx)
         multipv_logprobs.append(mpv_logp)
         side_to_move_at_record.append(board.turn == chess.WHITE)
+        all_moves_played.append(played_move)
         board.push(played_move)
 
     outcome = board.outcome(claim_draw=True)
@@ -216,12 +246,23 @@ def play_one_game(
         z_white = 1.0 if outcome.winner == chess.WHITE else -1.0
     zs = [z_white if w else -z_white for w in side_to_move_at_record]
 
+    pgn_text = _board_to_pgn(
+        initial_board, all_moves_played, z_white,
+        headers={
+            "Event": "Stockfish self-play (02c distillation data gen)",
+            "White": f"Stockfish d={depth} mpv={multipv}",
+            "Black": f"Stockfish d={depth} mpv={multipv}",
+            "Plies": len(all_moves_played),
+            "RandomOpeningPlies": random_opening_plies,
+        },
+    )
+
     return states, played_moves, multipv_indices, multipv_logprobs, zs, GameStats(
         plies=len(states),
         outcome=z_white,
         n_recorded=len(states),
         n_below_k=n_below_k,
-    )
+    ), pgn_text
 
 
 def _write_progress(progress_path: str, payload: dict) -> None:
@@ -259,6 +300,7 @@ def _worker_generate(args) -> dict:
     try:
         engine.configure(eng_kwargs)
         all_states, all_played, all_mpv_idx, all_mpv_logp, all_zs = [], [], [], [], []
+        all_pgns: list[str] = []
         total_below_k = 0
         total_plies = 0
 
@@ -270,7 +312,7 @@ def _worker_generate(args) -> dict:
             })
 
         for g in range(n_games):
-            states, played, mpv_idx, mpv_logp, zs, stats = play_one_game(
+            states, played, mpv_idx, mpv_logp, zs, stats, pgn_text = play_one_game(
                 engine,
                 depth=depth,
                 max_plies=max_plies,
@@ -284,6 +326,7 @@ def _worker_generate(args) -> dict:
             all_mpv_idx.extend(mpv_idx)
             all_mpv_logp.extend(mpv_logp)
             all_zs.extend(zs)
+            all_pgns.append(pgn_text)
             total_below_k += stats.n_below_k
             total_plies += stats.plies
 
@@ -317,6 +360,7 @@ def _worker_generate(args) -> dict:
             "multipv_logprobs": (np.stack(all_mpv_logp)
                                  if all_mpv_logp else np.zeros((0, multipv), dtype=np.float32)),
             "zs": np.array(all_zs, dtype=np.float32),
+            "pgns": all_pgns,
             "n_games": n_games,
             "n_positions": len(all_states),
             "n_below_k": total_below_k,
@@ -383,6 +427,7 @@ def generate_dataset_parallel(
     multipv_indices = np.concatenate([r["multipv_indices"] for r in results], axis=0)
     multipv_logprobs = np.concatenate([r["multipv_logprobs"] for r in results], axis=0)
     zs = np.concatenate([r["zs"] for r in results], axis=0)
+    all_pgns = [pgn for r in results for pgn in r.get("pgns", [])]
     n_below_k = sum(r["n_below_k"] for r in results)
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
@@ -394,11 +439,20 @@ def generate_dataset_parallel(
         temperature_pawns=np.array(temperature_pawns, dtype=np.float32),
     )
 
+    # Sibling .pgn file: full game library, one PGN per game, separated by
+    # blank lines (standard concat-PGN format). Lets us replay any game
+    # without re-running Stockfish.
+    pgn_path = os.path.splitext(output_path)[0] + ".pgn"
+    with open(pgn_path, "w") as f:
+        f.write("\n\n".join(all_pgns))
+
     return {
         "n_games": n_games,
         "n_positions": int(states.shape[0]),
         "wall_seconds": dt,
         "output": output_path,
+        "pgn_output": pgn_path,
+        "n_pgns": len(all_pgns),
         "depth": depth,
         "multipv": multipv,
         "temperature_pawns": temperature_pawns,
