@@ -1,0 +1,25 @@
+# CodeBuild buildspec for the wm-chess image.
+#
+# Pulls source from GitHub (depth=1), builds infra-eks/Dockerfile against
+# the whole repo as build context, pushes to ECR.
+
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo "Logging in to ECR..."
+      - ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - aws ecr describe-repositories --region "$AWS_REGION" --repository-names "$ECR_REPO" >/dev/null 2>&1
+        || aws ecr create-repository --region "$AWS_REGION" --repository-name "$ECR_REPO" >/dev/null
+      - aws ecr get-login-password --region "$AWS_REGION"
+        | docker login --username AWS --password-stdin "$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+      - IMAGE="$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:latest"
+      - echo "Image tag: $IMAGE"
+  build:
+    commands:
+      - docker build --platform linux/amd64 -t "$IMAGE" -f infra-eks/Dockerfile .
+  post_build:
+    commands:
+      - docker push "$IMAGE"
+      - echo "Pushed $IMAGE"

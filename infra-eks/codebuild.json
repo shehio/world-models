@@ -1,0 +1,24 @@
+{
+  "name": "wm-chess-image",
+  "description": "Build the wm-chess datagen+merge container, push to ECR.",
+  "source": {
+    "type": "GITHUB",
+    "location": "https://github.com/shehio/world-models.git",
+    "gitCloneDepth": 1,
+    "buildspec": "infra-eks/buildspec.yml"
+  },
+  "artifacts": {
+    "type": "NO_ARTIFACTS"
+  },
+  "environment": {
+    "type": "LINUX_CONTAINER",
+    "image": "aws/codebuild/standard:7.0",
+    "computeType": "BUILD_GENERAL1_MEDIUM",
+    "privilegedMode": true,
+    "environmentVariables": [
+      {"name": "AWS_REGION",   "value": "us-east-1"},
+      {"name": "ECR_REPO",     "value": "wm-chess"}
+    ]
+  },
+  "serviceRole": "arn:aws:iam::ACCOUNT_ID:role/CodeBuildWMChessRole"
+}
