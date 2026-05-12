@@ -1,0 +1,25 @@
+[project]
+name = "selfplay"
+version = "0.1.0"
+description = "AlphaZero self-play RL experiment (uses wm_chess shared core)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "wm-chess",
+    "torch>=2.5",
+    "numpy>=1.26",
+    "python-chess>=1.999",
+    "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/selfplay"]
+
+[tool.uv.sources]
+wm-chess = { path = "../../wm_chess", editable = true }
