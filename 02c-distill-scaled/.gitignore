@@ -3,3 +3,6 @@ checkpoints/
 __pycache__/
 *.pyc
 .venv/
+
+# AWS run artifacts: keep history + logs, exclude large checkpoint binaries
+aws_results/**/*.pt
