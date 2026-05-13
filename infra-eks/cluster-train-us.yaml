@@ -39,8 +39,12 @@ iam:
 managedNodeGroups:
   - name: gpu-spot
     instanceTypes:
-      - g6.xlarge        # L4 24 GB, ~$0.32/h spot us-east (vs $0.805 OD)
-      - g5.xlarge        # A10G 24 GB, ~$0.40/h spot us-east (fallback)
+      - g6.xlarge        # L4 24 GB, ~$0.32/h spot us-east (preferred)
+      - g5.xlarge        # A10G 24 GB, ~$0.40/h spot us-east
+      - g4dn.xlarge      # T4 16 GB, ~$0.16/h spot us-east — broadest
+                         # capacity availability. Added 2026-05-13 after
+                         # both g6 and g5 hit UnfulfillableCapacity for
+                         # 10+ minutes in this region.
     spot: true
     minSize: 0
     desiredCapacity: 1
