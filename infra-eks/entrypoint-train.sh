@@ -108,7 +108,39 @@ python scripts/train.py \
     "${INIT_ARG[@]}" \
     "${HARD_ARG[@]}"
 
-echo "=== uploading checkpoints + history + metadata to $CKPT_S3_BASE/ ==="
-aws s3 sync "$CKPT_DIR/" "$CKPT_S3_BASE/" --no-progress
+echo "=== syncing checkpoints + history + metadata so they're durable before eval ==="
+aws s3 sync "$CKPT_DIR/" "$CKPT_S3_BASE/" --no-progress --exclude "*.tmp.*" --exclude ".eval_progress_*"
+
+# ---- EVAL ---------------------------------------------------------------
+# Run eval.py vs Stockfish on the LAST checkpoint. Output goes to a log
+# file alongside the checkpoints, then re-sync to S3.
+if [ "${RUN_EVAL:-1}" != "0" ]; then
+    LATEST_CKPT=$(ls -1 "$CKPT_DIR"/distilled_epoch*.pt 2>/dev/null | sort -V | tail -1)
+    if [ -z "$LATEST_CKPT" ]; then
+        echo "=== no checkpoint produced; skipping eval ==="
+    else
+        : "${EVAL_WORKERS:=4}"
+        : "${EVAL_GAMES_PER_WORKER:=25}"
+        : "${EVAL_SIMS:=800}"
+        : "${STOCKFISH_ELO:=1320}"
+        EVAL_LOG="$CKPT_DIR/eval_results.txt"
+        echo "=== eval vs Stockfish elo=$STOCKFISH_ELO on $LATEST_CKPT ==="
+        cd /work/experiments/distill-soft
+        python scripts/eval.py \
+            --ckpt "$LATEST_CKPT" \
+            --workers "$EVAL_WORKERS" \
+            --games-per-worker "$EVAL_GAMES_PER_WORKER" \
+            --sims "$EVAL_SIMS" \
+            --n-blocks "$N_BLOCKS" \
+            --n-filters "$N_FILTERS" \
+            --stockfish-elo "$STOCKFISH_ELO" \
+            --agent-device cuda \
+            2>&1 | tee "$EVAL_LOG" || echo "=== eval failed; continuing ==="
+        echo "=== eval log written to $EVAL_LOG ==="
+    fi
+fi
+
+echo "=== final S3 sync (training + eval artifacts) ==="
+aws s3 sync "$CKPT_DIR/" "$CKPT_S3_BASE/" --no-progress --exclude "*.tmp.*" --exclude ".eval_progress_*"
 
 echo "=== $(date -u) done ==="
