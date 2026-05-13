@@ -61,9 +61,18 @@ case "$CMD" in
         ;;
     submit)
         log "rendering job-train.yaml and kubectl apply"
+        # envsubst doesn't support ${VAR:-default}, so set every var
+        # the YAML references with shell ${VAR:=default} before export.
+        : "${EPOCHS:=20}"
+        : "${BATCH_SIZE:=256}"
+        : "${LR:=1e-3}"
+        : "${N_BLOCKS:=20}"
+        : "${N_FILTERS:=256}"
+        : "${SAVE_EVERY:=5}"
         export S3_BUCKET="$BUCKET" S3_PREFIX="$PREFIX" \
                AWS_DEFAULT_REGION="$REGION" ECR_URI_TRAIN="$ECR_URI" \
-               JOB_PREFIX_LABEL="$(echo "$PREFIX" | tr '[:upper:].' '[:lower:]-' | cut -c1-63)"
+               JOB_PREFIX_LABEL="$(echo "$PREFIX" | tr '[:upper:].' '[:lower:]-' | cut -c1-63)" \
+               EPOCHS BATCH_SIZE LR N_BLOCKS N_FILTERS SAVE_EVERY
         envsubst < "$THIS_DIR/k8s/job-train.yaml" | kubectl apply -f -
         log "submitted; tail logs with: $0 logs $REGION_ARG"
         ;;

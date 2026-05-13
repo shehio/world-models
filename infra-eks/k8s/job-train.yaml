@@ -1,11 +1,14 @@
 # Single-pod training Job. Apply per cluster; the cluster picks up the
 # GPU node group via the nodeSelector + nvidia.com/gpu toleration.
 #
-# Render with envsubst before applying:
-#   envsubst < job-train.yaml | kubectl apply -f -
+# Render with envsubst before applying — every ${VAR} below must be
+# explicitly exported in the caller. envsubst does NOT understand
+# ${VAR:-default}, so defaults must come from the caller (run-train.sh
+# handles this with :=).
 #
 # Required env (set by run-train.sh or your shell):
-#   S3_BUCKET, S3_PREFIX, AWS_DEFAULT_REGION, ECR_URI_TRAIN
+#   S3_BUCKET, S3_PREFIX, AWS_DEFAULT_REGION, ECR_URI_TRAIN,
+#   JOB_PREFIX_LABEL, EPOCHS, BATCH_SIZE, LR, N_BLOCKS, N_FILTERS, SAVE_EVERY
 
 apiVersion: batch/v1
 kind: Job
@@ -41,17 +44,17 @@ spec:
             - name: AWS_DEFAULT_REGION
               value: "${AWS_DEFAULT_REGION}"
             - name: EPOCHS
-              value: "${EPOCHS:-20}"
+              value: "${EPOCHS}"
             - name: BATCH_SIZE
-              value: "${BATCH_SIZE:-256}"
+              value: "${BATCH_SIZE}"
             - name: LR
-              value: "${LR:-1e-3}"
+              value: "${LR}"
             - name: N_BLOCKS
-              value: "${N_BLOCKS:-20}"
+              value: "${N_BLOCKS}"
             - name: N_FILTERS
-              value: "${N_FILTERS:-256}"
+              value: "${N_FILTERS}"
             - name: SAVE_EVERY
-              value: "${SAVE_EVERY:-5}"
+              value: "${SAVE_EVERY}"
           resources:
             limits:
               nvidia.com/gpu: 1
