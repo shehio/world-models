@@ -1,0 +1,54 @@
+# Training cluster (GPU) for us-east-1.
+#
+# Separate from cluster.yaml (the CPU datagen cluster) so the two
+# workflows can run independently and so the GPU cluster can be torn
+# down the moment training is done — GPU control planes bill while
+# the cluster exists, GPU nodes bill while they're up.
+#
+# Apply: eksctl create cluster -f cluster-train-us.yaml
+# Tear:  eksctl delete cluster -f cluster-train-us.yaml
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: wm-chess-train
+  region: us-east-1
+  version: "1.31"
+  tags:
+    Project: wm-chess
+    Component: training
+    ManagedBy: eksctl
+
+iam:
+  withOIDC: true
+  serviceAccounts:
+    - metadata:
+        name: wm-chess-train-sa
+        namespace: default
+      # The training pod needs to GET merged/data.npz and PUT
+      # checkpoints/*.pt. Using AWS-managed S3 RW for simplicity; tighten
+      # later if needed.
+      attachPolicyARNs:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+# GPU node group. On-demand for predictable training; switch to spot
+# once we've verified the resume-from-ckpt path works under reclaim.
+managedNodeGroups:
+  - name: gpu-od
+    instanceTypes:
+      - g6.xlarge        # L4 24 GB, $0.805/h us-east on-demand
+      - g5.xlarge        # A10G 24 GB, $1.006/h us-east on-demand (fallback)
+    spot: false
+    minSize: 0
+    desiredCapacity: 1
+    maxSize: 1
+    volumeSize: 100      # 30 GB image + 0.5 GB data + 1 GB ckpts = comfy at 100
+    amiFamily: AmazonLinux2
+    labels:
+      role: gpu-trainer
+    taints:
+      - key: nvidia.com/gpu
+        value: "true"
+        effect: NoSchedule
+    privateNetworking: false

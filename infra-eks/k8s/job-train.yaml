@@ -1,0 +1,60 @@
+# Single-pod training Job. Apply per cluster; the cluster picks up the
+# GPU node group via the nodeSelector + nvidia.com/gpu toleration.
+#
+# Render with envsubst before applying:
+#   envsubst < job-train.yaml | kubectl apply -f -
+#
+# Required env (set by run-train.sh or your shell):
+#   S3_BUCKET, S3_PREFIX, AWS_DEFAULT_REGION, ECR_URI_TRAIN
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wm-chess-train
+  labels:
+    app: wm-chess-train
+    prefix: ${JOB_PREFIX_LABEL}
+spec:
+  backoffLimit: 4
+  template:
+    metadata:
+      labels:
+        app: wm-chess-train
+    spec:
+      serviceAccountName: wm-chess-train-sa
+      restartPolicy: OnFailure
+      nodeSelector:
+        role: gpu-trainer
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: train
+          image: ${ECR_URI_TRAIN}:latest
+          imagePullPolicy: Always
+          env:
+            - name: S3_BUCKET
+              value: "${S3_BUCKET}"
+            - name: S3_PREFIX
+              value: "${S3_PREFIX}"
+            - name: AWS_DEFAULT_REGION
+              value: "${AWS_DEFAULT_REGION}"
+            - name: EPOCHS
+              value: "${EPOCHS:-20}"
+            - name: BATCH_SIZE
+              value: "${BATCH_SIZE:-256}"
+            - name: LR
+              value: "${LR:-1e-3}"
+            - name: N_BLOCKS
+              value: "${N_BLOCKS:-20}"
+            - name: N_FILTERS
+              value: "${N_FILTERS:-256}"
+            - name: SAVE_EVERY
+              value: "${SAVE_EVERY:-5}"
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+            requests:
+              cpu: "2"
+              memory: 8Gi

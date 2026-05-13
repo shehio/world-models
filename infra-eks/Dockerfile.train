@@ -1,0 +1,42 @@
+# Container for wm-chess SUPERVISED DISTILLATION TRAINING on EKS GPU nodes.
+#
+# Distinct from the CPU gen/merge image (./Dockerfile) which builds on
+# python:3.12-slim + stockfish. Training doesn't need stockfish at all
+# and needs CUDA torch, so we use the PyTorch official CUDA base.
+#
+# Critical: `pip install --no-deps` for our editable packages so we
+# DON'T accidentally replace the bundled CUDA torch with a CPU wheel
+# from PyPI.
+
+FROM pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates curl unzip \
+    && curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip \
+    && unzip -q /tmp/awscli.zip -d /tmp \
+    && /tmp/aws/install \
+    && rm -rf /tmp/aws /tmp/awscli.zip \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Our editable packages + their non-torch deps. --no-deps prevents
+# torch reinstall; we then explicitly install numpy + python-chess + tqdm
+# (everything wm-chess/distill-soft actually need that isn't already
+# in the pytorch image).
+WORKDIR /work
+COPY wm_chess /work/wm_chess
+COPY experiments/distill-soft /work/experiments/distill-soft
+RUN pip install --no-cache-dir "numpy>=1.26" "python-chess>=1.999" "tqdm>=4.66" \
+    && pip install --no-cache-dir --no-deps -e /work/wm_chess \
+    && pip install --no-cache-dir --no-deps -e /work/experiments/distill-soft
+
+# Verify GPU torch is intact (build fails fast if pip stomped on it).
+RUN python -c "import torch; assert torch.version.cuda, 'CUDA torch not installed'; print('torch:', torch.__version__, 'cuda:', torch.version.cuda)"
+
+COPY infra-eks/entrypoint-train.sh /entrypoint-train.sh
+RUN chmod +x /entrypoint-train.sh
+
+ENTRYPOINT ["/entrypoint-train.sh"]
