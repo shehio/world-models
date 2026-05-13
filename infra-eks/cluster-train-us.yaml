@@ -32,14 +32,16 @@ iam:
       attachPolicyARNs:
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
 
-# GPU node group. On-demand for predictable training; switch to spot
-# once we've verified the resume-from-ckpt path works under reclaim.
+# GPU node group. Spot for cost — entrypoint-train.sh has resume-from-
+# ckpt that pulls the latest distilled_epoch*.pt from S3 if a previous
+# attempt was reclaimed, so the worst case is losing up to SAVE_EVERY
+# epochs (default 5).
 managedNodeGroups:
-  - name: gpu-od
+  - name: gpu-spot
     instanceTypes:
-      - g6.xlarge        # L4 24 GB, $0.805/h us-east on-demand
-      - g5.xlarge        # A10G 24 GB, $1.006/h us-east on-demand (fallback)
-    spot: false
+      - g6.xlarge        # L4 24 GB, ~$0.32/h spot us-east (vs $0.805 OD)
+      - g5.xlarge        # A10G 24 GB, ~$0.40/h spot us-east (fallback)
+    spot: true
     minSize: 0
     desiredCapacity: 1
     maxSize: 1

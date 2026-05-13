@@ -23,11 +23,14 @@ iam:
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
 
 managedNodeGroups:
-  - name: gpu-od
+  - name: gpu-spot
     instanceTypes:
-      - g6.xlarge        # L4 24 GB
-      - g5.xlarge        # A10G 24 GB (fallback)
-    spot: false
+      # g6.xlarge is NOT offered in eu-west-1 — fall back to g5/g4dn.
+      # On-demand G/VT quota is 0 in this region (only spot quota of 128
+      # vCPU), so spot is mandatory not a choice.
+      - g5.xlarge        # A10G 24 GB, ~$0.40/h spot eu-west
+      - g4dn.xlarge      # T4 16 GB, ~$0.20/h spot eu-west (fallback)
+    spot: true
     minSize: 0
     desiredCapacity: 1
     maxSize: 1
