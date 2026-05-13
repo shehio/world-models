@@ -22,4 +22,4 @@ build-backend = "hatchling.build"
 packages = ["src/distill_hard"]
 
 [tool.uv.sources]
-wm-chess = { path = "../../wm_chess", editable = true }
+wm-chess = { workspace = true }

@@ -1,0 +1,40 @@
+[project]
+name = "world-models"
+version = "0.1.0"
+description = "AlphaZero + Stockfish distillation on chess, with EKS-based parallel datagen"
+requires-python = ">=3.12,<3.13"
+# This is a workspace root; it has no code of its own. Real packages
+# live under the members listed below.
+dependencies = []
+
+[project.optional-dependencies]
+# Workspace-wide test deps. Each member also declares its own [test]
+# extra so members can be tested in isolation in CI, but at root level
+# `uv sync --extra test` installs pytest once for the whole workspace.
+test = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# nothing to build at root; declare an empty include so hatchling doesn't
+# scan the whole tree looking for a package.
+bypass-selection = true
+
+[tool.uv.workspace]
+members = [
+    "wm_chess",
+    "experiments/selfplay",
+    "experiments/distill-hard",
+    "experiments/distill-soft",
+]
+
+[tool.uv.sources]
+# In the workspace, the wm-chess dep in each experiment resolves to the
+# local member rather than PyPI. Keeps the editable-install behavior the
+# experiments already use, without the per-member `[tool.uv.sources]`
+# path declarations being load-bearing.
+wm-chess = { workspace = true }
