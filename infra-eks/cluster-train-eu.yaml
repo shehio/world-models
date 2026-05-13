@@ -34,7 +34,14 @@ managedNodeGroups:
     minSize: 0
     desiredCapacity: 1
     maxSize: 1
-    volumeSize: 100
+    # 250 GB to hold:
+    #   - 3.2 GB docker image
+    #   - 2.5 GB merged data.npz
+    #   - ~145 GB extracted .npy files (memmap-readable; entrypoint
+    #     extracts on first run via _extract_npz_to_memmap_dir)
+    #   - ~5 GB checkpoints over 20 epochs
+    #   - OS + buffer
+    volumeSize: 250
     amiFamily: AmazonLinux2
     labels:
       role: gpu-trainer

@@ -30,6 +30,10 @@ with hard targets (the network is hedging across the top-K), but the
 """
 from __future__ import annotations
 
+import json
+import os
+import zipfile
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -38,21 +42,77 @@ from torch.utils.data import Dataset
 from wm_chess.board import N_POLICY
 
 
+def _extract_npz_to_memmap_dir(npz_path: str, extract_dir: str) -> None:
+    """Stream-extract a .npz (which is a zip of .npy files) to a directory
+    of plain .npy files. Uses zipfile, not numpy, so peak memory is the
+    zip-decompress buffer (a few MB), NOT the full uncompressed array.
+
+    Necessary for our merged datasets — at 30M positions per dataset the
+    uncompressed `states` array is ~145 GB, which doesn't fit in any
+    sensible GPU instance's RAM. With this extraction + mmap_mode='r' in
+    the loader, only the batch-sized slice the trainer touches is paged
+    in. The full file stays on disk; the OS page cache handles
+    sequential access efficiently.
+
+    Idempotent: skips re-extraction if all expected .npy files already
+    exist.
+    """
+    os.makedirs(extract_dir, exist_ok=True)
+    with zipfile.ZipFile(npz_path) as zf:
+        for entry in zf.infolist():
+            target = os.path.join(extract_dir, entry.filename)
+            if os.path.exists(target) and os.path.getsize(target) > 0:
+                continue
+            # Stream copy — never loads the full array.
+            with zf.open(entry) as src, open(target, "wb") as dst:
+                while True:
+                    buf = src.read(8 * 1024 * 1024)  # 8 MB chunks
+                    if not buf:
+                        break
+                    dst.write(buf)
+
+
 class MultipvDataset(Dataset):
     """Loads (state, multipv_indices, multipv_logprobs, played_move, z)
     from an NPZ created by 02c's stockfish_data.generate_dataset_parallel.
 
     Returns numpy arrays; the train loop tensorizes them.
+
+    For large datasets that don't fit in RAM, the loader transparently
+    extracts the .npz to a sibling `_extracted/` directory and memory-maps
+    each .npy file. Set `mmap=False` to force the old in-RAM path
+    (useful for tiny test fixtures or if extract_dir disk is constrained).
     """
 
-    def __init__(self, npz_path: str):
-        d = np.load(npz_path)
-        self.states = d["states"]
-        self.moves = d["moves"]              # played move (top-1) per position
-        self.multipv_indices = d["multipv_indices"]    # (N, K) int64
-        self.multipv_logprobs = d["multipv_logprobs"]  # (N, K) float32
-        self.zs = d["zs"]
-        self.K = int(d["K"]) if "K" in d.files else self.multipv_indices.shape[1]
+    def __init__(self, npz_path: str, mmap: bool = True,
+                 extract_dir: str | None = None):
+        if mmap:
+            extract_dir = extract_dir or (npz_path + "_extracted")
+            _extract_npz_to_memmap_dir(npz_path, extract_dir)
+            self.states = np.load(os.path.join(extract_dir, "states.npy"),
+                                  mmap_mode="r")
+            self.moves = np.load(os.path.join(extract_dir, "moves.npy"),
+                                 mmap_mode="r")
+            self.multipv_indices = np.load(
+                os.path.join(extract_dir, "multipv_indices.npy"),
+                mmap_mode="r")
+            self.multipv_logprobs = np.load(
+                os.path.join(extract_dir, "multipv_logprobs.npy"),
+                mmap_mode="r")
+            self.zs = np.load(os.path.join(extract_dir, "zs.npy"),
+                              mmap_mode="r")
+            k_path = os.path.join(extract_dir, "K.npy")
+            self.K = (int(np.load(k_path)) if os.path.exists(k_path)
+                      else int(self.multipv_indices.shape[1]))
+        else:
+            d = np.load(npz_path)
+            self.states = d["states"]
+            self.moves = d["moves"]              # played move (top-1) per pos
+            self.multipv_indices = d["multipv_indices"]    # (N, K) int64
+            self.multipv_logprobs = d["multipv_logprobs"]  # (N, K) float32
+            self.zs = d["zs"]
+            self.K = (int(d["K"]) if "K" in d.files
+                      else self.multipv_indices.shape[1])
 
     def __len__(self) -> int:
         return self.states.shape[0]
