@@ -42,7 +42,12 @@ managedNodeGroups:
       - m7i.8xlarge
       - m6i.8xlarge
     spot: true
-    desiredCapacity: 0   # scale up via the Job's resource requests
+    # IMPORTANT: desiredCapacity matches maxSize so the nodegroup comes up
+    # already scaled when `eksctl create cluster` runs. Setting this to 0
+    # without installing a cluster-autoscaler leaves pods Pending forever
+    # (Ireland cluster hit this on 2026-05-12 — 7h of idle control plane
+    # before the bug was noticed).
+    desiredCapacity: 8
     minSize: 0
     maxSize: 8           # 8 × ~32 vCPU = 256 vCPU = our quota
     volumeSize: 80

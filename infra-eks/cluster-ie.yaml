@@ -1,0 +1,56 @@
+# EKS cluster for wm-chess datagen — eu-west-1 (Ireland).
+# Beefier per-node instances (16xlarge = 64 vCPU each) so each pod gets
+# 2x the CPU of the us-east-1 cluster's 8xlarge nodes. Smaller fleet
+# (4 nodes max) but same total ~256 vCPU envelope.
+#
+# Apply with: eksctl create cluster -f cluster-ie.yaml
+# Tear down:  eksctl delete cluster -f cluster-ie.yaml
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: wm-chess-ie
+  region: eu-west-1
+  version: "1.31"
+  tags:
+    Project: wm-chess
+    ManagedBy: eksctl
+
+iam:
+  withOIDC: true
+
+managedNodeGroups:
+  - name: workers-spot-ie
+    instanceTypes:
+      - c7i.16xlarge     # 64 vCPU
+      - c6i.16xlarge
+      - c7a.16xlarge     # AMD
+      - m7i.16xlarge
+      - m6i.16xlarge
+      - c5.18xlarge      # older but often more capacity
+    spot: true
+    # IMPORTANT: desiredCapacity matches maxSize so the nodegroup comes up
+    # already scaled when `eksctl create cluster` runs. Setting this to 0
+    # without installing a cluster-autoscaler leaves pods Pending forever.
+    desiredCapacity: 4
+    minSize: 0
+    maxSize: 4           # 4 × ~64 vCPU = 256 vCPU
+    volumeSize: 80
+    volumeType: gp3
+    ssh:
+      enableSsm: true
+    labels:
+      role: worker
+      capacityType: spot
+    taints: []
+    tags:
+      Project: wm-chess
+
+addons:
+  - name: vpc-cni
+  - name: coredns
+  - name: kube-proxy
+  - name: aws-ebs-csi-driver
+    wellKnownPolicies:
+      ebsCSIController: true

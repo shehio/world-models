@@ -124,6 +124,16 @@ render_and_apply() {
 # Delete prior Jobs of the same names so re-runs are clean.
 kubectl delete job wm-chess-gen wm-chess-merge --ignore-not-found=true >/dev/null 2>&1
 
+# Safety: ensure the nodegroup has desiredCapacity == N_PODS BEFORE we
+# apply the Job. Otherwise pods sit Pending forever (no cluster-autoscaler
+# installed). Hit this on the Ireland cluster — 7h of idle control plane.
+NG_NAME="$(eksctl get nodegroup --cluster "$CLUSTER" --region "$REGION" -o json 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d[0]["Name"])')"
+NG_DESIRED="$(eksctl get nodegroup --cluster "$CLUSTER" --region "$REGION" -o json 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d[0]["DesiredCapacity"])')"
+if [ "$NG_DESIRED" -lt "$N_PODS" ]; then
+    log "scaling nodegroup $NG_NAME to $N_PODS (was $NG_DESIRED)"
+    eksctl scale nodegroup --cluster "$CLUSTER" --region "$REGION" --name "$NG_NAME" --nodes "$N_PODS" --nodes-min 0 --nodes-max "$N_PODS" >/dev/null
+fi
+
 render_and_apply infra-eks/k8s/job-gen.yaml
 log "gen Job submitted. Watching pods (kubectl get pods -l job-name=wm-chess-gen -w in another terminal)..."
 
