@@ -18,14 +18,18 @@ metadata:
     app: wm-chess-train
     prefix: ${JOB_PREFIX_LABEL}
 spec:
-  backoffLimit: 4
+  # Set both to "no retry" while debugging: a failed container's pod
+  # stays around so `kubectl logs` works. Bump backoffLimit back to 4
+  # once training is known-good.
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
   template:
     metadata:
       labels:
         app: wm-chess-train
     spec:
       serviceAccountName: wm-chess-train-sa
-      restartPolicy: OnFailure
+      restartPolicy: Never
       nodeSelector:
         role: gpu-trainer
       tolerations:

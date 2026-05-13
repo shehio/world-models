@@ -38,8 +38,9 @@ managedNodeGroups:
     amiFamily: AmazonLinux2
     labels:
       role: gpu-trainer
-    taints:
-      - key: nvidia.com/gpu
-        value: "true"
-        effect: NoSchedule
+    # No taint: this cluster's only purpose is the training Job, and the
+    # taint blocked CoreDNS (and other system pods) from scheduling
+    # since they don't tolerate nvidia.com/gpu. The nodeSelector
+    # `role=gpu-trainer` is what actually targets the GPU node for the
+    # Job; the taint added nothing here.
     privateNetworking: false

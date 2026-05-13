@@ -35,7 +35,10 @@ case "$REGION_ARG" in
 esac
 
 CLUSTER_SPEC="$THIS_DIR/cluster-train-${REGION_ARG}.yaml"
-KUBECTL_CTX="wm-chess-train-${REGION}"
+# Per-region kubeconfig context (created by `aws eks update-kubeconfig
+# ... --alias`). Used as `kubectl --context "$KUBECTL_CTX"` EVERYWHERE
+# below so we never depend on the operator's current-context.
+KUBECTL_CTX="wm-train-${REGION_ARG}"
 
 log() { echo "[$(date -u +%H:%M:%S) $REGION_ARG] $*"; }
 
@@ -73,17 +76,20 @@ case "$CMD" in
                AWS_DEFAULT_REGION="$REGION" ECR_URI_TRAIN="$ECR_URI" \
                JOB_PREFIX_LABEL="$(echo "$PREFIX" | tr '[:upper:].' '[:lower:]-' | cut -c1-63)" \
                EPOCHS BATCH_SIZE LR N_BLOCKS N_FILTERS SAVE_EVERY
-        envsubst < "$THIS_DIR/k8s/job-train.yaml" | kubectl apply -f -
+        # Always delete-then-apply: Job spec.template is immutable, so
+        # if a prior Job with the same name exists, apply errors out.
+        kubectl --context "$KUBECTL_CTX" delete job wm-chess-train --ignore-not-found --wait=true
+        envsubst < "$THIS_DIR/k8s/job-train.yaml" | kubectl --context "$KUBECTL_CTX" apply -f -
         log "submitted; tail logs with: $0 logs $REGION_ARG"
         ;;
     logs)
         log "tailing pod logs (Ctrl-C to stop)"
-        POD=$(kubectl get pods -l app=wm-chess-train -o jsonpath='{.items[0].metadata.name}')
-        kubectl logs -f "$POD"
+        POD=$(kubectl --context "$KUBECTL_CTX" get pods -l app=wm-chess-train -o jsonpath='{.items[0].metadata.name}')
+        kubectl --context "$KUBECTL_CTX" logs -f "$POD"
         ;;
     status)
         log "Job + pod status"
-        kubectl get jobs,pods -l app=wm-chess-train
+        kubectl --context "$KUBECTL_CTX" get jobs,pods -l app=wm-chess-train
         log "checkpoints in s3://$BUCKET/$PREFIX/checkpoints/"
         aws s3 ls "s3://$BUCKET/$PREFIX/checkpoints/" --region "$REGION" 2>/dev/null \
             || echo "  (none yet)"

@@ -37,15 +37,16 @@ iam:
 # attempt was reclaimed, so the worst case is losing up to SAVE_EVERY
 # epochs (default 5).
 managedNodeGroups:
-  - name: gpu-spot
+  - name: gpu-od
     instanceTypes:
-      - g6.xlarge        # L4 24 GB, ~$0.32/h spot us-east (preferred)
-      - g5.xlarge        # A10G 24 GB, ~$0.40/h spot us-east
-      - g4dn.xlarge      # T4 16 GB, ~$0.16/h spot us-east — broadest
-                         # capacity availability. Added 2026-05-13 after
-                         # both g6 and g5 hit UnfulfillableCapacity for
-                         # 10+ minutes in this region.
-    spot: true
+      - g6.xlarge        # L4 24 GB, $0.80/h us-east on-demand
+      - g5.xlarge        # A10G 24 GB, $1.006/h us-east on-demand
+      - g4dn.xlarge      # T4 16 GB, $0.526/h us-east on-demand
+    # On-demand. Spot in us-east hit UnfulfillableCapacity twice during
+    # the initial rollout (g6+g5+g4dn) and lost a running g4dn node
+    # within 30 min. Account has 32 vCPU OD G/VT quota — plenty for
+    # one g6.xlarge (4 vCPU). Pay extra for predictability.
+    spot: false
     minSize: 0
     desiredCapacity: 1
     maxSize: 1
@@ -53,8 +54,6 @@ managedNodeGroups:
     amiFamily: AmazonLinux2
     labels:
       role: gpu-trainer
-    taints:
-      - key: nvidia.com/gpu
-        value: "true"
-        effect: NoSchedule
+    # No taint — see cluster-train-eu.yaml comment. Single-purpose
+    # training cluster; nodeSelector role=gpu-trainer is sufficient.
     privateNetworking: false
