@@ -2,7 +2,7 @@
 name = "wm-chess"
 version = "0.1.0"
 description = "Shared chess core (board encoder, ResNet, MCTS, arena) for world-models experiments"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "torch>=2.5",
     "numpy>=1.26",

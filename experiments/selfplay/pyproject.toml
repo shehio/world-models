@@ -2,7 +2,7 @@
 name = "selfplay"
 version = "0.1.0"
 description = "AlphaZero self-play RL experiment (uses wm_chess shared core)"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "wm-chess",
     "torch>=2.5",

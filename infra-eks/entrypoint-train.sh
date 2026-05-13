@@ -32,9 +32,19 @@ DATA_DIR=$WORK/data
 CKPT_DIR=$WORK/checkpoints
 mkdir -p "$DATA_DIR" "$CKPT_DIR"
 
+# Indexed checkpoint path that mirrors the library/games/ tree:
+#   <run-prefix>/checkpoints/net-<R>x<F>/<run-id>/
+# So two trainings on the same dataset with different architectures
+# (or just different runs) don't overwrite each other.
+ARCH="net-${N_BLOCKS}x${N_FILTERS}"
+RUN_ID="${RUN_ID:-$(date -u +%Y%m%dT%H%MZ)}"
+CKPT_S3_BASE="s3://$S3_BUCKET/$S3_PREFIX/checkpoints/$ARCH/$RUN_ID"
+echo "checkpoint S3 base: $CKPT_S3_BASE"
+
 echo "=== $(date -u) ${S3_PREFIX} training ==="
 echo "REGION=$AWS_DEFAULT_REGION BUCKET=$S3_BUCKET"
 echo "EPOCHS=$EPOCHS BATCH=$BATCH_SIZE NET=${N_BLOCKS}x${N_FILTERS} LR=$LR"
+echo "RUN_ID=$RUN_ID  ARCH=$ARCH"
 nvidia-smi || echo "(no nvidia-smi)"
 python -c "import torch; print('cuda available:', torch.cuda.is_available(), 'devices:', torch.cuda.device_count())"
 
@@ -42,13 +52,35 @@ echo "=== fetching merged dataset ==="
 aws s3 cp "s3://$S3_BUCKET/$S3_PREFIX/merged/data.npz" "$DATA_DIR/data.npz" --no-progress
 ls -la "$DATA_DIR/"
 
-echo "=== checking for prior checkpoint to resume from ==="
+# Pre-flight: write a run_metadata.json with the hparams so checkpoints
+# under this $RUN_ID are self-describing without needing the bash env.
+cat > "$CKPT_DIR/run_metadata.json" <<META
+{
+  "run_id": "$RUN_ID",
+  "arch": "$ARCH",
+  "n_blocks": $N_BLOCKS,
+  "n_filters": $N_FILTERS,
+  "epochs": $EPOCHS,
+  "batch_size": $BATCH_SIZE,
+  "lr": $LR,
+  "weight_decay": $WEIGHT_DECAY,
+  "value_weight": $VALUE_WEIGHT,
+  "save_every": $SAVE_EVERY,
+  "hard_targets": $([ -n "$HARD_TARGETS" ] && echo "true" || echo "false"),
+  "s3_bucket": "$S3_BUCKET",
+  "s3_prefix": "$S3_PREFIX",
+  "started_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+META
+cat "$CKPT_DIR/run_metadata.json"
+
+echo "=== checking for prior checkpoint under $CKPT_S3_BASE to resume from ==="
 INIT_ARG=()
-LATEST_CKPT=$(aws s3 ls "s3://$S3_BUCKET/$S3_PREFIX/checkpoints/" 2>/dev/null \
+LATEST_CKPT=$(aws s3 ls "$CKPT_S3_BASE/" 2>/dev/null \
     | awk '{print $NF}' | grep -E '^distilled_epoch[0-9]+\.pt$' | sort -V | tail -1 || true)
 if [ -n "$LATEST_CKPT" ]; then
     echo "  resuming from $LATEST_CKPT"
-    aws s3 cp "s3://$S3_BUCKET/$S3_PREFIX/checkpoints/$LATEST_CKPT" "$CKPT_DIR/$LATEST_CKPT" --no-progress
+    aws s3 cp "$CKPT_S3_BASE/$LATEST_CKPT" "$CKPT_DIR/$LATEST_CKPT" --no-progress
     INIT_ARG=(--init-from "$CKPT_DIR/$LATEST_CKPT")
 else
     echo "  no prior checkpoint, training from scratch"
@@ -76,7 +108,7 @@ python scripts/train.py \
     "${INIT_ARG[@]}" \
     "${HARD_ARG[@]}"
 
-echo "=== uploading checkpoints + history ==="
-aws s3 sync "$CKPT_DIR/" "s3://$S3_BUCKET/$S3_PREFIX/checkpoints/" --no-progress
+echo "=== uploading checkpoints + history + metadata to $CKPT_S3_BASE/ ==="
+aws s3 sync "$CKPT_DIR/" "$CKPT_S3_BASE/" --no-progress
 
 echo "=== $(date -u) done ==="

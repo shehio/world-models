@@ -2,7 +2,7 @@
 name = "world-models"
 version = "0.1.0"
 description = "AlphaZero + Stockfish distillation on chess, with EKS-based parallel datagen"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.11,<3.13"
 # This is a workspace root; it has no code of its own. Real packages
 # live under the members listed below.
 dependencies = []
