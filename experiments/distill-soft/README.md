@@ -217,7 +217,20 @@ at the end of this README.
 
 ## AWS / cloud architecture
 
-Everything lives in `infra/` and is one `terraform apply` away. The
+> **Historical.** What follows describes the original Terraform-based
+> one-EC2-box deployment that produced 02c's 1086-Elo result. The
+> Terraform module (`infra/`) has been removed. **For the current
+> pipeline, see [`infra-eks/README.md`](../../infra-eks/README.md)** —
+> an EKS Indexed-Job parallel datagen with S3 staging and crash-safe
+> chunk checkpoints. The orchestrator scripts that drove this layout
+> (`run_split_pipeline.sh`, `wm_chess/scripts/overnight_datagen.sh`)
+> are deprecation stubs that point at the new flow.
+>
+> The text below is preserved as the writeup of *how* the original
+> run worked, since it's referenced from
+> [`results.md`](./results.md).
+
+Everything lived in `infra/` and was one `terraform apply` away. The
 shape of the deployment — explicitly minimal so it's a one-shot
 experiment box, not production infra:
 

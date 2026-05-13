@@ -55,7 +55,7 @@ imports the canonical board/network/MCTS/arena/config from
   (~$1.15 end-to-end vs ~$9 on a single GPU box).
 - **Want to understand multipv / softmax T / hard-vs-soft targets** →
   [02c/README — Vocabulary](./experiments/distill-soft/README.md#vocabulary-multipv-softmax-t-in-pawns-target-shape).
-- **Want the AWS infra story** → [02c/README — AWS / cloud architecture](./experiments/distill-soft/README.md#aws--cloud-architecture).
+- **Want the AWS infra story** → [`infra-eks/README.md`](./infra-eks/README.md) (current EKS pipeline). The original Terraform-based one-box pipeline is documented as historical context in [02c/README — AWS / cloud architecture](./experiments/distill-soft/README.md#aws--cloud-architecture).
 - **Want to see the negative result** → [02c/results.md](./experiments/distill-soft/results.md).
 - **Want the AlphaZero self-play story (v1 → v5)** → [02/results.md](./experiments/selfplay/results.md).
 

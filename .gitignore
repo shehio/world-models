@@ -28,6 +28,13 @@ videos/
 .env
 .env.local
 
+# Terraform local state + provider cache (never commit these — provider
+# binaries are hundreds of MB and tfstate may contain resource IDs)
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+
 # Datasets and chunks live here; the CATALOG.md alongside is tracked.
 library/games/
 library/runs/
