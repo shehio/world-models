@@ -57,7 +57,7 @@ case "$MODE" in
         echo "[gen] checking for partial chunks at $PARTIAL_S3/"
         if aws s3 ls "$PARTIAL_S3/" >/dev/null 2>&1; then
             echo "[gen] resuming: pulling partial chunks from $PARTIAL_S3"
-            aws s3 sync "$PARTIAL_S3/" "$LIB_LOCAL/games/" --no-progress
+            aws s3 sync "$PARTIAL_S3/" "$LIB_LOCAL/" --no-progress
             CHUNK_COUNT=$(find "$LIB_LOCAL/games" -name "chunk_*.npz" 2>/dev/null | wc -l)
             echo "[gen] resumed with $CHUNK_COUNT prior chunks"
         else
@@ -65,12 +65,16 @@ case "$MODE" in
         fi
 
         # ---- BACKGROUND PARTIAL UPLOADER ----
-        # Every PARTIAL_SYNC_INTERVAL seconds, snapshot /tmp/library/games to
-        # s3://.../pod-N-partial/. On reclamation, retry pod pulls this back.
+        # Every PARTIAL_SYNC_INTERVAL seconds, snapshot $LIB_LOCAL (which
+        # holds sf-<v>/d../g../chunks/* — the crash-safe checkpoints) to
+        # s3://.../shards_partial/pod-N/. On reclamation, the retry pod
+        # pulls this back at the top of gen mode and resumes.
+        # Exclude .progress_*.json (per-worker counters, not data).
         (
             while true; do
                 sleep "$PARTIAL_SYNC_INTERVAL"
-                aws s3 sync "$LIB_LOCAL/games/" "$PARTIAL_S3/" --no-progress --quiet 2>/dev/null \
+                aws s3 sync "$LIB_LOCAL/" "$PARTIAL_S3/" --no-progress --quiet \
+                    --exclude ".progress_*" 2>/dev/null \
                     && echo "[partial-sync] $(date -u +%H:%M:%S) snapshot ok" \
                     || echo "[partial-sync] $(date -u +%H:%M:%S) snapshot FAILED (will retry)"
             done
@@ -89,8 +93,16 @@ case "$MODE" in
         # Stop the background uploader before final sync so we don't race.
         kill "$PARTIAL_PID" 2>/dev/null || true
 
+        # Finalize chunks → data.npz + games.pgn before uploading.
+        uv run python scripts/generate_data.py \
+            --finalize-only --library-root "$LIB_LOCAL" \
+            --depth "$DEPTH" --multipv "$MULTIPV" \
+            --temperature-pawns "$T_PAWNS" --seed "$SEED" \
+            --n-games "$GAMES_PER_POD" || true
+
         echo "[gen] uploading final shard to s3://$S3_BUCKET/$S3_PREFIX/shards/pod-$IDX/"
-        aws s3 sync "$LIB_LOCAL/games/" "s3://$S3_BUCKET/$S3_PREFIX/shards/pod-$IDX/" --no-progress
+        aws s3 sync "$LIB_LOCAL/" "s3://$S3_BUCKET/$S3_PREFIX/shards/pod-$IDX/" --no-progress \
+            --exclude ".progress_*"
 
         # Clean up partial staging — final shard supersedes it.
         aws s3 rm "$PARTIAL_S3/" --recursive --quiet 2>/dev/null || true
