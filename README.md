@@ -14,7 +14,6 @@ makes the disagreement concrete.
 
 | # | Project | Headline result | Latent | Planning | Training signal |
 |---|---|---|---|---|---|
-| **01** | [Ha & Schmidhuber *World Models*](./01-ha-world-models/) | Beats random on CarRacing-v3 (2h budget on M-series Mac) | VAE (pixel recon) | none (reactive) | Random rollouts |
 | **02** | [AlphaZero-chess](./experiments/selfplay/) | v4: +368 Elo vs random, 0 losses of 200 ([results](./experiments/selfplay/results.md)) | (true board state) | MCTS over real env | Self-play RL |
 | **02b** | [Stockfish distillation](./experiments/distill-hard/) | Real Elo 1185 (19W/25D/56L vs SF1320) | same as 02 | MCTS at eval only | **Hard** targets from SF d10 |
 | **02c** | [Scaled distillation](./experiments/distill-soft/) | Real Elo 1086 — **negative result**, bigger net + soft targets lost ([results](./experiments/distill-soft/results.md)) | same as 02 (bigger) | MCTS at eval only | **Multipv soft** targets from SF d10 |
@@ -30,7 +29,6 @@ hits are in
 
 ```
 .
-├── 01-ha-world-models/             World Models (2018) on CarRacing-v3
 ├── wm_chess/                       Shared chess core (board, network,
 │                                     MCTS, arena, config) — used by all
 │                                     three chess experiments below
