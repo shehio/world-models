@@ -23,6 +23,11 @@ videos/
 
 # Local Claude Code state
 .claude/
+
+# Local environment (use .env.example as template; .env stays out of git)
+.env
+.env.local
+
 # Datasets and chunks live here; the CATALOG.md alongside is tracked.
 library/games/
 library/runs/
