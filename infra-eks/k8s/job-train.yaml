@@ -65,6 +65,12 @@ spec:
               value: "${IN_RAM}"
             - name: NODEGROUP_LABEL
               value: "${NODEGROUP_LABEL}"
+            - name: AMP
+              value: "${AMP}"
+            - name: COMPILE
+              value: "${COMPILE}"
+            - name: RUN_ID
+              value: "${RUN_ID}"
           resources:
             limits:
               nvidia.com/gpu: 1

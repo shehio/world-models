@@ -87,13 +87,16 @@ case "$CMD" in
         # envsubst doesn't support ${VAR:-default}, so set every var
         # the YAML references with shell ${VAR:=default} before export.
         : "${EPOCHS:=20}"
-        : "${BATCH_SIZE:=256}"
+        : "${BATCH_SIZE:=1024}"
         : "${LR:=1e-3}"
         : "${N_BLOCKS:=20}"
         : "${N_FILTERS:=256}"
         : "${SAVE_EVERY:=5}"
         : "${MAX_POSITIONS:=}"
         : "${IN_RAM:=}"
+        : "${AMP:=1}"
+        : "${COMPILE:=1}"
+        : "${RUN_ID:=}"   # caller can set to resume an existing index
         # Target nodegroup label (default: original `gpu-trainer`. Override
         # to `gpu-fast` when targeting the g6.4xlarge in-RAM-loading group).
         : "${NODEGROUP_LABEL:=gpu-trainer}"
@@ -104,7 +107,8 @@ case "$CMD" in
                AWS_DEFAULT_REGION="$REGION" ECR_URI_TRAIN="$ECR_URI" \
                JOB_PREFIX_LABEL="$(echo "$PREFIX" | tr '[:upper:].' '[:lower:]-' | cut -c1-63)" \
                EPOCHS BATCH_SIZE LR N_BLOCKS N_FILTERS SAVE_EVERY \
-               MAX_POSITIONS IN_RAM NODEGROUP_LABEL JOB_NAME
+               MAX_POSITIONS IN_RAM NODEGROUP_LABEL JOB_NAME \
+               AMP COMPILE RUN_ID
         # Always delete-then-apply: Job spec.template is immutable, so
         # if a prior Job with the same name exists, apply errors out.
         kubectl --context "$KUBECTL_CTX" delete job "$JOB_NAME" --ignore-not-found --wait=true

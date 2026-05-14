@@ -83,6 +83,14 @@ def main():
                         "memmap (lazy disk-backed). Use this when the instance has "
                         "enough RAM — batch fetch is ~10x faster than memmap "
                         "random-page-reads.")
+    p.add_argument("--amp", action="store_true",
+                   help="enable bfloat16 autocast for forward+loss. ~2x faster on "
+                        "Ampere/Ada tensor cores (A10G/L4/A100/H100). bf16 shares "
+                        "fp32's exponent range so no GradScaler is needed.")
+    p.add_argument("--compile", action="store_true",
+                   help="wrap the network in torch.compile() — fuses ops + uses "
+                        "Inductor. Adds a 1-2 min warmup on the first batch, "
+                        "then ~1.3-1.5x faster steady-state.")
     args = p.parse_args()
 
     cfg = replace(Config(), n_res_blocks=args.n_blocks, n_filters=args.n_filters)
@@ -94,8 +102,17 @@ def main():
         network.load_state_dict(torch.load(args.init_from, map_location=device))
         print(f"warm-started from {args.init_from}", flush=True)
 
+    # torch.compile must happen AFTER load_state_dict — compiling first
+    # would wrap the model and load_state_dict's key names would be off
+    # (compiled models prefix params with `_orig_mod.`).
+    if args.compile:
+        print("compiling network with torch.compile() ...", flush=True)
+        network = torch.compile(network)
+
     optimizer = torch.optim.Adam(network.parameters(), lr=args.lr,
                                  weight_decay=args.weight_decay)
+    print(f"amp={args.amp}  compile={args.compile}  batch_size={args.batch_size}",
+          flush=True)
 
     n_params = sum(p.numel() for p in network.parameters())
     print(f"network: {args.n_blocks} blocks × {args.n_filters} ch = {n_params:,} params",
@@ -196,6 +213,7 @@ def main():
                 network, optimizer, batch, device,
                 value_weight=args.value_weight,
                 hard_targets=args.hard_targets,
+                use_amp=args.amp,
             )
             for k, v in losses.items():
                 loss_acc[k] += v
@@ -262,7 +280,12 @@ def main():
               flush=True)
         if (epoch + 1) % args.save_every == 0 or epoch == args.epochs - 1:
             ckpt = os.path.join(args.ckpt_dir, f"distilled_epoch{epoch:03d}.pt")
-            torch.save(network.state_dict(), ckpt)
+            # torch.compile wraps the model and prefixes state-dict keys
+            # with `_orig_mod.`. Unwrap so the saved ckpt is loadable by a
+            # plain (un-compiled) model — that's what eval.py expects.
+            state_to_save = (network._orig_mod.state_dict()
+                             if args.compile else network.state_dict())
+            torch.save(state_to_save, ckpt)
             print(f"  saved {ckpt}", flush=True)
             # Immediate S3 upload — checkpoint is durable before the next
             # epoch even starts. If the pod dies after epoch 5, we keep

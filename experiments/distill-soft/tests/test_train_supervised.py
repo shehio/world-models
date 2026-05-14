@@ -193,3 +193,16 @@ class TestTrainStep:
         after = next(net.parameters()).detach()
         # Some parameter has changed.
         assert not torch.allclose(before, after)
+
+    def test_amp_path_runs_and_updates(self):
+        """`use_amp=True` should not crash on CPU (autocast is a no-op
+        when device_type='cpu' + bf16 — supported since torch 1.10) and
+        should still produce finite losses + a gradient step."""
+        net, opt, batch = self._tiny_net_and_batch(hard_targets=False)
+        before = next(net.parameters()).detach().clone()
+        out = train_step(net, opt, batch, CPU, hard_targets=False, use_amp=True)
+        after = next(net.parameters()).detach()
+        assert math.isfinite(out["loss"])
+        assert math.isfinite(out["policy_loss"])
+        assert math.isfinite(out["value_loss"])
+        assert not torch.allclose(before, after)

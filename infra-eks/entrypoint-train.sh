@@ -18,7 +18,7 @@ set -euo pipefail
 : "${AWS_DEFAULT_REGION:?required}"
 
 : "${EPOCHS:=20}"
-: "${BATCH_SIZE:=256}"
+: "${BATCH_SIZE:=1024}"   # was 256 — 4x bigger keeps L4/A10G tensor cores busy
 : "${LR:=1e-3}"
 : "${WEIGHT_DECAY:=1e-4}"
 : "${N_BLOCKS:=20}"
@@ -26,6 +26,8 @@ set -euo pipefail
 : "${VALUE_WEIGHT:=1.0}"
 : "${SAVE_EVERY:=5}"
 : "${HARD_TARGETS:=}"   # set to anything to enable --hard-targets
+: "${AMP:=1}"           # bf16 autocast — ~2x speedup on Ampere/Ada
+: "${COMPILE:=1}"       # torch.compile — extra ~1.3-1.5x
 
 WORK=/work
 DATA_DIR=$WORK/data
@@ -67,6 +69,8 @@ cat > "$CKPT_DIR/run_metadata.json" <<META
   "value_weight": $VALUE_WEIGHT,
   "save_every": $SAVE_EVERY,
   "hard_targets": $([ -n "$HARD_TARGETS" ] && echo "true" || echo "false"),
+  "amp": $([ "${AMP:-0}" = "1" ] && echo "true" || echo "false"),
+  "compile": $([ "${COMPILE:-0}" = "1" ] && echo "true" || echo "false"),
   "s3_bucket": "$S3_BUCKET",
   "s3_prefix": "$S3_PREFIX",
   "started_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -101,6 +105,10 @@ if [ -n "${MAX_POSITIONS:-}" ]; then MAX_POS_ARG=(--max-positions "$MAX_POSITION
 # 5-10x faster batch fetch when the instance has the RAM for it.
 IN_RAM_ARG=()
 if [ -n "${IN_RAM:-}" ]; then IN_RAM_ARG=(--in-ram); fi
+AMP_ARG=()
+if [ "$AMP" = "1" ]; then AMP_ARG=(--amp); fi
+COMPILE_ARG=()
+if [ "$COMPILE" = "1" ]; then COMPILE_ARG=(--compile); fi
 python scripts/train.py \
     --data "$DATA_DIR/data.npz" \
     --epochs "$EPOCHS" \
@@ -117,7 +125,9 @@ python scripts/train.py \
     "${INIT_ARG[@]}" \
     "${HARD_ARG[@]}" \
     "${MAX_POS_ARG[@]}" \
-    "${IN_RAM_ARG[@]}"
+    "${IN_RAM_ARG[@]}" \
+    "${AMP_ARG[@]}" \
+    "${COMPILE_ARG[@]}"
 
 echo "=== syncing checkpoints + history + metadata so they're durable before eval ==="
 aws s3 sync "$CKPT_DIR/" "$CKPT_S3_BASE/" --no-progress --exclude "*.tmp.*" --exclude ".eval_progress_*"
@@ -133,7 +143,7 @@ if [ "${RUN_EVAL:-1}" != "0" ]; then
         : "${EVAL_WORKERS:=4}"
         : "${EVAL_GAMES_PER_WORKER:=25}"
         : "${EVAL_SIMS:=800}"
-        : "${STOCKFISH_ELO:=1320}"
+        : "${STOCKFISH_ELO:=1350}"  # Stockfish 17+ rejects values below 1350
         EVAL_LOG="$CKPT_DIR/eval_results.txt"
         echo "=== eval vs Stockfish elo=$STOCKFISH_ELO on $LATEST_CKPT ==="
         cd /work/experiments/distill-soft

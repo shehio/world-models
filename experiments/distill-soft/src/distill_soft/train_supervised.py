@@ -30,6 +30,7 @@ with hard targets (the network is hedging across the top-K), but the
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import zipfile
@@ -215,6 +216,7 @@ def train_step(
     device,
     value_weight: float = 1.0,
     hard_targets: bool = False,
+    use_amp: bool = False,
 ) -> dict[str, float]:
     """One SGD step on a multipv-soft-targets batch.
 
@@ -227,6 +229,10 @@ def train_step(
       - hard_targets=True: standard CE against Stockfish's actually-played
         move (one-hot). Same loss as 02b. Lets us A/B the target shape
         on identical data + identical architecture.
+
+    `use_amp=True` runs the forward + loss under a bf16 autocast — gives
+    ~2x throughput on Ampere/Ada tensor cores. bf16 shares fp32's
+    exponent range so no GradScaler is needed (unlike fp16).
     """
     states_np, mpv_idx_np, mpv_logp_np, played_np, zs_np = batch
 
@@ -238,26 +244,28 @@ def train_step(
     zs = to_t(zs_np).float()
 
     network.train()
-    logits, value_pred = network(states)
+    autocast_ctx = (torch.autocast(device_type=device.type, dtype=torch.bfloat16)
+                    if use_amp else contextlib.nullcontext())
+    with autocast_ctx:
+        logits, value_pred = network(states)
 
-    if hard_targets:
-        # Same loss as 02b: standard CE against the actually-played move.
-        policy_loss = F.cross_entropy(logits, played)
-        # For the diagnostic block below we still want a "target_dist" of
-        # sorts; build a delta on the played move so target-entropy reads 0.
-        target_dist = F.one_hot(played, num_classes=N_POLICY).float()
-    else:
-        # Soft-target cross-entropy against Stockfish's multipv distribution:
-        # -sum_i p_target_i * log_softmax(logits)_i
-        target_dist = _scatter_sparse_target_to_dense(
-            mpv_indices, mpv_logprobs, n_actions=N_POLICY, device=device,
-        )
-        log_probs = F.log_softmax(logits, dim=-1)
-        policy_loss = -(target_dist * log_probs).sum(dim=-1).mean()
+        if hard_targets:
+            # Same loss as 02b: standard CE against the actually-played move.
+            policy_loss = F.cross_entropy(logits, played)
+            # For the diagnostic block below we still want a "target_dist" of
+            # sorts; build a delta on the played move so target-entropy reads 0.
+            target_dist = F.one_hot(played, num_classes=N_POLICY).float()
+        else:
+            # Soft-target cross-entropy against Stockfish's multipv distribution:
+            # -sum_i p_target_i * log_softmax(logits)_i
+            target_dist = _scatter_sparse_target_to_dense(
+                mpv_indices, mpv_logprobs, n_actions=N_POLICY, device=device,
+            )
+            log_probs = F.log_softmax(logits, dim=-1)
+            policy_loss = -(target_dist * log_probs).sum(dim=-1).mean()
 
-    value_loss = F.mse_loss(value_pred, zs)
-
-    loss = policy_loss + value_weight * value_loss
+        value_loss = F.mse_loss(value_pred, zs)
+        loss = policy_loss + value_weight * value_loss
 
     optimizer.zero_grad()
     loss.backward()
