@@ -1,0 +1,31 @@
+# Second L40S nodegroup pinned to us-east-1d. The primary `gpu-l40s`
+# nodegroup spans 1a + 1d, but AWS was out of g6e.xlarge capacity in 1a
+# and the managed ASG kept retrying 1a — so this second nodegroup
+# explicitly targets 1d (subnet 003d9e4f80b0b6aa3) to host the d10 pod.
+#
+# Same `role: gpu-l40s` label as the primary nodegroup so the existing
+# job template's nodeSelector picks either one.
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: wm-chess-train
+  region: us-east-1
+  version: "1.31"
+
+managedNodeGroups:
+  - name: gpu-l40s-b
+    instanceTypes:
+      - g6e.xlarge
+    spot: false
+    minSize: 0
+    desiredCapacity: 1
+    maxSize: 1
+    volumeSize: 150
+    amiFamily: AmazonLinux2
+    labels:
+      role: gpu-l40s
+    subnets:
+      - subnet-003d9e4f80b0b6aa3   # us-east-1d
+    privateNetworking: false

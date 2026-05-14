@@ -20,8 +20,8 @@ managedNodeGroups:
       - g6e.xlarge       # L40S + 32 GB RAM + 4 vCPU, ~$1.86/h on-demand
     spot: false
     minSize: 0
-    desiredCapacity: 1
-    maxSize: 1
+    desiredCapacity: 2     # d15 + d10 in-RAM, one pod per node
+    maxSize: 2
     volumeSize: 150      # image + npz + 5M-position extract + ckpts
     amiFamily: AmazonLinux2
     labels:
