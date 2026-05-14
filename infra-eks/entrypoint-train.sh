@@ -78,16 +78,38 @@ cat > "$CKPT_DIR/run_metadata.json" <<META
 META
 cat "$CKPT_DIR/run_metadata.json"
 
-echo "=== checking for prior checkpoint under $CKPT_S3_BASE to resume from ==="
 INIT_ARG=()
-LATEST_CKPT=$(aws s3 ls "$CKPT_S3_BASE/" 2>/dev/null \
-    | awk '{print $NF}' | grep -E '^distilled_epoch[0-9]+\.pt$' | sort -V | tail -1 || true)
-if [ -n "$LATEST_CKPT" ]; then
-    echo "  resuming from $LATEST_CKPT"
-    aws s3 cp "$CKPT_S3_BASE/$LATEST_CKPT" "$CKPT_DIR/$LATEST_CKPT" --no-progress
-    INIT_ARG=(--init-from "$CKPT_DIR/$LATEST_CKPT")
+START_EPOCH_ARG=()
+
+# Explicit cross-run resume: caller passes INIT_FROM_S3=<s3-url> (any
+# bucket / any indexed path / any RUN_ID) plus optional START_EPOCH=N.
+# Use case: continue a run on a different node / region / config
+# without re-numbering the saved checkpoints.
+if [ -n "${INIT_FROM_S3:-}" ]; then
+    echo "=== cross-run resume requested: $INIT_FROM_S3 ==="
+    INIT_LOCAL="$CKPT_DIR/$(basename "$INIT_FROM_S3")"
+    aws s3 cp "$INIT_FROM_S3" "$INIT_LOCAL" --no-progress
+    INIT_ARG=(--init-from "$INIT_LOCAL")
+    if [ -n "${START_EPOCH:-}" ]; then
+        echo "  --start-epoch $START_EPOCH (new ckpt filenames continue from there)"
+        START_EPOCH_ARG=(--start-epoch "$START_EPOCH")
+    fi
 else
-    echo "  no prior checkpoint, training from scratch"
+    echo "=== checking for prior checkpoint under $CKPT_S3_BASE to resume from ==="
+    LATEST_CKPT=$(aws s3 ls "$CKPT_S3_BASE/" 2>/dev/null \
+        | awk '{print $NF}' | grep -E '^distilled_epoch[0-9]+\.pt$' | sort -V | tail -1 || true)
+    if [ -n "$LATEST_CKPT" ]; then
+        echo "  resuming from $LATEST_CKPT"
+        aws s3 cp "$CKPT_S3_BASE/$LATEST_CKPT" "$CKPT_DIR/$LATEST_CKPT" --no-progress
+        INIT_ARG=(--init-from "$CKPT_DIR/$LATEST_CKPT")
+        # Derive start_epoch from the ckpt filename — distilled_epoch009.pt
+        # means epochs 0..9 are done; resume the for-loop at epoch 10.
+        ckpt_epoch=$(echo "$LATEST_CKPT" | sed -E 's/distilled_epoch0*([0-9]+)\.pt/\1/')
+        START_EPOCH_ARG=(--start-epoch $((ckpt_epoch + 1)))
+        echo "  --start-epoch $((ckpt_epoch + 1)) (derived from $LATEST_CKPT)"
+    else
+        echo "  no prior checkpoint, training from scratch"
+    fi
 fi
 
 HARD_ARG=()
@@ -123,6 +145,7 @@ python scripts/train.py \
     --save-every "$SAVE_EVERY" \
     --s3-ckpt-base "$CKPT_S3_BASE" \
     "${INIT_ARG[@]}" \
+    "${START_EPOCH_ARG[@]}" \
     "${HARD_ARG[@]}" \
     "${MAX_POS_ARG[@]}" \
     "${IN_RAM_ARG[@]}" \

@@ -97,6 +97,8 @@ case "$CMD" in
         : "${AMP:=1}"
         : "${COMPILE:=0}"   # torch.compile requires gcc in the image
         : "${RUN_ID:=}"   # caller can set to resume an existing index
+        : "${INIT_FROM_S3:=}"   # explicit cross-run warm-start s3 url
+        : "${START_EPOCH:=}"    # paired with INIT_FROM_S3
         # Target nodegroup label (default: original `gpu-trainer`. Override
         # to `gpu-fast` when targeting the g6.4xlarge in-RAM-loading group).
         : "${NODEGROUP_LABEL:=gpu-trainer}"
@@ -108,7 +110,7 @@ case "$CMD" in
                JOB_PREFIX_LABEL="$(echo "$PREFIX" | tr '[:upper:].' '[:lower:]-' | cut -c1-63)" \
                EPOCHS BATCH_SIZE LR N_BLOCKS N_FILTERS SAVE_EVERY \
                MAX_POSITIONS IN_RAM NODEGROUP_LABEL JOB_NAME \
-               AMP COMPILE RUN_ID
+               AMP COMPILE RUN_ID INIT_FROM_S3 START_EPOCH
         # Always delete-then-apply: Job spec.template is immutable, so
         # if a prior Job with the same name exists, apply errors out.
         kubectl --context "$KUBECTL_CTX" delete job "$JOB_NAME" --ignore-not-found --wait=true

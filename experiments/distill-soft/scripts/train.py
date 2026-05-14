@@ -91,6 +91,12 @@ def main():
                    help="wrap the network in torch.compile() — fuses ops + uses "
                         "Inductor. Adds a 1-2 min warmup on the first batch, "
                         "then ~1.3-1.5x faster steady-state.")
+    p.add_argument("--start-epoch", type=int, default=0,
+                   help="resume the for-loop at this epoch number. Pair with "
+                        "--init-from when continuing a previous run so the "
+                        "saved ckpt filenames keep monotonically increasing "
+                        "(distilled_epochNNN.pt). Without this, a resumed "
+                        "run overwrites the source run's early-epoch ckpts.")
     args = p.parse_args()
 
     cfg = replace(Config(), n_res_blocks=args.n_blocks, n_filters=args.n_filters)
@@ -154,6 +160,11 @@ def main():
 
     os.makedirs(args.ckpt_dir, exist_ok=True)
     rng = np.random.RandomState(0)
+    # If resuming mid-run, advance the shared RNG past the epochs that
+    # were already trained — keeps the per-epoch shuffles identical to
+    # what an uninterrupted run would have produced.
+    for _ in range(args.start_epoch):
+        rng.permutation(1)
 
     # Observability: per-epoch metrics JSON history + live training progress file.
     history_path = os.path.join(args.ckpt_dir, "train_history.json")
@@ -188,7 +199,7 @@ def main():
     print(f"[obs] live progress -> {progress_path}", flush=True)
     overall_t0 = time.time()
 
-    for epoch in range(args.epochs):
+    for epoch in range(args.start_epoch, args.epochs):
         t0 = time.time()
         idxs = rng.permutation(n)
         n_batches = n // args.batch_size

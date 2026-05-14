@@ -194,6 +194,16 @@ class TestTrainStep:
         # Some parameter has changed.
         assert not torch.allclose(before, after)
 
+    def test_start_epoch_flag_is_wired(self):
+        """train.py exposes --start-epoch; default is 0."""
+        import subprocess
+        script = (Path(__file__).resolve().parents[1] / "scripts" / "train.py")
+        out = subprocess.run(
+            ["python", str(script), "--help"], capture_output=True, text=True,
+        )
+        assert "--start-epoch" in out.stdout
+        assert "resume the for-loop at this epoch" in out.stdout
+
     def test_amp_path_runs_and_updates(self):
         """`use_amp=True` should not crash on CPU (autocast is a no-op
         when device_type='cpu' + bf16 — supported since torch 1.10) and

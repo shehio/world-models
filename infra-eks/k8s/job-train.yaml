@@ -71,6 +71,10 @@ spec:
               value: "${COMPILE}"
             - name: RUN_ID
               value: "${RUN_ID}"
+            - name: INIT_FROM_S3
+              value: "${INIT_FROM_S3}"
+            - name: START_EPOCH
+              value: "${START_EPOCH}"
           resources:
             limits:
               nvidia.com/gpu: 1
