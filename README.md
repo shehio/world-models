@@ -42,6 +42,8 @@ hits are in
 │   ├── daemons/                      auto-eval (per-ckpt EC2) + pod-sync
 │   └── launchers/                    bare-EC2 one-shots (L40S, deep-sims eval, …)
 ├── library/                        Indexed game library + auto-generated CATALOG
+├── docs/notes/                     Engineering notes — operational gotchas, infra patterns,
+│                                     point-in-time results — see docs/notes/README.md
 ├── DISTILLATION_VS_ALPHAZERO.md    02 vs 02b vs 02c training procedures
 ├── EVALS.md                        How the auto-eval daemon measures Elo
 ├── dashboard.html                  Self-contained run-evolution dashboard
