@@ -17,7 +17,8 @@ INTERVAL_SEC=${INTERVAL_SEC:-300}     # 5 min
 REGION=us-east-1
 ACCOUNT_ID=594561963943
 ECR=$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com
-INSTANCE_TYPE=g6.xlarge
+INSTANCE_TYPE=g6.4xlarge   # 16 vCPU lets us run 8-12 parallel game-workers
+                            # instead of 4 — roughly 3x faster per ckpt
 INSTANCE_PROFILE=wm-chess-merge-instance-profile   # reused from merge step
 # Deep Learning Base OSS Nvidia Driver GPU AMI (AL2023) — has docker +
 # nvidia-container-toolkit preinstalled, so `docker run --gpus all` works.
@@ -88,13 +89,13 @@ docker run --rm \\
         OUT=/work-tmp/eval_results.txt
         echo "=== eval vs Stockfish UCI=1350 ===" | tee \$OUT
         python scripts/eval.py \\
-            --ckpt \$CKPT_LOCAL --workers 4 --games-per-worker 25 \\
+            --ckpt \$CKPT_LOCAL --workers 8 --games-per-worker 13 \\
             --sims 800 --n-blocks 20 --n-filters 256 \\
             --stockfish-elo 1350 --agent-device cuda 2>&1 | tee -a \$OUT
         echo "" | tee -a \$OUT
         echo "=== eval vs Stockfish UCI=-1 (top skill, anchor=none) ===" | tee -a \$OUT
         python scripts/eval.py \\
-            --ckpt \$CKPT_LOCAL --workers 4 --games-per-worker 25 \\
+            --ckpt \$CKPT_LOCAL --workers 8 --games-per-worker 13 \\
             --sims 800 --n-blocks 20 --n-filters 256 \\
             --stockfish-elo -1 --stockfish-depth 1 --agent-device cuda 2>&1 | tee -a \$OUT || echo "(deep stockfish failed; skipping)" >> \$OUT
         aws s3 cp \$OUT \$RESULT_KEY --no-progress
