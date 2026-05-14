@@ -67,6 +67,18 @@ try_launch_in_region() {
     local subnet="${cfg%% *}"
     local ami="${cfg##* }"
 
+    # Parse the architecture out of the ckpt path:
+    # s3://.../checkpoints/net-<blocks>x<filters>/<run-id>/distilled_epochNNN.pt
+    # Falls back to 20x256 if the path doesn't match (oldest runs).
+    local arch_part
+    arch_part=$(echo "$ckpt_s3" | grep -oE 'net-[0-9]+x[0-9]+' | head -1)
+    local n_blocks=20
+    local n_filters=256
+    if [ -n "$arch_part" ]; then
+        n_blocks=$(echo "$arch_part" | sed -E 's/net-([0-9]+)x.*/\1/')
+        n_filters=$(echo "$arch_part" | sed -E 's/net-[0-9]+x([0-9]+)/\1/')
+    fi
+
     local user_data
     user_data=$(cat <<EOF
 #!/bin/bash
@@ -105,14 +117,14 @@ docker run --rm \\
         echo "=== eval vs Stockfish UCI=1350 ===" | tee \$OUT
         python scripts/eval.py \\
             --ckpt \$CKPT_LOCAL --workers 8 --games-per-worker 13 \\
-            --sims 800 --n-blocks 20 --n-filters 256 \\
+            --sims 800 --n-blocks $n_blocks --n-filters $n_filters \\
             --stockfish-elo 1350 --agent-device cuda 2>&1 | tee -a \$OUT
         echo "" | tee -a \$OUT
-        echo "=== eval vs Stockfish UCI=-1 (top skill, anchor=none) ===" | tee -a \$OUT
+        echo "=== eval vs Stockfish UCI=1800 (calibrated, close to model strength) ===" | tee -a \$OUT
         python scripts/eval.py \\
             --ckpt \$CKPT_LOCAL --workers 8 --games-per-worker 13 \\
-            --sims 800 --n-blocks 20 --n-filters 256 \\
-            --stockfish-elo -1 --stockfish-depth 1 --agent-device cuda 2>&1 | tee -a \$OUT || echo "(deep stockfish failed; skipping)" >> \$OUT
+            --sims 800 --n-blocks $n_blocks --n-filters $n_filters \\
+            --stockfish-elo 1800 --agent-device cuda 2>&1 | tee -a \$OUT || echo "(uci1800 eval failed; skipping)" >> \$OUT
         aws s3 cp \$OUT \$RESULT_KEY --no-progress
     '
 EOF
