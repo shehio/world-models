@@ -17,8 +17,11 @@ INTERVAL_SEC=${INTERVAL_SEC:-300}     # 5 min
 REGION=us-east-1
 ACCOUNT_ID=594561963943
 ECR=$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com
-INSTANCE_TYPE=g6.4xlarge   # 16 vCPU lets us run 8-12 parallel game-workers
-                            # instead of 4 — roughly 3x faster per ckpt
+INSTANCE_TYPE=g6.xlarge    # 4 vCPU. We tried g6.4xlarge for 3x faster
+                            # per-ckpt evals, but the AWS account's g6
+                            # vCPU limit (32) doesn't leave room when the
+                            # training pod is on g6.4xlarge. With g6.xlarge
+                            # we can run up to 4 evals concurrently.
 INSTANCE_PROFILE=wm-chess-merge-instance-profile   # reused from merge step
 # Deep Learning Base OSS Nvidia Driver GPU AMI (AL2023) — has docker +
 # nvidia-container-toolkit preinstalled, so `docker run --gpus all` works.
@@ -89,13 +92,13 @@ docker run --rm \\
         OUT=/work-tmp/eval_results.txt
         echo "=== eval vs Stockfish UCI=1350 ===" | tee \$OUT
         python scripts/eval.py \\
-            --ckpt \$CKPT_LOCAL --workers 8 --games-per-worker 13 \\
+            --ckpt \$CKPT_LOCAL --workers 4 --games-per-worker 25 \\
             --sims 800 --n-blocks 20 --n-filters 256 \\
             --stockfish-elo 1350 --agent-device cuda 2>&1 | tee -a \$OUT
         echo "" | tee -a \$OUT
         echo "=== eval vs Stockfish UCI=-1 (top skill, anchor=none) ===" | tee -a \$OUT
         python scripts/eval.py \\
-            --ckpt \$CKPT_LOCAL --workers 8 --games-per-worker 13 \\
+            --ckpt \$CKPT_LOCAL --workers 4 --games-per-worker 25 \\
             --sims 800 --n-blocks 20 --n-filters 256 \\
             --stockfish-elo -1 --stockfish-depth 1 --agent-device cuda 2>&1 | tee -a \$OUT || echo "(deep stockfish failed; skipping)" >> \$OUT
         aws s3 cp \$OUT \$RESULT_KEY --no-progress
@@ -103,7 +106,8 @@ docker run --rm \\
 EOF
 )
 
-    aws ec2 run-instances --region $REGION \
+    local launch_out
+    launch_out=$(aws ec2 run-instances --region $REGION \
         --image-id $AMI \
         --instance-type $INSTANCE_TYPE \
         --subnet-id $SUBNET \
@@ -112,7 +116,15 @@ EOF
         --instance-initiated-shutdown-behavior terminate \
         --user-data "$user_data" \
         --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-eval-$ckpt_basename},{Key=role,Value=wm-chess-eval}]" \
-        --query 'Instances[0].InstanceId' --output text 2>&1 | tee -a "$LOG"
+        --query 'Instances[0].InstanceId' --output text 2>&1)
+    local launch_rc=$?
+    echo "$launch_out" | tee -a "$LOG"
+    # If RunInstances failed (vCPU limit, capacity, etc.), drop the
+    # claim marker so the next poll can retry instead of skipping forever.
+    if [ $launch_rc -ne 0 ] || echo "$launch_out" | grep -q 'An error occurred'; then
+        log "  launch FAILED, removing claim marker for retry"
+        aws s3 rm "$claim_key" 2>&1 | tail -1 | tee -a "$LOG"
+    fi
 }
 
 log "=== started; poll every ${INTERVAL_SEC}s ==="
