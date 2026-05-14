@@ -102,7 +102,10 @@ def main():
           flush=True)
 
     print(f"loading {args.data} ...", flush=True)
-    dataset = MultipvDataset(args.data)
+    # Pass max_positions through so the extractor only writes the rows
+    # we'll actually train on — at 30M positions the states array
+    # uncompresses to ~150 GB; truncating up front saves disk + time.
+    dataset = MultipvDataset(args.data, max_rows=args.max_positions)
     if args.max_positions is not None and dataset.states.shape[0] > args.max_positions:
         n_full = dataset.states.shape[0]
         n_keep = args.max_positions

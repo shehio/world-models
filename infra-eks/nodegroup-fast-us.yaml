@@ -21,7 +21,7 @@ managedNodeGroups:
     minSize: 0
     desiredCapacity: 1
     maxSize: 1
-    volumeSize: 150      # buffer for image + extracted data + ckpts
+    volumeSize: 300      # d10 npz extracts to ~149 GB; need buffer + ckpts
     amiFamily: AmazonLinux2
     labels:
       role: gpu-fast     # nodeSelector target for the d10 Job

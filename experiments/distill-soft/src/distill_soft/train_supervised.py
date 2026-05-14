@@ -35,6 +35,7 @@ import os
 import zipfile
 
 import numpy as np
+import numpy.lib.format as npfmt
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
@@ -42,7 +43,23 @@ from torch.utils.data import Dataset
 from wm_chess.board import N_POLICY
 
 
-def _extract_npz_to_memmap_dir(npz_path: str, extract_dir: str) -> None:
+def _stream_copy(src, dst, n_bytes: int | None = None) -> None:
+    """Copy from src to dst in 8MB chunks. Stops after n_bytes (or EOF)."""
+    remaining = n_bytes if n_bytes is not None else float("inf")
+    while remaining > 0:
+        chunk = 8 * 1024 * 1024
+        if remaining < chunk:
+            chunk = int(remaining)
+        buf = src.read(chunk)
+        if not buf:
+            break
+        dst.write(buf)
+        remaining -= len(buf)
+
+
+def _extract_npz_to_memmap_dir(
+    npz_path: str, extract_dir: str, max_rows: int | None = None,
+) -> None:
     """Stream-extract a .npz (which is a zip of .npy files) to a directory
     of plain .npy files. Uses zipfile, not numpy, so peak memory is the
     zip-decompress buffer (a few MB), NOT the full uncompressed array.
@@ -54,6 +71,11 @@ def _extract_npz_to_memmap_dir(npz_path: str, extract_dir: str) -> None:
     in. The full file stays on disk; the OS page cache handles
     sequential access efficiently.
 
+    If `max_rows` is given, each row-shaped array is truncated to the
+    first `max_rows` entries on disk — pairs with `--max-positions` so
+    we don't waste 130 GB of disk extracting positions we'll throw away.
+    Scalar arrays (K.npy, temperature_pawns.npy) are copied verbatim.
+
     Idempotent: skips re-extraction if all expected .npy files already
     exist.
     """
@@ -63,13 +85,40 @@ def _extract_npz_to_memmap_dir(npz_path: str, extract_dir: str) -> None:
             target = os.path.join(extract_dir, entry.filename)
             if os.path.exists(target) and os.path.getsize(target) > 0:
                 continue
-            # Stream copy — never loads the full array.
             with zf.open(entry) as src, open(target, "wb") as dst:
-                while True:
-                    buf = src.read(8 * 1024 * 1024)  # 8 MB chunks
-                    if not buf:
-                        break
-                    dst.write(buf)
+                if max_rows is None:
+                    _stream_copy(src, dst)
+                    continue
+                # Peek at the .npy header to learn shape + dtype, so we
+                # know whether to truncate and how many bytes to copy.
+                # Versions: 1.0 uses uint16 header length, 2.0 uses uint32.
+                version = npfmt.read_magic(src)
+                if version == (1, 0):
+                    shape, fortran_order, dtype = npfmt.read_array_header_1_0(src)
+                    write_header = npfmt.write_array_header_1_0
+                elif version == (2, 0):
+                    shape, fortran_order, dtype = npfmt.read_array_header_2_0(src)
+                    write_header = npfmt.write_array_header_2_0
+                else:
+                    raise ValueError(f"unsupported .npy version: {version}")
+                header_d = {
+                    "descr": npfmt.dtype_to_descr(dtype),
+                    "fortran_order": fortran_order,
+                    "shape": shape,
+                }
+                if not shape or shape[0] <= max_rows:
+                    # Scalar / already-small — write header then rest verbatim.
+                    write_header(dst, header_d)
+                    _stream_copy(src, dst)
+                    continue
+                # Truncate: rewrite header with smaller leading dim and
+                # copy only max_rows * row_bytes.
+                header_d["shape"] = (max_rows,) + tuple(shape[1:])
+                write_header(dst, header_d)
+                row_bytes = int(
+                    np.prod(shape[1:]) if len(shape) > 1 else 1
+                ) * dtype.itemsize
+                _stream_copy(src, dst, max_rows * row_bytes)
 
 
 class MultipvDataset(Dataset):
@@ -85,10 +134,12 @@ class MultipvDataset(Dataset):
     """
 
     def __init__(self, npz_path: str, mmap: bool = True,
-                 extract_dir: str | None = None):
+                 extract_dir: str | None = None,
+                 max_rows: int | None = None):
         if mmap:
             extract_dir = extract_dir or (npz_path + "_extracted")
-            _extract_npz_to_memmap_dir(npz_path, extract_dir)
+            _extract_npz_to_memmap_dir(npz_path, extract_dir,
+                                       max_rows=max_rows)
             self.states = np.load(os.path.join(extract_dir, "states.npy"),
                                   mmap_mode="r")
             self.moves = np.load(os.path.join(extract_dir, "moves.npy"),

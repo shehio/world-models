@@ -98,6 +98,51 @@ class TestMultipvDataset:
         )
         assert MultipvDataset(path).K == 6
 
+    def test_max_rows_truncates_extracted_files(self, tmp_path):
+        """When max_rows is passed, the on-disk extracted .npy files should
+        only contain the first max_rows entries — and the values should
+        match the original arrays' prefix exactly."""
+        path = str(tmp_path / "big.npz")
+        N, K = 20, 4
+        rng = np.random.default_rng(0)
+        states = rng.standard_normal((N, N_INPUT_PLANES, 8, 8)).astype(np.float32)
+        moves = np.arange(N, dtype=np.int64)
+        mpv_idx = rng.integers(0, 100, size=(N, K)).astype(np.int64)
+        mpv_logp = rng.standard_normal((N, K)).astype(np.float32)
+        zs = rng.standard_normal(N).astype(np.float32)
+        np.savez_compressed(path, states=states, moves=moves,
+                            multipv_indices=mpv_idx,
+                            multipv_logprobs=mpv_logp, zs=zs,
+                            K=np.array(K, dtype=np.int32))
+        ds = MultipvDataset(path, max_rows=7)
+        assert len(ds) == 7
+        # Values for kept rows must match the source.
+        np.testing.assert_array_equal(np.asarray(ds.states), states[:7])
+        np.testing.assert_array_equal(np.asarray(ds.moves), moves[:7])
+        np.testing.assert_array_equal(np.asarray(ds.multipv_indices), mpv_idx[:7])
+        np.testing.assert_array_equal(np.asarray(ds.multipv_logprobs), mpv_logp[:7])
+        np.testing.assert_array_equal(np.asarray(ds.zs), zs[:7])
+        # K is a scalar array; it must round-trip unchanged.
+        assert ds.K == K
+
+    def test_max_rows_larger_than_dataset_is_noop(self, tmp_path):
+        """If max_rows >= N, the extractor should write the full file
+        verbatim — equivalent to passing max_rows=None."""
+        path = str(tmp_path / "small.npz")
+        N, K = 3, 4
+        np.savez_compressed(
+            path,
+            states=np.zeros((N, N_INPUT_PLANES, 8, 8), dtype=np.float32),
+            moves=np.arange(N, dtype=np.int64),
+            multipv_indices=np.zeros((N, K), dtype=np.int64),
+            multipv_logprobs=np.zeros((N, K), dtype=np.float32),
+            zs=np.zeros(N, dtype=np.float32),
+            K=np.array(K, dtype=np.int32),
+        )
+        ds = MultipvDataset(path, max_rows=100)
+        assert len(ds) == N
+        assert ds.K == K
+
 
 class TestTrainStep:
     """Smoke-level integration: build a tiny net, run one train step on
