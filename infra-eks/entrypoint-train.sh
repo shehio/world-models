@@ -27,7 +27,7 @@ set -euo pipefail
 : "${SAVE_EVERY:=5}"
 : "${HARD_TARGETS:=}"   # set to anything to enable --hard-targets
 : "${AMP:=1}"           # bf16 autocast — ~2x speedup on Ampere/Ada
-: "${COMPILE:=1}"       # torch.compile — extra ~1.3-1.5x
+: "${COMPILE:=0}"       # torch.compile — needs gcc in the image (not bundled)
 
 WORK=/work
 DATA_DIR=$WORK/data

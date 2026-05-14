@@ -95,7 +95,7 @@ case "$CMD" in
         : "${MAX_POSITIONS:=}"
         : "${IN_RAM:=}"
         : "${AMP:=1}"
-        : "${COMPILE:=1}"
+        : "${COMPILE:=0}"   # torch.compile requires gcc in the image
         : "${RUN_ID:=}"   # caller can set to resume an existing index
         # Target nodegroup label (default: original `gpu-trainer`. Override
         # to `gpu-fast` when targeting the g6.4xlarge in-RAM-loading group).
