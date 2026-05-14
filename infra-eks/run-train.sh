@@ -16,23 +16,43 @@ set -euo pipefail
 THIS_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$THIS_DIR/.." && pwd)"
 
-# shellcheck disable=SC1091
-[ -f "$REPO_ROOT/.env" ] && source "$REPO_ROOT/.env"
+# Source .env, but only set keys that aren't already in the caller's
+# environment. Lets the daemon (or operator) override individual values
+# without editing .env, e.g.:
+#   BUCKET=alt-bucket PREFIX=alt-prefix ./run-train.sh submit us
+if [ -f "$REPO_ROOT/.env" ]; then
+    while IFS='=' read -r key val; do
+        # Skip comments and blanks
+        [[ "$key" =~ ^[[:space:]]*# ]] && continue
+        [ -z "$key" ] && continue
+        # Only well-formed SHELL_VAR keys
+        [[ "$key" =~ ^[A-Z_][A-Z0-9_]*$ ]] || continue
+        # Skip if caller already set it
+        [ -n "${!key+x}" ] && continue
+        export "$key=$val"
+    done < "$REPO_ROOT/.env"
+fi
 
 CMD="${1:?usage: $0 up|image|submit|logs|status|down  us|eu}"
 REGION_ARG="${2:?usage: $0 $CMD  us|eu}"
 
+# Per-region defaults from .env. The :=$DEFAULT pattern means an
+# already-set BUCKET/PREFIX/etc. wins; otherwise we fall back to
+# .env. Then validate.
 case "$REGION_ARG" in
-    us) REGION="${AWS_PRIMARY_REGION:-us-east-1}"
-        BUCKET="${S3_BUCKET_US:?missing in .env}"
-        PREFIX="${RUN_PREFIX_US:?missing in .env}"
-        ECR_URI="${ECR_URI_US:?missing in .env}-gpu" ;;
-    eu) REGION="${AWS_SECONDARY_REGION:-eu-west-1}"
-        BUCKET="${S3_BUCKET_EU:?missing in .env}"
-        PREFIX="${RUN_PREFIX_EU:?missing in .env}"
-        ECR_URI="${ECR_URI_EU:?missing in .env}-gpu" ;;
+    us) : "${REGION:=${AWS_PRIMARY_REGION:-us-east-1}}"
+        : "${BUCKET:=${S3_BUCKET_US:-}}"
+        : "${PREFIX:=${RUN_PREFIX_US:-}}"
+        : "${ECR_URI:=${ECR_URI_US:+${ECR_URI_US}-gpu}}" ;;
+    eu) : "${REGION:=${AWS_SECONDARY_REGION:-eu-west-1}}"
+        : "${BUCKET:=${S3_BUCKET_EU:-}}"
+        : "${PREFIX:=${RUN_PREFIX_EU:-}}"
+        : "${ECR_URI:=${ECR_URI_EU:+${ECR_URI_EU}-gpu}}" ;;
     *)  echo "unknown region: $REGION_ARG (use us or eu)"; exit 2 ;;
 esac
+[ -n "$BUCKET" ] || { echo "BUCKET unset (set BUCKET env or fill .env)"; exit 2; }
+[ -n "$PREFIX" ] || { echo "PREFIX unset (set PREFIX env or fill .env)"; exit 2; }
+[ -n "$ECR_URI" ] || { echo "ECR_URI unset"; exit 2; }
 
 CLUSTER_SPEC="$THIS_DIR/cluster-train-${REGION_ARG}.yaml"
 # Per-region kubeconfig context (created by `aws eks update-kubeconfig
