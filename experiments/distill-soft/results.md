@@ -1,23 +1,48 @@
-# 02c results — multipv soft targets + 20×256, 30 epochs
+# 02c results
 
-> **Negative result.** Bigger network + multipv soft targets, fully
-> trained, **underperformed 02b's smaller-network + hard-target recipe**
-> by ~130 Elo at the same teacher quality (Stockfish depth=10).
+Three generations of this experiment. The first (250k positions, d10
+teacher, MPS) plateaued ~1086 Elo and looked like a negative result. We
+then rebuilt the data pipeline (EKS Indexed Jobs → millions of games)
+and the training stack (GPU EKS + bf16 + autocache + per-checkpoint S3
+sync + an auto-eval daemon). The newer runs land at ~1750–1810 Elo,
+which puts 02c **above** 02b.
 
-## Headline numbers
+## Headline (2026-05 — d15 / EKS-trained 20×256)
+
+100-game-equivalent eval vs Stockfish `UCI_Elo=1350`, MCTS 800 sims/move.
+
+| Run | Network | Teacher | Positions | Real Elo | W/D/L (per 100g) |
+|---|---|---|---:|---:|---:|
+| **d15 ep14** | 20×256 (~24M) | SF d15 mpv=8 (T=1) | 5M (subset of ~30M) | **1759** [1665, 1939] | 91 / 8 / 5 |
+| **d15 ep19** | 20×256 (~24M) | SF d15 mpv=8 (T=1) | 5M (subset of ~30M) | **1807** [1704, 2034] | 93 / 8 / 3 |
+
+The Elo curve flattens between ep14 and ep19 (+48 Elo over 5 epochs),
+matching the loss trajectory (top-1 plateau ~0.34). Sims=4000 deep-read
+eval and a 40×256 capacity ablation are running at writeup; if either
+moves the number we'll have a clearer answer for whether the ceiling is
+data-limited (Exp C: full 30M positions) or capacity-limited (Exp A:
+40×256 net).
+
+## Historical (2025 — 250k positions, MPS)
+
+> **Negative result** at the time. Bigger network + multipv soft
+> targets, 30 epochs, **underperformed 02b's smaller-network +
+> hard-target recipe** by ~130 Elo. Recipe later replaced by the
+> EKS-trained d15 above.
 
 100-game-equivalent eval vs Stockfish UCI_Elo=1320 (02b's anchor; 02c
-ran at SF1350 because apt-Stockfish-18 enforces min 1350, normalized).
+ran at SF1350, normalized).
 
 | Run | Network | Targets | Training | Real Elo | W/D/L (per 100g) |
 |---|---|---|---|---:|---:|
 | **02b d10** (baseline) | 10×128 (~3M) | hard one-hot | 20 epochs MPS | **1185** [1104, 1254] | 19 / 25 / 56 |
 | 02c 10-epoch | 20×256 (~24M) | multipv=8 soft (T=1) | 10 epochs | 998 (~968 normalized) | 7.5 / 8.3 / 84 |
-| **02c 30-epoch** | 20×256 (~24M) | multipv=8 soft (T=1) | 30 epochs | **1086** [988, 1157] (~**1056** normalized) | 7.5 / 20.8 / 71.7 |
+| 02c 30-epoch | 20×256 (~24M) | multipv=8 soft (T=1) | 30 epochs | 1086 [988, 1157] (~1056 normalized) | 7.5 / 20.8 / 71.7 |
 
-**Gap to 02b after fully training**: ~130 Elo behind.
-
-**What 20 more epochs bought (10ep → 30ep)**: +88 Elo. Real but small.
+The rest of this file is the analysis of *those* numbers — preserved
+because the hypotheses (soft-target dilution, undertraining-per-param,
+T=1 too smooth) are still the right things to keep in mind for follow-up
+ablations.
 
 ## Training trajectory (from train_history.json)
 

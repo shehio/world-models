@@ -15,7 +15,7 @@ parallel AWS datagen pipeline.
 |---|---|---|---|---|---|
 | **02** | [AlphaZero-chess](./experiments/selfplay/) | v4: +368 Elo vs random, 0 losses of 200 ([results](./experiments/selfplay/results.md)) | (true board state) | MCTS over real env | Self-play RL |
 | **02b** | [Stockfish distillation](./experiments/distill-hard/) | Real Elo 1185 (19W/25D/56L vs SF1320) | same as 02 | MCTS at eval only | **Hard** targets from SF d10 |
-| **02c** | [Scaled distillation](./experiments/distill-soft/) | Real Elo 1086 — **negative result**, bigger net + soft targets lost ([results](./experiments/distill-soft/results.md)) | same as 02 (bigger) | MCTS at eval only | **Multipv soft** targets from SF d10 |
+| **02c** | [Scaled distillation](./experiments/distill-soft/) | **d15 ckpt: Elo ~1807** (+622 over 02b) — bigger teacher + 5M positions + GPU-EKS infra ([results](./experiments/distill-soft/results.md)) | same as 02 (bigger) | MCTS at eval only | **Multipv soft** targets from SF d10/d15 |
 
 The 02 → 02b → 02c arc holds *architecture* constant (AlphaZero ResNet)
 and varies the **training signal** (RL self-play → SF hard targets → SF
@@ -38,10 +38,12 @@ hits are in
 │   ├── selfplay/                   Self-play AlphaZero (5 progressive runs)
 │   ├── distill-hard/               Distillation: 10×128 + hard targets
 │   └── distill-soft/               Distillation: 20×256 + multipv soft targets
-├── infra-eks/                      EKS-native parallel datagen pipeline
-│                                     (eksctl + Indexed Job + S3 staging)
+├── infra-eks/                      EKS-native parallel datagen + GPU training
+│   ├── daemons/                      auto-eval (per-ckpt EC2) + pod-sync
+│   └── launchers/                    bare-EC2 one-shots (L40S, deep-sims eval, …)
 ├── library/                        Indexed game library + auto-generated CATALOG
 ├── DISTILLATION_VS_ALPHAZERO.md    02 vs 02b vs 02c training procedures
+├── EVALS.md                        How the auto-eval daemon measures Elo
 ├── dashboard.html                  Self-contained run-evolution dashboard
 └── README.md                       you are here
 ```
@@ -75,6 +77,13 @@ cp .env.example .env
   CPU, S3-staged shards, k8s-native cross-pod merge. The historical
   one-EC2-box Terraform pipeline is preserved as a writeup in
   [02c/README — AWS / cloud architecture](./experiments/distill-soft/README.md#aws--cloud-architecture).
+- **Want how distillation runs are trained + evaluated** →
+  [`EVALS.md`](./EVALS.md) (auto-eval daemon, UCI=1350 anchor, Elo math,
+  multi-region fallback, `elo_bisect.py`),
+  [`infra-eks/daemons/README.md`](./infra-eks/daemons/README.md) (the
+  poller + per-checkpoint EC2),
+  [`infra-eks/launchers/README.md`](./infra-eks/launchers/README.md)
+  (one-shot bare-EC2 launchers for L40S training and ablation runs).
 - **Want to see the network architecture** →
   [02c/README — Network architecture](./experiments/distill-soft/README.md#network-architecture)
   (Mermaid; renders inline on GitHub). Same architecture used across
@@ -106,8 +115,8 @@ to main (see `.github/workflows/ci.yml`).
 | `wm_chess` (shared core + catalog + merge tools + stubs) | 84 | ~3 s |
 | `experiments/selfplay` | 42 | ~4 s |
 | `experiments/distill-hard` | 6 | ~2 s |
-| `experiments/distill-soft` | 63 | ~2 s |
-| **Total** | **195** | **~11 s** |
+| `experiments/distill-soft` | 80 | ~3 s |
+| **Total** | **212** | **~12 s** |
 
 Run any one with `uv run --project <member> python -m pytest
 <member>/tests/`.
