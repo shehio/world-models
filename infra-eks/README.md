@@ -1,8 +1,17 @@
-# EKS — Kubernetes-native parallel datagen + merge
+# EKS — Kubernetes-native parallel datagen + GPU training + auto-eval
 
-Replaces the `infra/` Terraform module and the bash orchestrator at
-`wm_chess/scripts/parallel_datagen.sh`. Solves the two pain points
-of the raw-EC2 approach:
+Two pipelines, one cluster pattern:
+
+1. **Datagen** (this file, top half) — Indexed-Job parallel data
+   generation on spot CPU, merge as a second Job. Replaces the
+   `infra/` Terraform module and `wm_chess/scripts/parallel_datagen.sh`.
+2. **Training + eval** (this file, [training section](#gpu-training)) —
+   GPU EKS Job for the long training run, **`daemons/`** for crash-safe
+   per-checkpoint S3 sync + auto-launched per-checkpoint EC2 evals,
+   **`launchers/`** for one-off bare-EC2 runs (L40S training, deep-sim
+   ablations).
+
+The datagen pipeline solves the two pain points of the raw-EC2 approach:
 
 1. **Spot reclamation resilience.** The managed node group spans
    six instance types (`c7i.8xlarge`, `c6i.8xlarge`, `c7a.8xlarge`,
@@ -70,6 +79,8 @@ laptop ←───────────────────────�
 
 ## Files
 
+### Datagen pipeline
+
 | File | Role |
 |---|---|
 | `cluster.yaml` | eksctl spec: control plane + spot-diversified nodegroup |
@@ -79,6 +90,26 @@ laptop ←───────────────────────�
 | `k8s/job-merge.yaml` | Single-pod Job that concatenates shards |
 | `k8s/service-account.yaml` | SA bound to IAM role with S3 RW (created via eksctl) |
 | `run.sh` | End-to-end launcher (build, push, apply, wait, pull) |
+| `buildspec.yml` / `codebuild.json` | CodeBuild image-build pipeline |
+
+### GPU training + eval pipeline
+
+| File | Role |
+|---|---|
+| `cluster-train-us.yaml` / `cluster-train-eu.yaml` | eksctl specs for GPU clusters (1× g6.xlarge default + add-on nodegroups) |
+| `nodegroup-fast-us.yaml` | `g6.4xlarge` (16 vCPU, L4) for in-RAM training of mid-size datasets |
+| `nodegroup-l40s-us.yaml` / `nodegroup-l40s-b-us.yaml` | `g6e.xlarge` (L40S) nodegroups for the d10 long training |
+| `Dockerfile.train` | GPU image (CUDA + uv + project + entrypoint-train.sh) |
+| `entrypoint-train.sh` | Trainer entrypoint: honors `INIT_FROM_S3` / `START_EPOCH` for cross-run resume |
+| `k8s/job-train.yaml` | GPU Job template (env-driven; see `run-train.sh`) |
+| `run-train.sh` | CLI wrapper: `submit us|eu`, render Job, apply, tail logs |
+| `buildspec-train.yml` | CodeBuild spec for the GPU image |
+| `daemons/wm-autoeval-daemon.sh` | Polls S3 for new ckpts, launches per-checkpoint eval EC2s (multi-region) |
+| `daemons/wm-pod-sync-daemon.sh` | Legacy: kubectl-exec'd S3 sync for old-image pods |
+| `launchers/d10-l40s-eu.sh` | Bare-EC2 L40S launch in eu-central-1 (bypass EKS when capacity is short) |
+| `launchers/d15-40x256-eu.sh` | Experiment A: 40-block ResNet on d15 |
+| `launchers/d10-full30m.sh` | Experiment C: d10 on the full ~30M positions |
+| `launchers/eval-deep-sims.sh` | Experiment E: re-eval a ckpt with `--sims 4000` |
 
 ## Cost (vs raw EC2)
 
@@ -131,3 +162,57 @@ Each `run.sh` invocation:
 | Laptop sleeps / wifi dies | tmux on remote keeps gen alive, but no orchestration | K8s runs entirely in AWS; laptop only used for `kubectl wait` and final download |
 | Bash bug (e.g., `ssh` reading stdin) | Yes, I shipped two of these today | Doesn't exist — k8s Job spec is declarative |
 | Observability | `tail -F /tmp/parallel.log` | `kubectl logs job/wm-chess-gen --tail=100 -f --all-containers` plus standard K8s tooling (CloudWatch via the agent, Lens, etc.) |
+
+## GPU training
+
+The training side reuses the same cluster pattern with a GPU nodegroup
+and `Dockerfile.train`.
+
+```bash
+# 1. provision a GPU cluster (us-east-1 default)
+eksctl create cluster -f infra-eks/cluster-train-us.yaml
+
+# 2. submit a training Job (env-driven — see run-train.sh for knobs)
+BUCKET=wm-chess-library-... \
+PREFIX=d15-mpv8-T1-g100000-... \
+MAX_POSITIONS=5000000 \
+IN_RAM=1 EPOCHS=20 SAVE_EVERY=5 \
+N_BLOCKS=20 N_FILTERS=256 \
+./infra-eks/run-train.sh submit us
+
+# 3. each epoch the trainer syncs distilled_epochNNN.pt to S3.
+#    Start the auto-eval daemon to pick those up and run eval EC2s.
+nohup bash infra-eks/daemons/wm-autoeval-daemon.sh >/dev/null 2>&1 &
+
+# 4. tear down when results land
+eksctl delete cluster -f infra-eks/cluster-train-us.yaml
+```
+
+### Crash-safe checkpointing + cross-run resume
+
+`entrypoint-train.sh` honors two env vars for explicit cross-run resume:
+
+- `INIT_FROM_S3=s3://…/distilled_epochNNN.pt` — initial weights to load.
+- `START_EPOCH=N` — number of epochs to skip in the new run's loop. The
+  training loop's RNG is advanced N times so the data permutation
+  matches what the original run would have produced.
+
+This means a spot reclamation or an L40S-shortage migration doesn't lose
+progress: drop the latest ckpt into `INIT_FROM_S3`, set `START_EPOCH` to
+one past it, and the next run picks up the same trajectory under a fresh
+`RUN_ID` (so checkpoints land in a new directory and the auto-eval
+daemon picks them up).
+
+### When to bypass EKS — `launchers/`
+
+EKS gives spot resilience and a clean Job lifecycle, but the cluster
+shares a 32 vCPU G/VT quota with the auto-eval EC2s. When we need an
+L40S type that's out of capacity in our cluster region, or when we just
+want a one-shot ablation run that doesn't justify a new Job submission,
+we use the bare-EC2 launchers in `launchers/`. Each one is a single
+`aws ec2 run-instances` with a user-data heredoc that pulls the same
+image, runs the same entrypoint, and self-terminates via
+`shutdown -h` + `instance-initiated-shutdown-behavior=terminate`.
+
+See [`launchers/README.md`](./launchers/README.md) for the full list and
+the retry-until-quota pattern.
