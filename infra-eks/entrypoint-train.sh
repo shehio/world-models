@@ -93,6 +93,14 @@ fi
 
 echo "=== training ==="
 cd /work/experiments/distill-soft
+# Optional: subsample very large datasets (e.g. d10's 30M positions
+# subsampled to 5M makes one epoch tractable on a single GPU).
+MAX_POS_ARG=()
+if [ -n "${MAX_POSITIONS:-}" ]; then MAX_POS_ARG=(--max-positions "$MAX_POSITIONS"); fi
+# Optional: --in-ram, force the dataset into RAM instead of memmap.
+# 5-10x faster batch fetch when the instance has the RAM for it.
+IN_RAM_ARG=()
+if [ -n "${IN_RAM:-}" ]; then IN_RAM_ARG=(--in-ram); fi
 python scripts/train.py \
     --data "$DATA_DIR/data.npz" \
     --epochs "$EPOCHS" \
@@ -105,8 +113,11 @@ python scripts/train.py \
     --device cuda \
     --ckpt-dir "$CKPT_DIR" \
     --save-every "$SAVE_EVERY" \
+    --s3-ckpt-base "$CKPT_S3_BASE" \
     "${INIT_ARG[@]}" \
-    "${HARD_ARG[@]}"
+    "${HARD_ARG[@]}" \
+    "${MAX_POS_ARG[@]}" \
+    "${IN_RAM_ARG[@]}"
 
 echo "=== syncing checkpoints + history + metadata so they're durable before eval ==="
 aws s3 sync "$CKPT_DIR/" "$CKPT_S3_BASE/" --no-progress --exclude "*.tmp.*" --exclude ".eval_progress_*"

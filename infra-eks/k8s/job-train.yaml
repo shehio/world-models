@@ -31,7 +31,7 @@ spec:
       serviceAccountName: wm-chess-train-sa
       restartPolicy: Never
       nodeSelector:
-        role: gpu-trainer
+        role: ${NODEGROUP_LABEL}
       tolerations:
         - key: nvidia.com/gpu
           operator: Exists
@@ -59,6 +59,12 @@ spec:
               value: "${N_FILTERS}"
             - name: SAVE_EVERY
               value: "${SAVE_EVERY}"
+            - name: MAX_POSITIONS
+              value: "${MAX_POSITIONS}"
+            - name: IN_RAM
+              value: "${IN_RAM}"
+            - name: NODEGROUP_LABEL
+              value: "${NODEGROUP_LABEL}"
           resources:
             limits:
               nvidia.com/gpu: 1

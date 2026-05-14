@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 import time
 from dataclasses import replace
@@ -27,6 +28,25 @@ import torch
 from wm_chess.config import Config
 from wm_chess.network import AlphaZeroNet, get_device
 from distill_soft.train_supervised import MultipvDataset, train_step
+
+
+def _sync_to_s3(local_path: str, s3_base: str) -> None:
+    """Fire-and-forget S3 upload. Logs failure but never raises —
+    the goal is to make checkpoints durable, not to crash training
+    if S3 has a hiccup."""
+    if not s3_base:
+        return
+    target = s3_base.rstrip("/") + "/" + os.path.basename(local_path)
+    try:
+        subprocess.run(
+            ["aws", "s3", "cp", local_path, target, "--no-progress"],
+            check=True, capture_output=True, text=True, timeout=300,
+        )
+        print(f"  s3 sync: {target}", flush=True)
+    except subprocess.CalledProcessError as e:
+        print(f"  s3 sync FAILED for {local_path}: {e.stderr}", flush=True)
+    except subprocess.TimeoutExpired:
+        print(f"  s3 sync TIMEOUT for {local_path}", flush=True)
 
 
 def main():
@@ -50,6 +70,19 @@ def main():
                    help="use standard CE against the actually-played move "
                         "instead of soft-CE over the multipv distribution. "
                         "Ablation: same data, same net, different target shape.")
+    p.add_argument("--s3-ckpt-base", default=None,
+                   help="S3 URI prefix (e.g. s3://bucket/.../checkpoints/net-NxN/run-id). "
+                        "If set, each saved .pt and updated train_history.json is "
+                        "synced here immediately. Required for crash-safe overnight runs.")
+    p.add_argument("--max-positions", type=int, default=None,
+                   help="cap dataset to first N positions (deterministic slice, "
+                        "shuffling is per-epoch anyway). Lets large datasets like "
+                        "the d10 30M-position one fit in instance RAM.")
+    p.add_argument("--in-ram", action="store_true",
+                   help="materialize the dataset into RAM (np.array). Default is "
+                        "memmap (lazy disk-backed). Use this when the instance has "
+                        "enough RAM — batch fetch is ~10x faster than memmap "
+                        "random-page-reads.")
     args = p.parse_args()
 
     cfg = replace(Config(), n_res_blocks=args.n_blocks, n_filters=args.n_filters)
@@ -70,6 +103,31 @@ def main():
 
     print(f"loading {args.data} ...", flush=True)
     dataset = MultipvDataset(args.data)
+    if args.max_positions is not None and dataset.states.shape[0] > args.max_positions:
+        n_full = dataset.states.shape[0]
+        n_keep = args.max_positions
+        # Slice all arrays to first N — the per-epoch rng.permutation already
+        # randomizes the within-epoch order, so a deterministic head-slice
+        # keeps a consistent subset across runs (good for ablations).
+        dataset.states = dataset.states[:n_keep]
+        dataset.moves = dataset.moves[:n_keep]
+        dataset.multipv_indices = dataset.multipv_indices[:n_keep]
+        dataset.multipv_logprobs = dataset.multipv_logprobs[:n_keep]
+        dataset.zs = dataset.zs[:n_keep]
+        print(f"  subsampled: {n_full:,} -> {n_keep:,} positions", flush=True)
+    if args.in_ram:
+        print("  materializing dataset into RAM (--in-ram) ...", flush=True)
+        t_load = time.time()
+        dataset.states = np.array(dataset.states)
+        dataset.moves = np.array(dataset.moves)
+        dataset.multipv_indices = np.array(dataset.multipv_indices)
+        dataset.multipv_logprobs = np.array(dataset.multipv_logprobs)
+        dataset.zs = np.array(dataset.zs)
+        rss_gb = (dataset.states.nbytes + dataset.moves.nbytes
+                  + dataset.multipv_indices.nbytes
+                  + dataset.multipv_logprobs.nbytes
+                  + dataset.zs.nbytes) / 1e9
+        print(f"  in RAM: {rss_gb:.1f} GB  ({time.time()-t_load:.1f}s)", flush=True)
     n = len(dataset)
     K = dataset.K
     print(f"  {n:,} positions, multipv K={K}", flush=True)
@@ -188,6 +246,8 @@ def main():
         import json as _json
         with open(history_path, "w") as f:
             _json.dump(history, f, indent=2)
+        # Per-epoch S3 sync of history so we can monitor live runs externally.
+        _sync_to_s3(history_path, args.s3_ckpt_base)
         print(f"epoch {epoch:02d} ({dt:.1f}s): "
               f"loss={epoch_summary['loss']:.3f} "
               f"pol={epoch_summary['policy_loss']:.3f} "
@@ -201,6 +261,10 @@ def main():
             ckpt = os.path.join(args.ckpt_dir, f"distilled_epoch{epoch:03d}.pt")
             torch.save(network.state_dict(), ckpt)
             print(f"  saved {ckpt}", flush=True)
+            # Immediate S3 upload — checkpoint is durable before the next
+            # epoch even starts. If the pod dies after epoch 5, we keep
+            # the epoch-5 ckpt instead of losing everything.
+            _sync_to_s3(ckpt, args.s3_ckpt_base)
 
 
 if __name__ == "__main__":

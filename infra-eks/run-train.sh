@@ -72,15 +72,28 @@ case "$CMD" in
         : "${N_BLOCKS:=20}"
         : "${N_FILTERS:=256}"
         : "${SAVE_EVERY:=5}"
+        : "${MAX_POSITIONS:=}"
+        : "${IN_RAM:=}"
+        # Target nodegroup label (default: original `gpu-trainer`. Override
+        # to `gpu-fast` when targeting the g6.4xlarge in-RAM-loading group).
+        : "${NODEGROUP_LABEL:=gpu-trainer}"
+        # Job name suffix lets you run two trainings concurrently on
+        # one cluster (e.g. d15 on gpu-trainer, d10 on gpu-fast).
+        : "${JOB_NAME:=wm-chess-train}"
         export S3_BUCKET="$BUCKET" S3_PREFIX="$PREFIX" \
                AWS_DEFAULT_REGION="$REGION" ECR_URI_TRAIN="$ECR_URI" \
                JOB_PREFIX_LABEL="$(echo "$PREFIX" | tr '[:upper:].' '[:lower:]-' | cut -c1-63)" \
-               EPOCHS BATCH_SIZE LR N_BLOCKS N_FILTERS SAVE_EVERY
+               EPOCHS BATCH_SIZE LR N_BLOCKS N_FILTERS SAVE_EVERY \
+               MAX_POSITIONS IN_RAM NODEGROUP_LABEL JOB_NAME
         # Always delete-then-apply: Job spec.template is immutable, so
         # if a prior Job with the same name exists, apply errors out.
-        kubectl --context "$KUBECTL_CTX" delete job wm-chess-train --ignore-not-found --wait=true
-        envsubst < "$THIS_DIR/k8s/job-train.yaml" | kubectl --context "$KUBECTL_CTX" apply -f -
-        log "submitted; tail logs with: $0 logs $REGION_ARG"
+        kubectl --context "$KUBECTL_CTX" delete job "$JOB_NAME" --ignore-not-found --wait=true
+        # Render with envsubst, then sed in the Job name (kept simple
+        # so the same YAML template serves two concurrent runs).
+        envsubst < "$THIS_DIR/k8s/job-train.yaml" \
+            | sed "s|name: wm-chess-train$|name: $JOB_NAME|" \
+            | kubectl --context "$KUBECTL_CTX" apply -f -
+        log "submitted job=$JOB_NAME nodegroup=$NODEGROUP_LABEL; tail logs with: $0 logs $REGION_ARG"
         ;;
     logs)
         log "tailing pod logs (Ctrl-C to stop)"
