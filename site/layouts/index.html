@@ -33,19 +33,19 @@
     <p>three ablations that bound the recipe's ceiling</p>
   </div>
   <div class="grid grid-2">
-    <a href="/baseline/" class="card">
+    <a href="{{ "/baseline/" | relURL }}" class="card">
       <h3>baseline</h3>
       <p>d15 20×256 distillation · 1,807 elo @ 800 sims · the number we're trying to beat</p>
     </a>
-    <a href="/capacity/" class="card">
+    <a href="{{ "/capacity/" | relURL }}" class="card">
       <h3>capacity · experiment a</h3>
       <p>40×256 vs 20×256 on the same data · network isn't the bottleneck (rejected)</p>
     </a>
-    <a href="/data/" class="card">
+    <a href="{{ "/data/" | relURL }}" class="card">
       <h3>data · experiment c</h3>
       <p>full 30m positions vs 5m subsample · is the ceiling data-limited? (running)</p>
     </a>
-    <a href="/search/" class="card">
+    <a href="{{ "/search/" | relURL }}" class="card">
       <h3>search · experiment e</h3>
       <p>same ckpt at 4,000 vs 800 sims · +277 elo from search alone (confirmed)</p>
     </a>
@@ -58,23 +58,23 @@
     <p>how the loss, the targets, and the evals are constructed</p>
   </div>
   <div class="grid grid-3">
-    <a href="/distillation/" class="card">
+    <a href="{{ "/distillation/" | relURL }}" class="card">
       <h3>distillation</h3>
       <p>multipv=8 soft targets from stockfish d15 · cross-entropy + mse</p>
     </a>
-    <a href="/selfplay/" class="card">
+    <a href="{{ "/selfplay/" | relURL }}" class="card">
       <h3>self-play</h3>
       <p>alphazero recipe on top of the distilled prior · running now</p>
     </a>
-    <a href="/eval/" class="card">
+    <a href="{{ "/eval/" | relURL }}" class="card">
       <h3>eval</h3>
       <p>stockfish uci=1350 anchor · multi-region auto-eval daemon</p>
     </a>
-    <a href="/elo-bisect/" class="card">
+    <a href="{{ "/elo-bisect/" | relURL }}" class="card">
       <h3>elo-bisect</h3>
       <p>binary-search uci_elo for ±50 elo precision in 3–4 probes</p>
     </a>
-    <a href="/alphazero/" class="card">
+    <a href="{{ "/alphazero/" | relURL }}" class="card">
       <h3>vs alphazero</h3>
       <p>same network · different training signal · different compute budget</p>
     </a>
@@ -87,11 +87,11 @@
     <p>aws plumbing built around quota constraints and reclamation</p>
   </div>
   <div class="grid grid-3">
-    <a href="/infra/" class="card">
+    <a href="{{ "/infra/" | relURL }}" class="card">
       <h3>eks pipeline</h3>
       <p>indexed gen job + gpu training job · eksctl + s3 staging</p>
     </a>
-    <a href="/failures/" class="card">
+    <a href="{{ "/failures/" | relURL }}" class="card">
       <h3>failure modes</h3>
       <p>nine concrete bugs we hit · symptom · root cause · fix</p>
     </a>

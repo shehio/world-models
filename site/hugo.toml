@@ -1,6 +1,9 @@
-baseURL = "https://distillchess.com/"
+baseURL = "https://shehio.github.io/world-models/"
 languageCode = "en-us"
 title = "World Models — Chess"
+# Rewrite absolute URLs in content (e.g. /baseline/) so they pick up the
+# /world-models/ subpath when deployed to project Pages.
+canonifyURLs = true
 
 [params]
   description = "AlphaZero's network on one GPU, ~10,000x less compute. Supervised distillation from Stockfish, then RL self-play."
