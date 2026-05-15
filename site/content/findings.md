@@ -2,6 +2,11 @@
 title: "Findings"
 subtitle: "three ablations on a distilled-from-stockfish baseline"
 next: "/method/"
+aliases:
+  - /baseline/
+  - /capacity/
+  - /data/
+  - /search/
 ---
 
 The setup is fixed: a 20-block × 256-channel ResNet, supervised

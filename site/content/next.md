@@ -2,6 +2,8 @@
 title: "What's next"
 subtitle: "distill-then-RL — lc0's recipe, running on an EKS pod right now"
 next: "/infra/"
+aliases:
+  - /selfplay/
 ---
 
 ## the central observation

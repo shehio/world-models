@@ -2,6 +2,10 @@
 title: "Method"
 subtitle: "the distillation loss, MCTS at inference, how we measure elo"
 next: "/vs-alphazero/"
+aliases:
+  - /distillation/
+  - /eval/
+  - /elo-bisect/
 ---
 
 ## the loss

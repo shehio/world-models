@@ -2,6 +2,8 @@
 title: "Vs AlphaZero"
 subtitle: "same network · different training signal · ~10,000× less compute"
 next: "/next/"
+aliases:
+  - /alphazero/
 ---
 
 ## the comparison

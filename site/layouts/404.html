@@ -1,0 +1,41 @@
+{{ define "main" }}
+<section class="hero">
+  <h1>404</h1>
+  <p class="tagline">not found · this page moved or never existed</p>
+</section>
+
+<section class="result-strip" style="grid-template-columns: 1fr;">
+  <div class="result-context-block" style="text-align: center;">
+    <p>The site was reorganized recently and the URL you tried may have been folded into one of the new sections. Try one of these:</p>
+  </div>
+</section>
+
+<section class="links">
+  <div class="grid grid-3">
+    <a href="{{ "/" | relURL }}" class="card">
+      <h3>home →</h3>
+      <p>the headline result, the architecture, the three findings</p>
+    </a>
+    <a href="{{ "/findings/" | relURL }}" class="card">
+      <h3>findings →</h3>
+      <p>capacity · search · data ablations · all the numbers</p>
+    </a>
+    <a href="{{ "/method/" | relURL }}" class="card">
+      <h3>method →</h3>
+      <p>distillation loss · eval anchors · elo-bisect</p>
+    </a>
+    <a href="{{ "/vs-alphazero/" | relURL }}" class="card">
+      <h3>vs alphazero →</h3>
+      <p>same network · different recipe · less compute</p>
+    </a>
+    <a href="{{ "/next/" | relURL }}" class="card">
+      <h3>next →</h3>
+      <p>the self-play loop running on EKS right now</p>
+    </a>
+    <a href="{{ "/infra/" | relURL }}" class="card">
+      <h3>infra →</h3>
+      <p>EKS · bare-EC2 · multi-region quota tricks</p>
+    </a>
+  </div>
+</section>
+{{ end }}
