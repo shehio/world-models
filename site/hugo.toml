@@ -1,0 +1,15 @@
+baseURL = "https://distillchess.com/"
+languageCode = "en-us"
+title = "World Models — Chess"
+
+[params]
+  description = "AlphaZero's network on one GPU, ~10,000x less compute. Supervised distillation from Stockfish, then RL self-play."
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+
+[outputs]
+  home = ["HTML"]
+  page = ["HTML"]

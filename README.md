@@ -47,6 +47,7 @@ hits are in
 ├── DISTILLATION_VS_ALPHAZERO.md    02 vs 02b vs 02c training procedures
 ├── EVALS.md                        How the auto-eval daemon measures Elo
 ├── EXPERIMENTS_LOG.md              Running log of the A / C / E ablations + AZ comparison
+├── site/                           Hugo static site (matches projectmontecarlo.com style)
 ├── dashboard.html                  Self-contained run-evolution dashboard
 └── README.md                       you are here
 ```

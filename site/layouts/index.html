@@ -1,0 +1,104 @@
+{{ define "main" }}
+<section class="hero">
+  <h1>world models · chess</h1>
+  <p class="tagline">alphazero's network · ~10,000× less compute · still learning</p>
+</section>
+
+<section class="intro">
+  <p>AlphaZero used a 20-block × 256-channel ResNet and 5,000 TPUs to reach grandmaster-level chess in 9 hours. We use <em>the same architecture</em> on a single GPU and ask how far we can get with distillation from Stockfish plus a self-play tail. Latest checkpoint: <strong>2,084 Elo</strong> at 4,000-sim MCTS, ~10,000× less training compute than AlphaZero.</p>
+</section>
+
+<section class="stats">
+  <div class="stat">
+    <div class="stat-num">2,084</div>
+    <div class="stat-label">elo · d15 ep19 @ 4000 sims</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">23.7M</div>
+    <div class="stat-label">params · same as alphazero</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">~5 h</div>
+    <div class="stat-label">total gpu time · 1× l40s</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">219</div>
+    <div class="stat-label">tests passing</div>
+  </div>
+</section>
+
+<section class="category">
+  <div class="category-header">
+    <h2>experiments</h2>
+    <p>three ablations that bound the recipe's ceiling</p>
+  </div>
+  <div class="grid grid-2">
+    <a href="/baseline/" class="card">
+      <h3>baseline</h3>
+      <p>d15 20×256 distillation · 1,807 elo @ 800 sims · the number we're trying to beat</p>
+    </a>
+    <a href="/capacity/" class="card">
+      <h3>capacity · experiment a</h3>
+      <p>40×256 vs 20×256 on the same data · network isn't the bottleneck (rejected)</p>
+    </a>
+    <a href="/data/" class="card">
+      <h3>data · experiment c</h3>
+      <p>full 30m positions vs 5m subsample · is the ceiling data-limited? (running)</p>
+    </a>
+    <a href="/search/" class="card">
+      <h3>search · experiment e</h3>
+      <p>same ckpt at 4,000 vs 800 sims · +277 elo from search alone (confirmed)</p>
+    </a>
+  </div>
+</section>
+
+<section class="category">
+  <div class="category-header">
+    <h2>methods</h2>
+    <p>how the loss, the targets, and the evals are constructed</p>
+  </div>
+  <div class="grid grid-3">
+    <a href="/distillation/" class="card">
+      <h3>distillation</h3>
+      <p>multipv=8 soft targets from stockfish d15 · cross-entropy + mse</p>
+    </a>
+    <a href="/selfplay/" class="card">
+      <h3>self-play</h3>
+      <p>alphazero recipe on top of the distilled prior · running now</p>
+    </a>
+    <a href="/eval/" class="card">
+      <h3>eval</h3>
+      <p>stockfish uci=1350 anchor · multi-region auto-eval daemon</p>
+    </a>
+    <a href="/elo-bisect/" class="card">
+      <h3>elo-bisect</h3>
+      <p>binary-search uci_elo for ±50 elo precision in 3–4 probes</p>
+    </a>
+    <a href="/alphazero/" class="card">
+      <h3>vs alphazero</h3>
+      <p>same network · different training signal · different compute budget</p>
+    </a>
+  </div>
+</section>
+
+<section class="category">
+  <div class="category-header">
+    <h2>infrastructure</h2>
+    <p>aws plumbing built around quota constraints and reclamation</p>
+  </div>
+  <div class="grid grid-3">
+    <a href="/infra/" class="card">
+      <h3>eks pipeline</h3>
+      <p>indexed gen job + gpu training job · eksctl + s3 staging</p>
+    </a>
+    <a href="/failures/" class="card">
+      <h3>failure modes</h3>
+      <p>nine concrete bugs we hit · symptom · root cause · fix</p>
+    </a>
+    <a href="https://github.com/shehio/world-models" class="card">
+      <h3>github →</h3>
+      <p>the code · all 219 tests · the dockerfiles · the launchers</p>
+    </a>
+  </div>
+</section>
+{{ end }}
