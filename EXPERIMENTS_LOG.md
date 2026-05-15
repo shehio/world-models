@@ -19,17 +19,16 @@ artifact** (E confirms: same checkpoint reads ~+280 Elo stronger at
 
 ## How we're different from AlphaZero
 
-| | DeepMind AlphaZero (2017) | This repo |
+| | AlphaZero (2017) | This repo |
 |---|---|---|
-| Approach | Tabula-rasa **self-play RL** | **Supervised distillation** from Stockfish |
-| Network | 20-block ResNet, 256 filters | **Same** (20×256) — and we tried 40×256 |
-| MCTS at training | 800 sims/move on the agent's own search | None — targets come from Stockfish, not search |
-| Training positions | ~3.5 B (44 M self-play games × ~80 moves) | 5 M to 30 M positions, ~600× less data |
-| Training compute | 64× TPU-v2 × 9 h ≈ 576 TPU-hours, with another ~45,000 TPU-v1-hours for self-play data | **1 × L40S GPU × ~5 h ≈ 5 GPU-hours.** Roughly 4 orders of magnitude less. |
-| Wall-clock to peak | 9 hours (then continued) | One overnight run per ablation |
-| Eval MCTS sims | 800 was the training value; competitive play used many tens of thousands | **800** for routine evals, 4 000 for the one deep-read experiment (E) |
-| Teacher / target | None | Stockfish 17 d10 or d15 with `multipv=8` soft targets (T=1 in pawns) |
-| Peak Elo | ~3500–3600 (vs Stockfish 8 ~3400 at the time) | **2084** (d15 ep19 @ 4 000 sims vs UCI=1350) |
+| Approach | Tabula-rasa self-play RL | Supervised distillation from Stockfish |
+| Network | 20-block ResNet, 256 filters | Identical (20×256) |
+| MCTS at training | 800 sims/move on agent's own search | None — Stockfish provides targets |
+| Training positions | ~3.5B (44M games × 80 moves) | 5M–30M |
+| Training compute | 64 TPU-v2 × 9h + ~45k TPU-v1-hr self-play | 1 GPU × 5h ≈ 5 GPU-hours (~10,000× less) |
+| Eval MCTS sims | 800 training / many tens of thousands tournament | 800 routine / 4000 on Experiment E |
+| Teacher | None | Stockfish d10 (~2200) or d15 (~2500), multipv=8, T=1 |
+| Peak Elo | ~3500–3600 | 2084 (d15 ep19 @ 4000 sims vs UCI=1350) |
 
 The architecture (20×256 ResNet) is *literally identical* to AlphaZero's.
 Everything that's different is on the **training-procedure** side:
@@ -142,21 +141,100 @@ to 3× more total compute per epoch on the same hardware. The extra
 need to page in) + DataLoader overhead from streaming the bigger
 dataset. Later epochs should land closer to ~40 min.
 
-## What we'd want next
+## Roadmap to close the AlphaZero gap
 
-- **C results.** If C's UCI=1800 number stays at ~1810, dataset size
-  isn't the bottleneck at this teacher quality — the bottleneck is
-  *the teacher itself* and/or the training procedure. If C climbs to
-  ~1900+, we were genuinely data-starved.
-- **Sims sweep.** E shows +277 Elo from 800 → 4 000. Where does the
-  curve flatten? Lc0-style charts plot this; we have the machinery.
-- **Sharper temperature.** T=1 pawn gives soft targets with H≈1.5 bits
-  per position. T=0.3 would force more commitment from the student
-  and may close some of the gap to hard targets.
-- **The self-play step.** Lc0's recipe is *distill first, RL second.*
-  The d15 ep19 ckpt is a perfectly fine starting point for a small
-  self-play loop; the gap from 2084 to "real grandmaster" is what
-  search-during-training is supposed to close.
+The 20×256 ResNet is literally AZ's network. Everything that's different
+is on the *training-procedure* side. Ordered by expected information
+per unit of effort:
+
+### 1. Distill-then-self-play (the big one — Lc0's recipe)
+
+**The defining difference between us and AZ is that AZ doesn't have a
+teacher.** Its policy targets come from its own MCTS visit counts
+during self-play, not from Stockfish. Once you stop needing Stockfish
+to label every position, the data flywheel becomes self-sustaining and
+the only ceiling is compute.
+
+The realistic path for a small lab is **distill-then-RL**, which is
+what Lc0 actually did:
+
+1. Take the d15 ep19 ckpt as the starting prior (we have this).
+2. Run self-play: agent vs agent with 800-sim MCTS at every position.
+3. Record `(state, π = MCTS visit distribution, z = game outcome)`.
+4. Train the network to predict π (cross-entropy) and z (MSE).
+5. Repeat with the newer net playing newer games.
+
+We already have all the pieces — `wm_chess/src/wm_chess/mcts.py`, the
+20×256 net, and the selfplay experiment (`experiments/selfplay/`) has
+v1-v5 of an end-to-end self-play loop. The work is wiring the
+distilled ckpt in as the starting prior and pointing the self-play
+loop at the larger network. Single-GPU at 800 sims/move generates
+maybe 200-400 games/hour; a weekend run gets ~10-20k self-play games.
+That's tiny compared to AZ's 44M but is enough to test whether the
+loop helps at all.
+
+Expected gain: **+200-500 Elo if the loop works.** This is where Lc0
+got most of its strength.
+
+### 2. Eval-sims sweep (free Elo, no retraining)
+
+Experiment E showed +277 Elo on the same checkpoint just from going
+800 → 4 000 sims at eval. Where does that curve flatten? Run the same
+ckpt at 200 / 800 / 2 000 / 4 000 / 8 000 / 16 000 sims, plot Elo vs
+log(sims). That tells us:
+
+- How much of the "1800 ceiling" was eval-side undermeasurement.
+- What the *true* search-saturated Elo of d15 ep19 is.
+- Where to set the eval budget for the next round of experiments.
+
+[`elo_bisect.py`](./experiments/distill-soft/scripts/elo_bisect.py) is
+already built for this — point it at d15 ep19 with `--sims` overridden
+per probe. ~6h on a single g6.4xlarge.
+
+### 3. Sharper soft targets (T=0.3 instead of T=1.0)
+
+`multipv=8` with `T=1` pawn gives target distributions with average
+entropy ~1.5 bits — closer to "uniform over 4 candidates" than "this
+move is best." The 02c-30ep negative result analysis pinned this as a
+likely cause of the *hedging* failure mode (top-K=87%, top-1=36%).
+
+Concrete: regenerate the labels from the existing PGNs with `T=0.3`,
+retrain. No new self-play needed. Tests whether soft targets per se
+are bad, or T=1 specifically is too smooth.
+
+Expected gain: **+50-150 Elo if T=1 was the bottleneck.**
+
+### 4. Stronger / fresher teacher
+
+`d15` ≈ 2500 Elo. Bumping to `d20` (~2700) or `d25` (~2900) raises the
+ceiling, but the cost scales with branching factor ^ depth — d20 is
+~5× the wallclock per move vs d15. Worth it only if (1) and (3) tap out.
+
+### 5. Compute scale-up (brute-force AZ)
+
+The mechanical path: add a second GPU and a DDP wrapper, run the
+self-play loop for weeks, scale data 100×. This is what would
+*actually* close the gap to AZ-style numbers. Realistic only as a
+follow-on.
+
+### What we are NOT going to do (and why)
+
+- **Bigger network.** Experiment A already showed 40×256 buys nothing
+  on this data. The network isn't the bottleneck.
+- **More distillation epochs of the same recipe.** d15 plateaued by
+  ep10. More of the same isn't going to move it.
+- **Tabula-rasa AZ from scratch.** Without distilled initialization,
+  a single-GPU AZ run takes wall-weeks to reach 1500 Elo. d15 ep19 is
+  a much better starting point than random.
+
+## Pending tracker (will update as runs land)
+
+- [x] Experiment A — done (1810 Elo, capacity hypothesis rejected)
+- [x] Experiment E — done (2084 Elo @ 4000 sims, +277 from search)
+- [ ] Experiment C — running (ep0 done, ETA 15:30Z May 15)
+- [ ] Sims sweep on d15 ep19 (200 → 16000) — not yet started
+- [ ] Self-play loop initialized from d15 ep19 — not yet started
+- [ ] T=0.3 ablation — not yet started
 
 ## Where to find the artifacts
 
