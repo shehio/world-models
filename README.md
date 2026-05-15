@@ -116,10 +116,10 @@ to main (see `.github/workflows/ci.yml`).
 | Package | Tests | Wall |
 |---|---:|---:|
 | `wm_chess` (shared core + catalog + merge tools + stubs) | 84 | ~3 s |
-| `experiments/selfplay` | 42 | ~4 s |
+| `experiments/selfplay` | 49 | ~4 s |
 | `experiments/distill-hard` | 6 | ~2 s |
 | `experiments/distill-soft` | 80 | ~3 s |
-| **Total** | **212** | **~12 s** |
+| **Total** | **219** | **~12 s** |
 
 Run any one with `uv run --project <member> python -m pytest
 <member>/tests/`.

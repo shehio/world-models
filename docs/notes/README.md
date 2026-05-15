@@ -31,6 +31,10 @@ in next time.
   when EKS can't get capacity.
 
 ### Operational gotchas
+- [`failure-modes.md`](./failure-modes.md) — full catalog of the bugs
+  hit during the May 2026 training week (NPZ-extracts-fills-volume,
+  wrong-entrypoint-path, SAVE_EVERY=5 loses work, AL2023-vs-DL-AMI,
+  Stockfish ≥1350, …) with symptom / cause / fix.
 - [`eks-gpu-taint-breaks-coredns.md`](./eks-gpu-taint-breaks-coredns.md) —
   don't add `nvidia.com/gpu:NoSchedule` to single-node EKS clusters.
 - [`finalize-merge-oom.md`](./finalize-merge-oom.md) — both
