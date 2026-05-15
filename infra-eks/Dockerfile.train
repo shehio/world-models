@@ -26,19 +26,24 @@ RUN apt-get update && \
 
 # Our editable packages + their non-torch deps. --no-deps prevents
 # torch reinstall; we then explicitly install numpy + python-chess + tqdm
-# (everything wm-chess/distill-soft actually need that isn't already
+# (everything wm-chess/distill-soft/selfplay actually need that isn't already
 # in the pytorch image).
 WORKDIR /work
 COPY wm_chess /work/wm_chess
 COPY experiments/distill-soft /work/experiments/distill-soft
+COPY experiments/selfplay /work/experiments/selfplay
 RUN pip install --no-cache-dir "numpy>=1.26" "python-chess>=1.999" "tqdm>=4.66" \
     && pip install --no-cache-dir --no-deps -e /work/wm_chess \
-    && pip install --no-cache-dir --no-deps -e /work/experiments/distill-soft
+    && pip install --no-cache-dir --no-deps -e /work/experiments/distill-soft \
+    && pip install --no-cache-dir --no-deps -e /work/experiments/selfplay
 
 # Verify GPU torch is intact (build fails fast if pip stomped on it).
 RUN python -c "import torch; assert torch.version.cuda, 'CUDA torch not installed'; print('torch:', torch.__version__, 'cuda:', torch.version.cuda)"
 
 COPY infra-eks/entrypoint-train.sh /entrypoint-train.sh
-RUN chmod +x /entrypoint-train.sh
+COPY infra-eks/entrypoint-selfplay.sh /entrypoint-selfplay.sh
+RUN chmod +x /entrypoint-train.sh /entrypoint-selfplay.sh
 
+# Default entrypoint stays the supervised trainer; override with
+# --entrypoint /entrypoint-selfplay.sh for the AZ-style RL loop.
 ENTRYPOINT ["/entrypoint-train.sh"]

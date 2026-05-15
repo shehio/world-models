@@ -58,6 +58,7 @@ import torch.multiprocessing as mp
 from wm_chess.arena import network_policy, play_match, random_policy
 from wm_chess.config import Config
 from wm_chess.network import AlphaZeroNet
+from selfplay.ckpt import load_net_state_dict
 from selfplay.replay import ShardedReplayBuffer
 from selfplay.selfplay import play_game, play_game_pcr
 from selfplay.train import train_step
@@ -66,13 +67,10 @@ from selfplay.train import train_step
 def _load_net_weights(path: str, map_location):
     """Load just the network state_dict from either format.
 
-    Legacy checkpoints: a raw state_dict.
-    New checkpoints   : {"net": state_dict, "opt": ..., "iter": ..., "hour": ...}
+    Legacy / distilled-supervised checkpoints: a raw state_dict.
+    Selfplay checkpoints: {"net": state_dict, "opt": ..., "iter": ..., "hour": ...}
     """
-    obj = torch.load(path, map_location=map_location)
-    if isinstance(obj, dict) and "net" in obj and isinstance(obj["net"], dict):
-        return obj["net"]
-    return obj
+    return load_net_state_dict(torch.load(path, map_location=map_location))
 
 
 def selfplay_worker(args: tuple) -> list:

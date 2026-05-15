@@ -1,0 +1,78 @@
+# AlphaZero-style self-play RL Job, initialized from a distilled prior.
+# Single pod on the GPU nodegroup. Same render-then-apply pattern as
+# job-train.yaml — every ${VAR} must be exported by the caller.
+#
+# Required env (see run-selfplay.sh):
+#   S3_BUCKET, S3_PREFIX, AWS_DEFAULT_REGION, ECR_URI_TRAIN,
+#   INIT_FROM_S3, RUN_ID, N_BLOCKS, N_FILTERS, SIMS, WORKERS,
+#   GAMES_PER_WORKER, TRAIN_STEPS, TIME_BUDGET, NODEGROUP_LABEL
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wm-chess-selfplay
+  labels:
+    app: wm-chess-selfplay
+    prefix: ${JOB_PREFIX_LABEL}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: wm-chess-selfplay
+    spec:
+      serviceAccountName: wm-chess-train-sa
+      restartPolicy: Never
+      nodeSelector:
+        role: ${NODEGROUP_LABEL}
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: selfplay
+          image: ${ECR_URI_TRAIN}:latest
+          imagePullPolicy: Always
+          # Override the default ENTRYPOINT (which is the supervised
+          # trainer's entrypoint-train.sh) with the self-play one.
+          command: ["/entrypoint-selfplay.sh"]
+          env:
+            - name: S3_BUCKET
+              value: "${S3_BUCKET}"
+            - name: S3_PREFIX
+              value: "${S3_PREFIX}"
+            - name: AWS_DEFAULT_REGION
+              value: "${AWS_DEFAULT_REGION}"
+            - name: INIT_FROM_S3
+              value: "${INIT_FROM_S3}"
+            - name: RUN_ID
+              value: "${RUN_ID}"
+            - name: N_BLOCKS
+              value: "${N_BLOCKS}"
+            - name: N_FILTERS
+              value: "${N_FILTERS}"
+            - name: SIMS
+              value: "${SIMS}"
+            - name: WORKERS
+              value: "${WORKERS}"
+            - name: GAMES_PER_WORKER
+              value: "${GAMES_PER_WORKER}"
+            - name: TRAIN_STEPS
+              value: "${TRAIN_STEPS}"
+            - name: LR
+              value: "${LR}"
+            - name: TIME_BUDGET
+              value: "${TIME_BUDGET}"
+            - name: PCR
+              value: "${PCR}"
+            - name: N_HISTORY
+              value: "${N_HISTORY}"
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+            # Self-play is CPU-heavy (N workers playing games in parallel);
+            # bump requests so the pod won't be scheduled on a node where
+            # CPU contention crushes throughput. The trainer uses the GPU.
+            requests:
+              cpu: "16"
+              memory: 32Gi

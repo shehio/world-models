@@ -1,0 +1,53 @@
+# Self-play RL cluster (GPU) for us-east-1.
+#
+# Distinct from cluster-train-us.yaml (supervised distillation) so the
+# two cluster lifecycles don't entangle — supervised training is bursty
+# (~5 h per ckpt), self-play is long-running (~12-24 h per iter sweep).
+#
+# Apply: eksctl create cluster -f cluster-selfplay-us.yaml
+# Tear:  eksctl delete cluster -f cluster-selfplay-us.yaml
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: wm-chess-selfplay
+  region: us-east-1
+  version: "1.31"
+  tags:
+    Project: wm-chess
+    Component: selfplay
+    ManagedBy: eksctl
+
+iam:
+  withOIDC: true
+  serviceAccounts:
+    - metadata:
+        name: wm-chess-train-sa
+        namespace: default
+      # Self-play GETs the distilled prior + iter checkpoints; PUTs new
+      # iter_NNN.pt and net_hour_NNN.pt to S3. Same S3 RW role as
+      # supervised training.
+      attachPolicyARNs:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+# Self-play is CPU-heavy: N self-play worker processes each running
+# MCTS (lots of small tensor ops the L4 / L40S GPU can't easily batch
+# across workers). g6.8xlarge gets us 32 vCPU + 1× L4 + 128 GB RAM,
+# which fits 24 workers comfortably with the trainer using the GPU.
+managedNodeGroups:
+  - name: gpu-selfplay
+    instanceTypes:
+      - g6.8xlarge        # L4 24 GB, 32 vCPU, 128 GB RAM. $2.014/h us-east OD
+    # On-demand: AZ self-play loops checkpoint per iter so spot reclaim
+    # would lose <= 1 iter of compute, but the 32 vCPU OD G/VT quota
+    # easily fits one g6.8xlarge (32 vCPU). Pay for predictability.
+    spot: false
+    minSize: 0
+    desiredCapacity: 1
+    maxSize: 1
+    volumeSize: 100
+    amiFamily: AmazonLinux2
+    labels:
+      role: gpu-selfplay
+    privateNetworking: false
