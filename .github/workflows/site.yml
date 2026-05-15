@@ -33,6 +33,25 @@ jobs:
       - name: Build
         working-directory: site
         run: hugo --minify
+
+      - name: Set up Python (for link checker + its tests)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Unit-test the link checker
+        run: python -m pytest site/tests/test_check_links.py -q
+
+      # Hard gate before deploy: every internal href in the built site
+      # must resolve to a real file under site/public/. Catches the kind
+      # of 404 that happens when you rename or consolidate pages and
+      # forget to add aliases.
+      - name: Check internal links in built site
+        run: python site/tests/check_links.py site/public
+
       - uses: actions/configure-pages@v4
         with:
           enablement: true

@@ -68,6 +68,35 @@ cd site && hugo --minify
 # output -> site/public/
 ```
 
+## Catching 404s before they ship
+
+The CI workflow (`.github/workflows/site.yml`) gates the deploy on a
+static internal-link check:
+
+```bash
+# 1. unit-test the checker itself
+python -m pytest site/tests/test_check_links.py -q
+
+# 2. run it against the built site — exits non-zero on any broken link
+python site/tests/check_links.py site/public
+```
+
+`tests/check_links.py` walks every `.html` under `public/`, extracts
+every `href`, and verifies each internal target resolves to a file on
+disk. Externals, fragments (`#anchor`), and `mailto:`/`tel:` are
+skipped. The pytest file has 22 tests covering href extraction
+(double-quoted / single-quoted / minified-unquoted), the
+internal-vs-external split, path resolution (root, directory →
+`index.html`, asset files, base-path-prefix stripping for project
+Pages, fragment/query stripping), and end-to-end runs on synthetic
+HTML.
+
+Designed so that the kind of bug we just had (consolidate pages,
+forget to add aliases → silent 404s) can't ship: the link checker
+runs against the built artifact *before* `actions/upload-pages-artifact`,
+and the deploy step `needs: build`. If the checker fails, the deploy
+doesn't run at all.
+
 ## When you buy a domain
 
 Two changes:
