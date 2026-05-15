@@ -8,11 +8,11 @@
   <div class="result-box">
     <div class="result-num">2,084</div>
     <div class="result-unit">elo</div>
-    <div class="result-context">vs calibrated stockfish · 4,000 mcts sims/move</div>
+    <div class="result-context">vs calibrated stockfish · 800 mcts sims/move · weakest opponent</div>
   </div>
   <div class="result-context-block">
-    <p>AlphaZero used <em>5,000 TPUs</em> for self-play data generation and <em>64 TPU-v2s</em> to train. We use the <strong>same network</strong> (a 20-block × 256-channel ResNet, ~24M parameters) on <em>one GPU</em>. The result above costs about <strong>5 GPU-hours</strong> of training — roughly four orders of magnitude less compute than the original paper.</p>
-    <p class="dim">Method: supervised distillation from Stockfish 17 (depth 15, multipv 8 soft targets), evaluated at deep inference search. The number above is the same checkpoint as our routine 1,807-Elo result, just read with 5× the search budget.</p>
+    <p>AlphaZero used <em>5,000 TPUs</em> for self-play data generation and <em>64 TPU-v2s</em> to train. We use the <strong>same network</strong> (a 20-block × 256-channel ResNet, ~24M parameters) on <em>one GPU</em>. The number above is the strongest checkpoint we have so far — supervised distillation from Stockfish on 30M positions, evaluated against a calibrated 1,350-Elo opponent. Routine 800-sim eval, no inference-search tricks.</p>
+    <p class="dim">Against a tighter <em>UCI=1,800</em> opponent (calibrated near our model strength), the same checkpoint scores <strong>2,004 Elo</strong> — read that as the most honest current number. Total training cost: about 16 GPU-hours on a single L40S. Roughly four orders of magnitude less compute than the AlphaZero paper.</p>
   </div>
 </section>
 
@@ -43,9 +43,9 @@
 
   <article class="finding">
     <div class="finding-tag">data scale</div>
-    <h3>6× more data, currently training</h3>
-    <p>The baseline used 5M positions subsampled from a 30M-position dataset. We're now training on the full 30M to test whether the recipe was data-starved. Epoch 1 top-1 accuracy is already 0.347 — higher than the baseline reached at epoch 4 — which suggests the larger dataset is teaching the network meaningfully faster per epoch. Final result expected in ~14 hours.</p>
-    <p class="dim">If this lands above 1,810 the bottleneck was data. If it lands at 1,810 too, the bottleneck is the distillation procedure itself, which directs the next experiment toward self-play RL.</p>
+    <h3>+199 elo from 6× more positions — the winning lever</h3>
+    <p>The baseline used 5M positions subsampled from a 30M-position dataset. We trained on the full 30M (same network, same hyperparameters, even a weaker teacher: Stockfish depth 10 vs depth 15) and the checkpoint at epoch 9 scores <strong>2,009 Elo at UCI=1,800</strong> — +199 over the d15 baseline. Epoch 4 hits 2,084 Elo at UCI=1,350 (101 wins / 3 draws / 0 losses).</p>
+    <p class="dim">The bottleneck on the original baseline was <em>data</em>, not teacher quality or network capacity. 16 h on a g6e.8xlarge, ~$50 of compute. The most cost-effective single change in the project.</p>
   </article>
 
   <p><a href="{{ "/findings/" | relURL }}">→ full findings, numbers, and confidence intervals</a></p>

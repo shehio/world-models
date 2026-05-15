@@ -75,7 +75,16 @@ def worker(args: tuple) -> dict:
 
     cfg = replace(Config(), n_res_blocks=n_blocks, n_filters=n_filters)
     net = AlphaZeroNet(cfg)
-    net.load_state_dict(torch.load(ckpt_path, map_location=device))
+    # Accept two checkpoint shapes:
+    #   - bare state_dict (what distill-soft/scripts/train.py writes)
+    #   - {"net": state_dict, "opt": ..., "iter": ...} (what the self-play
+    #     loop writes — selfplay_loop_mp.py)
+    blob = torch.load(ckpt_path, map_location=device)
+    if isinstance(blob, dict) and "net" in blob and isinstance(blob["net"], dict):
+        state_dict = blob["net"]
+    else:
+        state_dict = blob
+    net.load_state_dict(state_dict)
     net.to(device)
     net.eval()
     agent_pol = network_policy(net, cfg, device, sims=sims, batch_size=batch_size)

@@ -1,0 +1,66 @@
+# 10x d15 datagen cluster.
+#
+# Same shape as cluster.yaml but with the spot nodegroup allowed to
+# scale up to 80 pods (2,560 vCPU). The diversified instance family
+# stays the same. desiredCapacity tracks the current spot quota
+# (256 vCPU = 8 pods); if a Service Quotas increase lands, raise
+# desiredCapacity and the Job's pending pods will schedule.
+#
+# Apply: eksctl create cluster -f infra-eks/cluster-gen-10x.yaml
+# Tear:  eksctl delete cluster -f infra-eks/cluster-gen-10x.yaml
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: wm-chess-gen-10x
+  region: us-east-1
+  version: "1.31"
+  tags:
+    Project: wm-chess
+    Component: datagen-10x
+    ManagedBy: eksctl
+
+iam:
+  withOIDC: true
+  serviceAccounts:
+    - metadata:
+        name: wm-chess-runner
+        namespace: default
+      attachPolicyARNs:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+managedNodeGroups:
+  - name: workers-spot-10x
+    instanceTypes:
+      - c7i.8xlarge
+      - c6i.8xlarge
+      - c7a.8xlarge
+      - c5.9xlarge
+      - m7i.8xlarge
+      - m6i.8xlarge
+    spot: true
+    # Start at the current ~256-vCPU spot quota. Bump desiredCapacity
+    # later (`eksctl scale nodegroup ...`) if quota raises and you want
+    # the pending Job pods to schedule.
+    desiredCapacity: 8
+    minSize: 0
+    maxSize: 80          # 80 × 32 vCPU = 2,560 vCPU when fully scaled
+    volumeSize: 80
+    volumeType: gp3
+    ssh:
+      enableSsm: true
+    labels:
+      role: worker
+      capacityType: spot
+    taints: []
+    tags:
+      Project: wm-chess
+
+addons:
+  - name: vpc-cni
+  - name: coredns
+  - name: kube-proxy
+  - name: aws-ebs-csi-driver
+    wellKnownPolicies:
+      ebsCSIController: true

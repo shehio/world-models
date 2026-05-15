@@ -1,0 +1,61 @@
+# 10x d15 datagen Job — Indexed parallel, 80 pods × 6,250 games each
+# = 500,000 games target.
+#
+# Same template as k8s/job-gen.yaml but parameterized for the 10x scale.
+# The Job stays Indexed: pod N gets BASE_SEED + N * 1000 so all shards
+# are unique even when reclaimed pods get re-scheduled with the same
+# completion index.
+#
+# Rendered + applied by infra-eks/launchers/gen-d15-10x.sh.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wm-chess-gen-10x
+  labels:
+    app: wm-chess
+    role: gen
+    scale: 10x
+spec:
+  parallelism: 80
+  completions: 80
+  completionMode: Indexed
+  backoffLimit: 240        # 3 reclamations per pod average — tolerant
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: wm-chess
+        role: gen
+        scale: 10x
+    spec:
+      restartPolicy: Never
+      serviceAccountName: wm-chess-runner
+      nodeSelector:
+        role: worker
+      containers:
+        - name: gen
+          image: ${ECR_URI}:latest
+          args: ["gen"]
+          env:
+            - name: S3_BUCKET
+              value: "${S3_BUCKET}"
+            - name: S3_PREFIX
+              value: "${S3_PREFIX}"
+            - name: BASE_SEED
+              value: "10042"        # distinct from the original d15's 42
+            - name: GAMES_PER_POD
+              value: "6250"          # 80 * 6250 = 500,000 total
+            - name: DEPTH
+              value: "15"
+            - name: MULTIPV
+              value: "8"
+            - name: T_PAWNS
+              value: "1.0"
+          resources:
+            requests:
+              cpu: "30"
+              memory: "20Gi"
+            limits:
+              cpu: "32"
+              memory: "60Gi"

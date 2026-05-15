@@ -103,7 +103,7 @@ curve will reveal the saturation point. The machinery
 ([`elo_bisect.py`](https://github.com/shehio/world-models/blob/main/experiments/distill-soft/scripts/elo_bisect.py))
 is in place.
 
-## data scale — 6× more positions
+## data scale — 6× more positions (the winning lever)
 
 **Hypothesis:** the baseline used a 5M-position subsample of an
 available 30M-position dataset. Maybe the recipe is fine and we're
@@ -112,7 +112,8 @@ just data-starved.
 **Setup:** 20×256 net (same as baseline), full ~30M positions, no
 `MAX_POSITIONS` truncation. `BATCH_SIZE=2048` to keep iteration count
 reasonable (~14,650 batches/epoch). In-RAM via 256 GB on a
-`g6e.8xlarge` (32 vCPU + 1× L40S). 20 epochs.
+`g6e.8xlarge` (32 vCPU + 1× L40S). 20 epochs, ~49 min/epoch,
+~16 h wallclock.
 
 **Why this is 3× slower per epoch than the capacity experiment.**
 Same single L40S in both. The wallclock difference comes from raw
@@ -129,34 +130,51 @@ The extra ~20% above the napkin estimate is OS page-cache cold start
 on epoch 0 (15 GB of memmapped files page in) + DataLoader overhead
 on the bigger dataset.
 
-**Results so far:**
+### results
 
-| epoch | loss | top-1 |
-|---:|---:|---:|
-| 0 | 2.843 | 0.308 |
-| 1 | 2.668 | 0.347 |
-| ... | running | running |
+100-game evals vs Stockfish at two anchors:
 
-Top-1 at epoch 1 (0.347) is already higher than the baseline reached
-at epoch 4 (~0.32) — the larger dataset is teaching the network
-meaningfully faster *per epoch*, which suggests the baseline was at
-least partially data-starved. ETA: full 20 epochs around 03:30Z May
-15 (first eval ckpt) → 15:30Z May 15 (final).
+| epoch | UCI=1350 Elo | UCI=1800 Elo | W/D/L vs UCI=1800 |
+|---:|---:|---:|---:|
+| **4** | **2,084** [1915, ∞] | **2,004** | 71 / 17 / 16 |
+| **9** | 1,961 [1825, ∞] | **2,009** | 70 / 20 / 14 |
+| 14 | 1,888 [1769, 2301] | 1,957 | 57 / 34 / 13 |
+| 19 | 1,961 [1825, ∞] | 1,957 | 53 / 42 / 9 |
 
-**Outstanding question:** if the final UCI=1,800 number lands above
-1,810, dataset size was the bottleneck and the next round should
-generate ~5× more distillation data. If it lands at 1,810 too, the
-bottleneck is the *training procedure itself*, which directs the next
-experiment toward self-play RL ([next →](/next/)).
+The data ablation peaks at **ep 9: 2,009 Elo at the tight UCI=1,800
+anchor**.
+
+### same teacher, different dataset size
+
+| dataset (depth-10 teacher) | ep4 Elo @1350 | ep19 Elo @1350 |
+|---|---:|---:|
+| 5 M subset | 1,749 | 1,730 |
+| **30 M full** | **2,084** | **1,961** |
+| delta | **+335** | **+231** |
+
+### stronger-teacher-less-data vs weaker-teacher-more-data
+
+| | UCI=1800 Elo |
+|---|---:|
+| baseline (d15 teacher, 5 M) | 1,810 |
+| **data ablation (d10 teacher, 30 M)** | **2,009** |
+| delta | **+199** |
+
+**Verdict: the bottleneck on the original baseline was data.** Six
+times more positions buys ~200 Elo at the calibrated anchor — even
+with a *weaker* teacher (depth-10 vs depth-15).
 
 ## summary
 
 | variable changed | result | hypothesis |
 |---|---|---|
-| **network capacity** (40×256 vs 20×256) | ~1,810 → 1,810 (no change) | **rejected** |
+| **network capacity** (40×256 vs 20×256) | ~1,810 → ~1,810 | **rejected** |
 | **eval-side search** (4,000 vs 800 sims) | 1,807 → 2,084 (+277) | **confirmed** |
-| **data scale** (30M vs 5M positions) | running | TBD |
+| **data scale** (30M vs 5M positions) | 1,810 → 2,009 (+199 at UCI=1,800) | **confirmed** |
 
 Capacity is decisively *not* the bottleneck. Eval search recovers a
-huge slice. The data result will inform whether more distillation data
-helps or whether the procedure is the real bottleneck.
+huge slice. **Data was the real bottleneck.** Strongest checkpoint to
+date: **2,084 Elo @ UCI=1,350 / 2,004 @ UCI=1,800** from the d10
+full-30M run at epoch 4 — the headline number for the whole project.
+A 5× larger d15 dataset is the natural next step
+([what's next →](/next/)).

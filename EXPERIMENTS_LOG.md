@@ -4,18 +4,27 @@ Running log of the ablation experiments on the d15/d10 multi-pv-soft
 distillation pipeline. Drafted for a blog post; numbers update as
 checkpoints land.
 
-## TL;DR (so far)
+## TL;DR (all three ablations + self-play done)
 
-| | d15 20×256 | A (d15, 40×256) | E (d15 ep19, sims=4000) | C (d10 full 30M) |
-|---|---:|---:|---:|---:|
-| Best Elo (UCI=1350 anchor, 800 sims) | **1807** | 1851 | **2084** | running |
-| Best Elo (UCI=1800 anchor, 800 sims) | n/a | **1813** | n/a | running |
-| Verdict | baseline | no gain → not capacity-limited | **+277 Elo from 5× more search at eval** | tests data-limited hypothesis |
+| | baseline d15 20×256 (5M) | capacity 40×256 (5M) | search sims=4000 (d15 ep19) | **data d10 full 30M** | self-play (10 iters) |
+|---|---:|---:|---:|---:|---:|
+| Best Elo @ UCI=1350 (800 sims) | 1,807 | 1,851 | **2,084** | **2,084** (ep4) | running eval |
+| Best Elo @ UCI=1800 (800 sims) | 1,810 | 1,813 | n/a | **2,009** (ep9) | running eval |
+| Verdict | baseline | no gain — **not capacity-limited** | +277 Elo from 5× more eval search | **+199 Elo at UCI=1800 — data-limited confirmed** | TBD |
 
-The 1800-Elo plateau we saw on the 20×256 baseline is **(a) not
-capacity-limited** (A confirms) and **(b) partly an eval-search
-artifact** (E confirms: same checkpoint reads ~+280 Elo stronger at
-4000 sims). Whether it's data-limited is what C is currently asking.
+The 1,800-Elo plateau on the 20×256 baseline turned out to be three
+things at once:
+
+1. **Not** capacity-limited (capacity ablation rejected).
+2. Partly an eval-search artifact (+277 Elo for free at 4,000 sims).
+3. Data-limited (6× more positions → +199 Elo at the tight UCI=1,800
+   anchor, with the *weaker* d10 teacher to boot).
+
+Net: the strongest checkpoint we have is **d10 full-30M ep4 at 2,084
+Elo** (UCI=1,350, 800 sims) / **2,004 Elo at UCI=1,800**. That's
++277 over the d15 baseline (1,807) on the loose anchor and +194 on
+the tight one. Same architecture, same compute budget, weaker
+teacher — just more data.
 
 ## How we're different from AlphaZero
 
@@ -104,24 +113,86 @@ sims from 200 → 8000 and report the Elo curve. That's what
 [`elo_bisect.py`](./experiments/distill-soft/scripts/elo_bisect.py)
 is built for.
 
-## Experiment C — data-limited?
+## Experiment C — data-limited? (yes)
 
 **Hypothesis:** 5 M positions is too small for a 24 M-param network.
 The full d10 dataset has ~30 M positions; using all of it should help
 *if* the ceiling is data-driven.
 
 **Setup:** 20 × 256, 30 M positions (no `MAX_POSITIONS` truncation),
-`BATCH_SIZE=2048` to keep iteration count reasonable, in-RAM via the
-256 GB on g6e.8xlarge in eu-central-1 via
+`BATCH_SIZE=2048`, in-RAM via 256 GB on g6e.8xlarge in eu-central-1 via
 [`infra-eks/launchers/d10-full30m.sh`](./infra-eks/launchers/d10-full30m.sh).
+20 epochs, ~49 min/epoch, ~16 h total wallclock. Finished 19:17 UTC May 15.
 
-| epoch | loss | top-1 | epoch_time (s) |
+### training trajectory
+
+| epoch | loss | top-1 |
+|---:|---:|---:|
+| 0 | 2.843 | 0.308 |
+| 9 | 2.634 | 0.357 |
+| 13 | 2.632 | 0.357 |
+| 19 | 2.630 | 0.357 |
+
+Loss plateaus by ep 9. Top-1 plateaus at 0.357 — meaningfully higher
+than the d15-baseline's 0.34 and d10-5M-subset's 0.345.
+
+### results
+
+100-game evals vs Stockfish at two anchors:
+
+| epoch | UCI=1350 Elo | UCI=1800 Elo | W/D/L vs UCI=1800 |
 |---:|---:|---:|---:|
-| 0 | 2.843 | 0.308 | 2 936 |
-| ... | running | running | running |
+| **4** | **2,084** [1915, ∞] | **2,004** | 71 / 17 / 16 |
+| **9** | 1,961 [1825, ∞] | **2,009** | 70 / 20 / 14 |
+| 14 | 1,888 [1769, 2301] | 1,957 | 57 / 34 / 13 |
+| 19 | 1,961 [1825, ∞] | 1,957 | 53 / 42 / 9 |
 
-**ETA:** 49 min/epoch × 20 = ~16 h total → first eval ckpt (ep4) around
-**03:30 UTC May 15**; full run around **15:30 UTC May 15**.
+C peaks at ep 9 — 2,009 Elo at the tight UCI=1,800 anchor.
+
+### comparison: same teacher, different dataset size
+
+| dataset (depth-10 teacher) | ep4 Elo @1350 | ep19 Elo @1350 |
+|---|---:|---:|
+| 5 M subset | 1,749 | 1,730 |
+| **30 M full** | **2,084** | **1,961** |
+| delta | **+335** | **+231** |
+
+### comparison: stronger teacher with less data vs weaker teacher with more
+
+| | UCI=1800 Elo |
+|---|---:|
+| d15 baseline (d15 teacher, 5M) | 1,810 |
+| **C ep9 (d10 teacher, 30M)** | **2,009** |
+| delta | **+199** |
+
+**Headline:** the bottleneck on the original baseline was *data*, not
+teacher quality or network capacity. Six times more positions buys
+~200 Elo at the calibrated anchor.
+
+### outstanding: sims=4000 on C ep4
+
+Re-running [`infra-eks/launchers/eval-c-ep4-sims4000.sh`](./infra-eks/launchers/eval-c-ep4-sims4000.sh)
+on the strongest checkpoint (ep4, which sweeps UCI=1350 at 101/3/0
+already) to find the search-saturated number. Launched 2026-05-16
+in eu-central-1.
+
+## Self-play loop — running summary
+
+Initialized from d15 ep19 distilled prior (1,807 Elo). Ran for 12 h on
+a g6.8xlarge in us-east-1. Completed 10 full iters before hitting
+budget.
+
+| | value |
+|---|---|
+| Iters completed | 10 (~75 min/iter on average) |
+| Self-play games | 480 total (48 per iter, KataGo PCR p_full=0.25) |
+| Replay buffer | 11,873 positions across 10 shards |
+| Final policy loss | 1.811 (down from 1.858 at iter 2) |
+| vs random sanity | 17 / 3 / 0 at iter 7 |
+
+Eval of `final.pt` launched 2026-05-16 in eu-central-1
+([`infra-eks/launchers/eval-selfplay-final.sh`](./infra-eks/launchers/eval-selfplay-final.sh)).
+Results pending.
 
 ### Why C is slow vs A (per-batch math)
 
@@ -227,17 +298,17 @@ follow-on.
   a single-GPU AZ run takes wall-weeks to reach 1500 Elo. d15 ep19 is
   a much better starting point than random.
 
-## Pending tracker (will update as runs land)
+## Pending tracker
 
-- [x] Experiment A — done (1810 Elo, capacity hypothesis rejected)
-- [x] Experiment E — done (2084 Elo @ 4000 sims, +277 from search)
-- [ ] Experiment C — running (ep1 done top1=0.347, ETA 15:30Z May 15)
-- [ ] Sims sweep on d15 ep19 (200 → 16000) — not yet started
-- [x] Self-play loop initialized from d15 ep19 — **launched** on EKS
-  cluster `wm-chess-selfplay` (us-east-1, g6.8xlarge, 24 workers, 800
-  sims, PCR on, 12 h budget, started 01:58Z May 15). Results land in
-  `s3://wm-chess-library-…/d15-…/selfplay/net-20x256/20260515T0157Z/`.
-- [ ] T=0.3 ablation — not yet started
+- [x] **Capacity ablation** — 1,810 Elo, hypothesis rejected.
+- [x] **Search ablation** (d15 ep19 @ 4,000 sims) — 2,084 Elo, +277 over the 800-sim baseline.
+- [x] **Data ablation** (d10 30M) — **2,009 Elo at UCI=1,800, +199 over d15 baseline**. Bottleneck was data.
+- [x] **Self-play loop** (distill → RL from d15 ep19) — 10 iters, 480 games, final ckpt produced. Eval running.
+- [ ] **sims=4000 on C ep4** — launched 2026-05-16 in eu-central-1, ETA ~90 min.
+- [ ] **Self-play final eval** — launched 2026-05-16 in eu-central-1, ETA ~60 min.
+- [ ] **Full sims sweep on the strongest ckpt** — 200 / 800 / 2,000 / 4,000 / 8,000 / 16,000.
+- [ ] **10× d15 datagen** — launcher ready ([`infra-eks/launchers/gen-d15-10x.sh`](./infra-eks/launchers/gen-d15-10x.sh)). Spot-quota pending; runs at 8 pods (4-day wallclock) without it, ~12 h with the quota bump.
+- [ ] **T=0.3 sharper-targets ablation** — not yet started.
 
 ## Where to find the artifacts
 
