@@ -1,0 +1,111 @@
+<div class="svg-frame">
+<svg viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg" aria-label="Monte Carlo Tree Search illustration" class="diagram tree">
+  <!-- edges first so nodes overlay -->
+  <!-- root → 4 children -->
+  <line x1="360" y1="55" x2="180" y2="135" class="edge"/>
+  <line x1="360" y1="55" x2="300" y2="135" class="edge"/>
+  <line x1="360" y1="55" x2="420" y2="135" class="edge primary"/>
+  <line x1="360" y1="55" x2="540" y2="135" class="edge"/>
+
+  <!-- child 1 → 2 grandchildren -->
+  <line x1="180" y1="155" x2="120" y2="240" class="edge"/>
+  <line x1="180" y1="155" x2="220" y2="240" class="edge"/>
+  <!-- child 2 → 2 grandchildren -->
+  <line x1="300" y1="155" x2="270" y2="240" class="edge"/>
+  <line x1="300" y1="155" x2="340" y2="240" class="edge"/>
+  <!-- child 3 → 3 grandchildren (the heavy line) -->
+  <line x1="420" y1="155" x2="380" y2="240" class="edge"/>
+  <line x1="420" y1="155" x2="430" y2="240" class="edge primary"/>
+  <line x1="420" y1="155" x2="480" y2="240" class="edge"/>
+  <!-- child 4 → 2 grandchildren -->
+  <line x1="540" y1="155" x2="510" y2="240" class="edge"/>
+  <line x1="540" y1="155" x2="590" y2="240" class="edge"/>
+
+  <!-- grandchild expansions (the primary line keeps going) -->
+  <line x1="430" y1="260" x2="400" y2="320" class="edge primary"/>
+  <line x1="430" y1="260" x2="460" y2="320" class="edge"/>
+
+  <!-- ROOT -->
+  <g class="node root">
+    <circle cx="360" cy="40" r="20"/>
+    <text x="360" y="44" text-anchor="middle">s₀</text>
+  </g>
+  <text x="395" y="35" class="annot">current position</text>
+
+  <!-- LEVEL 1: 4 candidate moves, sizes proportional to visits -->
+  <g class="node">
+    <circle cx="180" cy="145" r="14"/>
+    <text x="180" y="149" text-anchor="middle" class="small">12</text>
+  </g>
+  <text x="155" y="180" class="annot dim">N=12</text>
+
+  <g class="node">
+    <circle cx="300" cy="145" r="17"/>
+    <text x="300" y="149" text-anchor="middle" class="small">28</text>
+  </g>
+  <text x="275" y="183" class="annot dim">N=28</text>
+
+  <g class="node primary">
+    <circle cx="420" cy="145" r="22"/>
+    <text x="420" y="149" text-anchor="middle">112</text>
+  </g>
+  <text x="395" y="189" class="annot">N=112 ← chosen</text>
+
+  <g class="node">
+    <circle cx="540" cy="145" r="15"/>
+    <text x="540" y="149" text-anchor="middle" class="small">18</text>
+  </g>
+  <text x="515" y="180" class="annot dim">N=18</text>
+
+  <!-- LEVEL 2: grandchildren -->
+  <g class="node">
+    <circle cx="120" cy="250" r="9"/>
+  </g>
+  <g class="node">
+    <circle cx="220" cy="250" r="9"/>
+  </g>
+  <g class="node">
+    <circle cx="270" cy="250" r="11"/>
+  </g>
+  <g class="node">
+    <circle cx="340" cy="250" r="9"/>
+  </g>
+
+  <g class="node">
+    <circle cx="380" cy="250" r="9"/>
+  </g>
+  <g class="node primary">
+    <circle cx="430" cy="250" r="15"/>
+    <text x="430" y="254" text-anchor="middle" class="small">61</text>
+  </g>
+  <g class="node">
+    <circle cx="480" cy="250" r="9"/>
+  </g>
+
+  <g class="node">
+    <circle cx="510" cy="250" r="9"/>
+  </g>
+  <g class="node">
+    <circle cx="590" cy="250" r="9"/>
+  </g>
+
+  <!-- LEVEL 3 on primary line only -->
+  <g class="node">
+    <circle cx="400" cy="330" r="8"/>
+  </g>
+  <g class="node primary">
+    <circle cx="460" cy="330" r="11"/>
+  </g>
+
+  <!-- legend -->
+  <g class="legend">
+    <text x="40" y="40" class="annot">root: current board state</text>
+    <text x="40" y="58" class="annot dim">children = candidate moves</text>
+    <text x="40" y="76" class="annot dim">size ∝ visit count N</text>
+    <text x="40" y="94" class="annot dim">teal = most-visited path</text>
+  </g>
+
+  <!-- caption -->
+  <text x="360" y="355" text-anchor="middle" class="annot dim">800 MCTS rollouts per move during training · same network used as prior + value</text>
+</svg>
+</div>

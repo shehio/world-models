@@ -1,0 +1,59 @@
+<div class="svg-frame">
+<svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg" aria-label="20×256 ResNet architecture" class="diagram">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#00d4aa"/>
+    </marker>
+  </defs>
+
+  <!-- input -->
+  <g class="arch-block">
+    <rect x="20" y="80" width="100" height="60" rx="2"/>
+    <text x="70" y="105" text-anchor="middle">input</text>
+    <text x="70" y="125" text-anchor="middle" class="sub">19 × 8 × 8</text>
+  </g>
+
+  <!-- conv stem -->
+  <line x1="120" y1="110" x2="160" y2="110" stroke="#00d4aa" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <g class="arch-block">
+    <rect x="160" y="80" width="80" height="60" rx="2"/>
+    <text x="200" y="105" text-anchor="middle">conv 3×3</text>
+    <text x="200" y="125" text-anchor="middle" class="sub">256 ch</text>
+  </g>
+
+  <!-- residual stack (3 visible + ellipsis) -->
+  <line x1="240" y1="110" x2="280" y2="110" stroke="#00d4aa" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <g class="arch-block stacked">
+    <rect x="280" y="74" width="92" height="72" rx="2"/>
+    <rect x="288" y="82" width="92" height="72" rx="2" class="trail"/>
+    <rect x="296" y="90" width="92" height="72" rx="2" class="trail2"/>
+    <text x="326" y="116" text-anchor="middle">res block</text>
+    <text x="326" y="134" text-anchor="middle" class="sub">× 20</text>
+  </g>
+
+  <line x1="388" y1="110" x2="430" y2="110" stroke="#00d4aa" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+  <!-- split into two heads -->
+  <line x1="430" y1="110" x2="470" y2="60"  stroke="#00d4aa" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="430" y1="110" x2="470" y2="160" stroke="#00d4aa" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+  <g class="arch-block head">
+    <rect x="470" y="30" width="120" height="60" rx="2"/>
+    <text x="530" y="55" text-anchor="middle">policy head</text>
+    <text x="530" y="75" text-anchor="middle" class="sub">4,672 logits</text>
+  </g>
+  <g class="arch-block head">
+    <rect x="470" y="130" width="120" height="60" rx="2"/>
+    <text x="530" y="155" text-anchor="middle">value head</text>
+    <text x="530" y="175" text-anchor="middle" class="sub">tanh → [-1,+1]</text>
+  </g>
+
+  <!-- legend / annotation -->
+  <text x="640" y="50"  class="annot">~ 23.7M params</text>
+  <text x="640" y="68"  class="annot dim">same as AZ</text>
+  <text x="640" y="115" class="annot">policy + value</text>
+  <text x="640" y="133" class="annot dim">jointly trained</text>
+  <text x="640" y="180" class="annot">cross-entropy</text>
+  <text x="640" y="198" class="annot dim">+ MSE loss</text>
+</svg>
+</div>

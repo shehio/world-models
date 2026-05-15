@@ -1,103 +1,104 @@
 {{ define "main" }}
 <section class="hero">
   <h1>world models · chess</h1>
-  <p class="tagline">alphazero's network · ~10,000× less compute · still learning</p>
+  <p class="tagline">alphazero's network · single gpu · how far can we get?</p>
 </section>
 
-<section class="intro">
-  <p>AlphaZero used a 20-block × 256-channel ResNet and 5,000 TPUs to reach grandmaster-level chess in 9 hours. We use <em>the same architecture</em> on a single GPU and ask how far we can get with distillation from Stockfish plus a self-play tail. Latest checkpoint: <strong>2,084 Elo</strong> at 4,000-sim MCTS, ~10,000× less training compute than AlphaZero.</p>
-</section>
-
-<section class="stats">
-  <div class="stat">
-    <div class="stat-num">2,084</div>
-    <div class="stat-label">elo · d15 ep19 @ 4000 sims</div>
+<section class="result-strip">
+  <div class="result-box">
+    <div class="result-num">2,084</div>
+    <div class="result-unit">elo</div>
+    <div class="result-context">vs calibrated stockfish · 4,000 mcts sims/move</div>
   </div>
-  <div class="stat">
-    <div class="stat-num">23.7M</div>
-    <div class="stat-label">params · same as alphazero</div>
-  </div>
-  <div class="stat">
-    <div class="stat-num">~5 h</div>
-    <div class="stat-label">total gpu time · 1× l40s</div>
-  </div>
-  <div class="stat">
-    <div class="stat-num">219</div>
-    <div class="stat-label">tests passing</div>
+  <div class="result-context-block">
+    <p>AlphaZero used <em>5,000 TPUs</em> for self-play data generation and <em>64 TPU-v2s</em> to train. We use the <strong>same network</strong> (a 20-block × 256-channel ResNet, ~24M parameters) on <em>one GPU</em>. The result above costs about <strong>5 GPU-hours</strong> of training — roughly four orders of magnitude less compute than the original paper.</p>
+    <p class="dim">Method: supervised distillation from Stockfish 17 (depth 15, multipv 8 soft targets), evaluated at deep inference search. The number above is the same checkpoint as our routine 1,807-Elo result, just read with 5× the search budget.</p>
   </div>
 </section>
 
-<section class="category">
-  <div class="category-header">
-    <h2>experiments</h2>
-    <p>three ablations that bound the recipe's ceiling</p>
-  </div>
-  <div class="grid grid-2">
-    <a href="{{ "/baseline/" | relURL }}" class="card">
-      <h3>baseline</h3>
-      <p>d15 20×256 distillation · 1,807 elo @ 800 sims · the number we're trying to beat</p>
-    </a>
-    <a href="{{ "/capacity/" | relURL }}" class="card">
-      <h3>capacity · experiment a</h3>
-      <p>40×256 vs 20×256 on the same data · network isn't the bottleneck (rejected)</p>
-    </a>
-    <a href="{{ "/data/" | relURL }}" class="card">
-      <h3>data · experiment c</h3>
-      <p>full 30m positions vs 5m subsample · is the ceiling data-limited? (running)</p>
-    </a>
-    <a href="{{ "/search/" | relURL }}" class="card">
-      <h3>search · experiment e</h3>
-      <p>same ckpt at 4,000 vs 800 sims · +277 elo from search alone (confirmed)</p>
-    </a>
-  </div>
+<section class="diagram-section">
+  <h2>the network</h2>
+  <p class="lede">Architecturally identical to AlphaZero. The interesting differences are <em>how the weights got there</em>.</p>
+  {{ partial "architecture-svg.html" . }}
 </section>
 
-<section class="category">
-  <div class="category-header">
-    <h2>methods</h2>
-    <p>how the loss, the targets, and the evals are constructed</p>
-  </div>
+<section class="findings">
+  <h2>what we found</h2>
+  <p class="lede">Three single-variable ablations on top of the distilled baseline. Each tests whether a different knob controls the Elo ceiling.</p>
+
+  <article class="finding">
+    <div class="finding-tag">network capacity</div>
+    <h3>doubling network depth didn't help</h3>
+    <p>We doubled the ResNet from 20 blocks to 40 blocks (~48M params), kept everything else identical, and trained for the same 20 epochs on the same 5M positions. The 40-block net landed at the <strong>same ~1,810 Elo</strong> as the 20-block baseline.</p>
+    <p class="dim">Interpretation: with 5M positions of teacher signal, 24M parameters is already in the over-parameterized regime. More capacity doesn't find more structure that isn't there. The bottleneck isn't the network.</p>
+  </article>
+
+  <article class="finding">
+    <div class="finding-tag">eval-side search</div>
+    <h3>+277 elo from search alone, no retraining</h3>
+    <p>The routine evaluation uses 800 MCTS sims/move (AlphaZero's training-time value). We re-ran one checkpoint at <strong>4,000 sims</strong> and the same weights scored <strong>2,084 Elo</strong> instead of 1,807. 101 wins / 3 draws / 0 losses against the calibrated 1,350-Elo opponent.</p>
+    {{ partial "search-curve-svg.html" . }}
+    <p class="dim">Interpretation: distilled priors transfer well to deeper inference-time search — exactly Lc0's empirical finding. The "1,800 ceiling" is partly an eval artifact, not a model limit.</p>
+  </article>
+
+  <article class="finding">
+    <div class="finding-tag">data scale</div>
+    <h3>6× more data, currently training</h3>
+    <p>The baseline used 5M positions subsampled from a 30M-position dataset. We're now training on the full 30M to test whether the recipe was data-starved. Epoch 1 top-1 accuracy is already 0.347 — higher than the baseline reached at epoch 4 — which suggests the larger dataset is teaching the network meaningfully faster per epoch. Final result expected in ~14 hours.</p>
+    <p class="dim">If this lands above 1,810 the bottleneck was data. If it lands at 1,810 too, the bottleneck is the distillation procedure itself, which directs the next experiment toward self-play RL.</p>
+  </article>
+
+  <p><a href="{{ "/findings/" | relURL }}">→ full findings, numbers, and confidence intervals</a></p>
+</section>
+
+<section class="mcts-section">
+  <h2>how the network plays</h2>
+  <p class="lede">At inference time, the trained network is used as a <em>prior</em> over moves and a <em>value estimator</em> for leaf nodes. The actual decision comes from Monte Carlo Tree Search, which expands the most promising lines and reports the visit-count distribution.</p>
+  {{ partial "mcts-svg.html" . }}
+  <p class="dim">A handful of root-level candidate moves; each sampled deeper based on the network's prior weighted against exploration. After N rollouts the chosen move is whichever was visited most. <a href="{{ "/method/" | relURL }}">→ how the method works in detail</a></p>
+</section>
+
+<section class="vs-az">
+  <h2>vs alphazero</h2>
+  <table class="compact">
+    <thead>
+      <tr><th></th><th>alphazero (2017)</th><th>this project</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>approach</td><td>tabula-rasa self-play RL</td><td>supervised distillation from stockfish</td></tr>
+      <tr><td>network</td><td>20 blocks × 256 ch</td><td><strong>identical</strong></td></tr>
+      <tr><td>training compute</td><td>~45,000 TPU-v1-hr + 576 TPU-v2-hr</td><td>~5 GPU-hours</td></tr>
+      <tr><td>training data</td><td>~3.5 B positions (44M self-play games)</td><td>5M–30M positions (stockfish-played)</td></tr>
+      <tr><td>peak elo</td><td>~3,500</td><td>2,084</td></tr>
+    </tbody>
+  </table>
+  <p><a href="{{ "/vs-alphazero/" | relURL }}">→ full comparison and what's literally identical</a></p>
+</section>
+
+<section class="next">
+  <h2>what's next</h2>
+  <p>The largest remaining gap is that AlphaZero has no teacher — its training targets come from its own MCTS visit counts, not from Stockfish. The Lc0 recipe — <strong>distill first, RL second</strong> — runs an AlphaZero-style self-play loop on top of the distilled prior. That's running on an EKS pod right now.</p>
+  <p><a href="{{ "/next/" | relURL }}">→ self-play loop status</a></p>
+</section>
+
+<section class="links">
+  <h2>more</h2>
   <div class="grid grid-3">
-    <a href="{{ "/distillation/" | relURL }}" class="card">
-      <h3>distillation</h3>
-      <p>multipv=8 soft targets from stockfish d15 · cross-entropy + mse</p>
+    <a href="{{ "/findings/" | relURL }}" class="card">
+      <h3>findings</h3>
+      <p>the three ablation experiments in detail · numbers · confidence intervals</p>
     </a>
-    <a href="{{ "/selfplay/" | relURL }}" class="card">
-      <h3>self-play</h3>
-      <p>alphazero recipe on top of the distilled prior · running now</p>
+    <a href="{{ "/method/" | relURL }}" class="card">
+      <h3>method</h3>
+      <p>distillation loss · soft multipv targets · MCTS at inference · how we measure elo</p>
     </a>
-    <a href="{{ "/eval/" | relURL }}" class="card">
-      <h3>eval</h3>
-      <p>stockfish uci=1350 anchor · multi-region auto-eval daemon</p>
-    </a>
-    <a href="{{ "/elo-bisect/" | relURL }}" class="card">
-      <h3>elo-bisect</h3>
-      <p>binary-search uci_elo for ±50 elo precision in 3–4 probes</p>
-    </a>
-    <a href="{{ "/alphazero/" | relURL }}" class="card">
-      <h3>vs alphazero</h3>
-      <p>same network · different training signal · different compute budget</p>
-    </a>
-  </div>
-</section>
-
-<section class="category">
-  <div class="category-header">
-    <h2>infrastructure</h2>
-    <p>aws plumbing built around quota constraints and reclamation</p>
-  </div>
-  <div class="grid grid-3">
     <a href="{{ "/infra/" | relURL }}" class="card">
-      <h3>eks pipeline</h3>
-      <p>indexed gen job + gpu training job · eksctl + s3 staging</p>
-    </a>
-    <a href="{{ "/failures/" | relURL }}" class="card">
-      <h3>failure modes</h3>
-      <p>nine concrete bugs we hit · symptom · root cause · fix</p>
+      <h3>infrastructure</h3>
+      <p>EKS · bare-EC2 · multi-region quota tricks · self-terminating runners</p>
     </a>
     <a href="https://github.com/shehio/world-models" class="card">
       <h3>github →</h3>
-      <p>the code · all 219 tests · the dockerfiles · the launchers</p>
+      <p>code · 219 tests · dockerfiles · launchers · the whole thing</p>
     </a>
   </div>
 </section>
