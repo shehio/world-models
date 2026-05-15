@@ -46,6 +46,7 @@ hits are in
 │                                     point-in-time results — see docs/notes/README.md
 ├── DISTILLATION_VS_ALPHAZERO.md    02 vs 02b vs 02c training procedures
 ├── EVALS.md                        How the auto-eval daemon measures Elo
+├── EXPERIMENTS_LOG.md              Running log of the A / C / E ablations + AZ comparison
 ├── dashboard.html                  Self-contained run-evolution dashboard
 └── README.md                       you are here
 ```
