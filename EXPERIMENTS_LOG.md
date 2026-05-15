@@ -231,9 +231,12 @@ follow-on.
 
 - [x] Experiment A — done (1810 Elo, capacity hypothesis rejected)
 - [x] Experiment E — done (2084 Elo @ 4000 sims, +277 from search)
-- [ ] Experiment C — running (ep0 done, ETA 15:30Z May 15)
+- [ ] Experiment C — running (ep1 done top1=0.347, ETA 15:30Z May 15)
 - [ ] Sims sweep on d15 ep19 (200 → 16000) — not yet started
-- [ ] Self-play loop initialized from d15 ep19 — not yet started
+- [x] Self-play loop initialized from d15 ep19 — **launched** on EKS
+  cluster `wm-chess-selfplay` (us-east-1, g6.8xlarge, 24 workers, 800
+  sims, PCR on, 12 h budget, started 01:58Z May 15). Results land in
+  `s3://wm-chess-library-…/d15-…/selfplay/net-20x256/20260515T0157Z/`.
 - [ ] T=0.3 ablation — not yet started
 
 ## Where to find the artifacts
