@@ -8,11 +8,11 @@
   <div class="result-box">
     <div class="result-num">2,084</div>
     <div class="result-unit">elo</div>
-    <div class="result-context">vs calibrated stockfish · 800 mcts sims/move · weakest opponent</div>
+    <div class="result-context">strongest checkpoint · vs calibrated stockfish</div>
   </div>
   <div class="result-context-block">
-    <p>AlphaZero used <em>5,000 TPUs</em> for self-play data generation and <em>64 TPU-v2s</em> to train. We use the <strong>same network</strong> (a 20-block × 256-channel ResNet, ~24M parameters) on <em>one GPU</em>. The number above is the strongest checkpoint we have so far — supervised distillation from Stockfish on 30M positions, evaluated against a calibrated 1,350-Elo opponent. Routine 800-sim eval, no inference-search tricks.</p>
-    <p class="dim">Against a tighter <em>UCI=1,800</em> opponent (calibrated near our model strength), the same checkpoint scores <strong>2,004 Elo</strong> — read that as the most honest current number. Total training cost: about 16 GPU-hours on a single L40S. Roughly four orders of magnitude less compute than the AlphaZero paper.</p>
+    <p>AlphaZero used <em>5,000 TPUs</em> for self-play data generation and <em>64 TPU-v2s</em> to train. We use the <strong>same network</strong> (a 20-block × 256-channel ResNet, ~24M parameters) on <em>one GPU</em>. The number above is the strongest checkpoint so far — supervised distillation from Stockfish on 30M positions, evaluated against a calibrated 1,350-Elo opponent.</p>
+    <p class="dim">Against a tighter <em>UCI=1,800</em> opponent (calibrated near our model strength), the same checkpoint scores <strong>2,004 Elo</strong> at 800 sims/move and <strong>2,084 Elo</strong> at 4,000 sims/move — read those as the most honest numbers. Total training cost: about 16 GPU-hours on a single L40S. Roughly four orders of magnitude less compute than the AlphaZero paper.</p>
   </div>
 </section>
 
@@ -22,31 +22,76 @@
   {{ partial "architecture-svg.html" . }}
 </section>
 
-<section class="findings">
-  <h2>what we found</h2>
-  <p class="lede">Three single-variable ablations on top of the distilled baseline. Each tests whether a different knob controls the Elo ceiling.</p>
+<section class="experiments">
+  <h2>experiments</h2>
+  <p class="lede">Three single-variable ablations on top of the distilled baseline. Each tests one hypothesis about what controls the Elo ceiling. Each card states the hypothesis, the test setup, the result, and the verdict.</p>
 
-  <article class="finding">
-    <div class="finding-tag">network capacity</div>
-    <h3>doubling network depth didn't help</h3>
-    <p>We doubled the ResNet from 20 blocks to 40 blocks (~48M params), kept everything else identical, and trained for the same 20 epochs on the same 5M positions. The 40-block net landed at the <strong>same ~1,810 Elo</strong> as the 20-block baseline.</p>
-    <p class="dim">Interpretation: with 5M positions of teacher signal, 24M parameters is already in the over-parameterized regime. More capacity doesn't find more structure that isn't there. The bottleneck isn't the network.</p>
-  </article>
+  <div class="hypothesis-grid">
 
-  <article class="finding">
-    <div class="finding-tag">eval-side search</div>
-    <h3>+277 elo from search alone, no retraining</h3>
-    <p>The routine evaluation uses 800 MCTS sims/move (AlphaZero's training-time value). We re-ran one checkpoint at <strong>4,000 sims</strong> and the same weights scored <strong>2,084 Elo</strong> instead of 1,807. 101 wins / 3 draws / 0 losses against the calibrated 1,350-Elo opponent.</p>
-    {{ partial "search-curve-svg.html" . }}
-    <p class="dim">Interpretation: distilled priors transfer well to deeper inference-time search — exactly Lc0's empirical finding. The "1,800 ceiling" is partly an eval artifact, not a model limit.</p>
-  </article>
+    <article class="hypothesis">
+      <div class="head">
+        <span class="tag">network capacity</span>
+        <span class="badge rejected">hypothesis rejected</span>
+      </div>
+      <h3>Doubling network depth from 20 → 40 blocks didn't help</h3>
+      <div class="hyp-line">
+        <strong>Hypothesis:</strong> the 1,810-Elo ceiling is a representation limit. A bigger ResNet should land higher.
+      </div>
+      <div class="result-row">
+        <div class="stat"><span class="label">20-block (baseline)</span><span class="value">1,810</span><span class="dim">~24M params · 5M positions</span></div>
+        <div class="stat"><span class="label">40-block (2× depth)</span><span class="value">1,810</span><span class="dim">~48M params · same data</span></div>
+        <div class="stat"><span class="label">delta</span><span class="value">±0</span><span class="delta neg">no benefit from capacity</span></div>
+      </div>
+      {{ partial "capacity-chart-svg.html" . }}
+      <div class="body">
+        <p>We doubled the ResNet from 20 blocks (~24M params) to 40 blocks (~48M params), kept everything else identical, and trained for the same 20 epochs on the same 5M positions. The deeper network landed at the <strong>same 1,810 Elo</strong> against the UCI=1,800 anchor.</p>
+        <p class="dim">Interpretation: with 5M positions of teacher signal, 24M parameters is already over-parameterized. More capacity doesn't find structure that isn't there. Top-1 accuracy was 0.34 with the smaller net and stayed 0.34 with the bigger one — the student is hitting a <em>teacher-signal</em> limit, not a representation limit.</p>
+      </div>
+    </article>
 
-  <article class="finding">
-    <div class="finding-tag">data scale</div>
-    <h3>+199 elo from 6× more positions — the winning lever</h3>
-    <p>The baseline used 5M positions subsampled from a 30M-position dataset. We trained on the full 30M (same network, same hyperparameters, even a weaker teacher: Stockfish depth 10 vs depth 15) and the checkpoint at epoch 9 scores <strong>2,009 Elo at UCI=1,800</strong> — +199 over the d15 baseline. Epoch 4 hits 2,084 Elo at UCI=1,350 (101 wins / 3 draws / 0 losses).</p>
-    <p class="dim">The bottleneck on the original baseline was <em>data</em>, not teacher quality or network capacity. 16 h on a g6e.8xlarge, ~$50 of compute. The most cost-effective single change in the project.</p>
-  </article>
+    <article class="hypothesis">
+      <div class="head">
+        <span class="tag">eval-side search</span>
+        <span class="badge confirmed">hypothesis confirmed</span>
+      </div>
+      <h3>+277 Elo from deeper MCTS at inference — no retraining</h3>
+      <div class="hyp-line">
+        <strong>Hypothesis:</strong> the routine 800-sim eval undersells the model. The distilled prior should refine with more MCTS rollouts at inference time, in line with Lc0's reported scaling.
+      </div>
+      <div class="result-row">
+        <div class="stat"><span class="label">800 sims/move</span><span class="value">1,807</span><span class="dim">93 W / 8 D / 3 L</span></div>
+        <div class="stat"><span class="label">4,000 sims/move</span><span class="value">2,084</span><span class="dim">101 W / 3 D / 0 L</span></div>
+        <div class="stat"><span class="label">delta</span><span class="value">+277</span><span class="delta">same weights, just deeper search</span></div>
+      </div>
+      {{ partial "search-curve-svg.html" . }}
+      <div class="body">
+        <p>The routine evaluation uses 800 MCTS sims/move (AlphaZero's training-time value). We re-ran one checkpoint at <strong>4,000 sims</strong> against the same UCI=1,350 opponent and the same weights scored <strong>2,084 Elo</strong> — sweeping 101 of 104 games (3 draws, 0 losses).</p>
+        <p class="dim">Interpretation: distilled priors transfer well to deeper inference-time search — exactly Lc0's empirical finding. The network's policy prior guides MCTS toward strong moves; more rollouts refine that prior into a sharper visit distribution. The "1,800 ceiling" reported from routine evals is partly an eval artifact, not a model limit.</p>
+      </div>
+    </article>
+
+    <article class="hypothesis">
+      <div class="head">
+        <span class="tag">data scale</span>
+        <span class="badge confirmed">hypothesis confirmed</span>
+      </div>
+      <h3>+199 Elo from 6× more positions — the winning lever</h3>
+      <div class="hyp-line">
+        <strong>Hypothesis:</strong> the bottleneck on the original baseline isn't network or teacher — it's <em>data</em>. The same recipe with 6× more positions should jump.
+      </div>
+      <div class="result-row">
+        <div class="stat"><span class="label">5M positions (d15 teacher)</span><span class="value">1,810</span><span class="dim">UCI=1,800 anchor</span></div>
+        <div class="stat"><span class="label">30M positions (d10 teacher)</span><span class="value">2,009</span><span class="dim">at ep9 · ~16 GPU-hr</span></div>
+        <div class="stat"><span class="label">delta</span><span class="value">+199</span><span class="delta">despite a weaker teacher</span></div>
+      </div>
+      {{ partial "data-scale-chart-svg.html" . }}
+      <div class="body">
+        <p>The baseline used a 5M-position subsample of an available 30M-position dataset. We trained on the full 30M (same 20-block network, same hyperparameters, even a <em>weaker</em> teacher: Stockfish depth 10 vs depth 15) and the checkpoint at epoch 9 scores <strong>2,009 Elo</strong> at UCI=1,800 — +199 over the baseline. Epoch 4 hits <strong>2,084 Elo</strong> at UCI=1,350 (101 W / 3 D / 0 L).</p>
+        <p class="dim">The bottleneck on the original baseline was <em>data</em>, not teacher quality or network capacity. 16 h on a g6e.8xlarge, ~$50 of compute. The most cost-effective single change in the project. Currently generating <em>another 5M d15 positions</em> to test whether the stronger teacher pays off once data isn't starved.</p>
+      </div>
+    </article>
+
+  </div>
 
   <p><a href="{{ "/findings/" | relURL }}">→ full findings, numbers, and confidence intervals</a></p>
 </section>
@@ -67,7 +112,7 @@
     <tbody>
       <tr><td>approach</td><td>tabula-rasa self-play RL</td><td>supervised distillation from stockfish</td></tr>
       <tr><td>network</td><td>20 blocks × 256 ch</td><td><strong>identical</strong></td></tr>
-      <tr><td>training compute</td><td>~45,000 TPU-v1-hr + 576 TPU-v2-hr</td><td>~5 GPU-hours</td></tr>
+      <tr><td>training compute</td><td>~45,000 TPU-v1-hr + 576 TPU-v2-hr</td><td>~16 GPU-hours (single L40S)</td></tr>
       <tr><td>training data</td><td>~3.5 B positions (44M self-play games)</td><td>5M–30M positions (stockfish-played)</td></tr>
       <tr><td>peak elo</td><td>~3,500</td><td>2,084</td></tr>
     </tbody>
@@ -77,7 +122,8 @@
 
 <section class="next">
   <h2>what's next</h2>
-  <p>The largest remaining gap is that AlphaZero has no teacher — its training targets come from its own MCTS visit counts, not from Stockfish. The Lc0 recipe — <strong>distill first, RL second</strong> — runs an AlphaZero-style self-play loop on top of the distilled prior. That's running on an EKS pod right now.</p>
+  <p>The largest remaining gap to AlphaZero is that AZ has <em>no teacher</em> — its training targets come from its own MCTS visit counts, not from Stockfish. The Lc0 recipe — <strong>distill first, RL second</strong> — runs an AlphaZero-style self-play loop on top of the distilled prior. A first attempt regressed (LR was 100× too high for fine-tuning a pretrained net); a fix is in flight.</p>
+  <p class="dim">In parallel, generating another 5M d15 positions to put the stronger-teacher hypothesis on equal data footing as the d10 result.</p>
   <p><a href="{{ "/next/" | relURL }}">→ self-play loop status</a></p>
 </section>
 
