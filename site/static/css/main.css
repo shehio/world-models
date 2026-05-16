@@ -575,42 +575,52 @@ section h2 {
 
 /* ── vs alphazero table ───────────────────────────────────────── */
 
-table.compact {
+/* unified table styling: applies to both `table.compact` (vs-AZ on home)
+   and `.content table` (markdown tables on detail pages). Same font
+   sizes, same paddings, same header treatment everywhere. */
+table.compact,
+.content table {
   width: 100%;
   border-collapse: collapse;
   margin: 1rem 0;
-  font-size: 0.88rem;
+  font-size: 0.86rem;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 2px;
 }
 
-table.compact th, table.compact td {
+table.compact th, table.compact td,
+.content th, .content td {
   text-align: left;
-  padding: 0.8rem 1.1rem;
+  padding: 0.7rem 1rem;
   border-bottom: 1px solid var(--border);
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
 }
 
-table.compact th {
+table.compact th,
+.content th {
   color: var(--accent);
   font-weight: 500;
-  letter-spacing: 1.3px;
+  letter-spacing: 1.2px;
   background: var(--surface);
-  font-size: 0.76rem;
+  font-size: 0.74rem;
 }
 
-table.compact td:first-child {
+table.compact td:first-child,
+.content td:first-child {
   color: var(--dim-soft);
-  width: 25%;
+  letter-spacing: 0.5px;
   text-transform: lowercase;
-  letter-spacing: 0.8px;
-  font-size: 0.78rem;
 }
 
-table.compact strong { color: var(--accent); font-weight: 500; }
+table.compact strong,
+.content strong { color: var(--accent); font-weight: 500; }
 
-table.compact tbody tr:last-child td { border-bottom: 0; }
-table.compact tbody tr:hover td { background: rgba(0, 212, 170, 0.03); }
+table.compact tbody tr:last-child td,
+.content tbody tr:last-child td { border-bottom: 0; }
+table.compact tbody tr:hover td,
+.content tbody tr:hover td { background: rgba(0, 212, 170, 0.03); }
 
 /* ── next section ─────────────────────────────────────────────── */
 
@@ -757,30 +767,7 @@ table.compact tbody tr:hover td { background: rgba(0, 212, 170, 0.03); }
   font-size: inherit;
 }
 
-.content table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 1.3rem 0;
-  font-size: 0.88rem;
-  background: var(--card);
-  border: 1px solid var(--border);
-}
-
-.content th, .content td {
-  text-align: left;
-  padding: 0.7rem 1.05rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.content th {
-  color: var(--accent);
-  font-weight: 500;
-  letter-spacing: 1.2px;
-  background: var(--surface);
-  font-size: 0.76rem;
-}
-
-.content td:first-child { color: var(--text); }
+/* .content table styling moved up into the unified block above */
 
 .content blockquote {
   border-left: 2px solid var(--accent);
@@ -930,21 +917,19 @@ footer a:hover { text-decoration: underline; }
 
   .finding { padding: 1.15rem 1.1rem; }
 
-  /* tables: smaller cells, one-line rows, h-scroll if needed */
-  table.compact { font-size: 0.72rem; display: block; overflow-x: auto; }
-  table.compact th, table.compact td {
-    padding: 0.5rem 0.65rem;
-    white-space: nowrap;
+  /* tables: same unified rules apply to both compact and content tables */
+  table.compact, .content table {
+    font-size: 0.78rem;
+    display: block;
+    overflow-x: auto;
   }
-  table.compact th { font-size: 0.66rem; }
-  table.compact td:first-child { font-size: 0.66rem; }
-
-  .content table { font-size: 0.76rem; display: block; overflow-x: auto; }
+  table.compact th, table.compact td,
   .content th, .content td {
     padding: 0.5rem 0.7rem;
     white-space: nowrap;
+    font-size: 0.78rem;
   }
-  .content th { font-size: 0.68rem; }
+  table.compact th, .content th { font-size: 0.66rem; }
 
   /* card grid copy + body content tighter */
   .card { padding: 1.4rem 1.4rem; }
@@ -975,6 +960,8 @@ footer a:hover { text-decoration: underline; }
   .hypothesis h3 { font-size: 0.9rem; }
   .hypothesis .stat .label { min-width: 6rem; font-size: 0.52rem; }
   .hypothesis .stat .delta, .hypothesis .stat .dim { padding-left: 6.6rem; }
-  table.compact { font-size: 0.68rem; }
-  .content table { font-size: 0.72rem; }
+  table.compact, .content table { font-size: 0.72rem; }
+  table.compact th, table.compact td,
+  .content th, .content td { font-size: 0.72rem; }
+  table.compact th, .content th { font-size: 0.62rem; }
 }
