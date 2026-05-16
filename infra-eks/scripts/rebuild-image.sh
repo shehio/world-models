@@ -7,8 +7,11 @@
 #
 # Usage:
 #   bash infra-eks/scripts/rebuild-image.sh [ECR_REPO]
-#       ECR_REPO defaults to wm-chess (CPU/datagen). Pass wm-chess-gpu
-#       to push the same Dockerfile to the GPU eval/training repo.
+#       wm-chess      → CPU/datagen image (Dockerfile, buildspec.yml).
+#       wm-chess-gpu  → GPU eval/training image (Dockerfile.train,
+#                       buildspec-train.yml). Used by all the eval-*
+#                       and d10/d15 training launchers.
+#       (default: wm-chess)
 #
 # Why this exists: launchers used to call `docker buildx build --push`
 # from the laptop, which (a) needs a running local Docker daemon, (b)
@@ -23,11 +26,21 @@ REPO="${1:-wm-chess}"
 REGION="${AWS_REGION:-us-east-1}"
 PROJECT=wm-chess-image
 
+# The CodeBuild project's default buildspec builds the CPU image. For the
+# GPU image we override to buildspec-train.yml (different Dockerfile,
+# different base image — pytorch CUDA — different install path).
+case "$REPO" in
+    wm-chess)        BUILDSPEC=infra-eks/buildspec.yml ;;
+    wm-chess-gpu)    BUILDSPEC=infra-eks/buildspec-train.yml ;;
+    *) echo "unknown repo: $REPO (expected wm-chess or wm-chess-gpu)"; exit 2 ;;
+esac
+
 log() { echo "[$(date -u +%H:%M:%S) rebuild-image] $*"; }
 
-log "starting CodeBuild $PROJECT  ECR_REPO=$REPO  region=$REGION"
+log "starting CodeBuild $PROJECT  ECR_REPO=$REPO  buildspec=$BUILDSPEC  region=$REGION"
 BUILD_ID=$(aws codebuild start-build \
     --project-name "$PROJECT" --region "$REGION" \
+    --buildspec-override "$BUILDSPEC" \
     --environment-variables-override "name=ECR_REPO,value=$REPO,type=PLAINTEXT" \
     --query 'build.id' --output text)
 log "build id: $BUILD_ID"
