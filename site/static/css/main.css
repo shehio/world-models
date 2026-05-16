@@ -667,7 +667,11 @@ section h2 {
    sizes, same paddings, same header treatment everywhere. */
 table.compact,
 .content table {
-  width: 100%;
+  /* width: auto lets a 2-column table (epoch / Elo) size to its content
+     instead of stretching across the full reading column. max-width: 100%
+     caps wider tables (vs-AZ) at the container width. */
+  width: auto;
+  max-width: 100%;
   border-collapse: collapse;
   margin: 1rem 0;
   font-size: var(--fs-aux);
@@ -1012,10 +1016,14 @@ footer a:hover { text-decoration: underline; }
 
   .finding { padding: 1.15rem 1.1rem; }
 
-  /* Tables: layout-only — display:block + h-scroll + tight padding;
-     font sizes already come from var() at the new mobile values. */
+  /* Tables: display:block + width:max-content lets narrow tables stay
+     narrow AND wide tables scroll horizontally inside their own box
+     instead of stretching the page. max-width caps any table at the
+     screen. */
   table.compact, .content table {
     display: block;
+    width: max-content;
+    max-width: 100%;
     overflow-x: auto;
   }
   table.compact th, table.compact td,
