@@ -16,7 +16,7 @@ aliases:
 - [Network Capacity (Rejected)](#capacity)
 - [Soft vs Hard Targets](#soft-vs-hard)
 - [Eval-Side Search (Confirmed, +277)](#search)
-- [Data Scale (Confirmed, +199)](#data)
+- [Data Scale — the Bitter Lesson? (Confirmed, +199)](#data)
 - [Stacking Search + Data](#stacking)
 - [Summary](#summary)
 
@@ -172,7 +172,7 @@ is in place.
 → code: [`eval-deep-sims.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-deep-sims.sh) ·
 [`eval-c-ep4-sims4000.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-c-ep4-sims4000.sh)
 
-## Data Scale — 6× More Positions (The Winning Lever) {#data}
+## Data Scale — 6× More Positions (The Bitter Lesson?) {#data}
 
 **Hypothesis:** the baseline used a 5M-position subsample of an
 available 30M-position dataset. Maybe the recipe is fine and we're
@@ -224,6 +224,22 @@ Same teacher, 6× more data → **+335 Elo** at the easier anchor.
 **Verdict: the bottleneck on the original baseline was data.** Six
 times more positions buys ~200 Elo at the calibrated anchor — even
 with a *weaker* teacher (depth-10 vs depth-15).
+
+**The bitter-lesson echo.** Sutton's
+[Bitter Lesson](http://www.incompleteideas.net/IncIdeas/BitterLesson.html)
+claims that, across 70 years of AI, methods that *leverage computation*
+(scale and search) consistently outperform methods that *build in
+human structure* (handcrafted features, deeper / cleverer
+architectures). Our three ablations all point the same way at
+this small scale:
+
+- **Network capacity** (more structure / more parameters) → no gain.
+- **Eval-side search** (more compute) → +277 Elo.
+- **Data scale** (more compute spent generating training signal) → +199 Elo.
+
+The two confirmed levers are both forms of "more compute"; the
+rejected lever is the "smarter network" intuition. The bitter
+lesson, replayed at $50 budget on a single GPU.
 
 → code: [`d10-full30m.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/d10-full30m.sh) ·
 [`stockfish_data.py`](https://github.com/shehio/world-models/blob/main/experiments/distill-soft/src/distill_soft/stockfish_data.py)

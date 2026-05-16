@@ -11,8 +11,13 @@
     <div class="result-context">strongest checkpoint · vs calibrated stockfish</div>
   </div>
   <div class="result-context-block">
-    <p>AlphaZero used <em>5,000 TPUs</em> for self-play data generation and <em>64 TPU-v2s</em> to train. We use the <strong>same network</strong> (a 20-block × 256-channel ResNet, ~24M parameters) on <em>one GPU</em>. The number above is the strongest checkpoint so far — supervised distillation from Stockfish on 30M positions, evaluated against a calibrated 1,350-Elo opponent.</p>
-    <p class="dim">Against a tighter <em>UCI=1,800</em> opponent (calibrated near our model strength), the same checkpoint scores <strong>2,004 Elo</strong> at 800 sims/move and <strong>2,084 Elo</strong> at 4,000 sims/move — read those as the most honest numbers. Total training cost: about 16 GPU-hours on a single L40S. Roughly four orders of magnitude less compute than the AlphaZero paper.</p>
+    <p>AlphaZero used <em>5,000 TPUs</em> for self-play data generation and <em>64 TPU-v2s</em> to train. We use the <strong>same network</strong> (a 20-block × 256-channel ResNet, ~24M parameters) on <em>one GPU</em>, supervised distillation from Stockfish on 30M positions, evaluated against a calibrated 1,350-Elo opponent. Total cost: ~16 GPU-hours on a single L40S. Roughly <strong>four orders of magnitude less compute</strong> than the AlphaZero paper.</p>
+    <p class="quick-links">
+      <a href="{{ "/experiments/" | relURL }}">→ How we got here</a>
+      <a href="{{ "/method/" | relURL }}">→ Method &amp; Elo bisection</a>
+      <a href="{{ "/vs-alphazero/" | relURL }}">→ vs AZ</a>
+      <a href="{{ "/next/" | relURL }}">→ What's next</a>
+    </p>
   </div>
 </section>
 
@@ -20,98 +25,76 @@
   <h2>How It Works</h2>
   <p class="lede">One supervised pipeline + one MCTS at inference. The teacher is Stockfish; the student is AlphaZero's network architecture; the search at play-time is straight AlphaZero MCTS.</p>
 
-  <h3 class="sub">The Training Pipeline</h3>
   <ol class="steps">
     <li><strong>Stockfish self-plays</strong> games at search-depth 15. At every position, before the chosen move is played, Stockfish reports its top-8 candidate moves with centipawn scores.</li>
-    <li>Those centipawn scores are passed through a softmax at temperature <em>T = 1 pawn</em> to make a soft distribution <code>π</code> over the 8 candidates. The game outcome <code>z ∈ {−1, 0, +1}</code> is recorded from each side-to-move POV.</li>
-    <li>The student network is trained on <strong>(state, π, z)</strong> triples: cross-entropy on the policy head against <code>π</code>, MSE on the value head against <code>z</code>. No self-play, no MCTS at training time.</li>
+    <li>Those scores become a soft distribution <code>π</code> over the 8 candidates (softmax at <em>T = 1 pawn</em>). The game outcome <code>z ∈ {−1, 0, +1}</code> is recorded from each side-to-move POV.</li>
+    <li>The student trains on <strong>(state, π, z)</strong> triples — cross-entropy on policy, MSE on value. No self-play, no MCTS at training time.</li>
   </ol>
-  <pre><code>policy_loss = -(π · log_softmax(logits)).sum(-1).mean()
-value_loss  = MSE(value_pred, z)
-loss        = policy_loss + value_loss</code></pre>
 
-  <h3 class="sub">The Network</h3>
-  <p>Architecturally identical to AlphaZero. <strong>20 residual blocks × 256 channels</strong>, ~24M parameters. Takes a <em>19-plane</em> board encoding (piece positions, side-to-move, castling rights, repetitions). Outputs a 4,672-dim policy logits vector and a scalar value in <code>[−1, +1]</code>.</p>
   {{ partial "architecture-svg.html" . }}
 
-  <h3 class="sub">MCTS at Inference</h3>
-  <p>The trained network is used as a <em>prior</em> over moves and a <em>value estimator</em> for leaf nodes. The actual decision comes from Monte Carlo Tree Search, which expands the most promising lines and reports the visit-count distribution. The routine eval uses 800 sims/move (AlphaZero's training-time value); deeper search at inference buys real Elo — see <a href="{{ "/experiments/#search" | relURL }}">the search ablation</a>.</p>
-  {{ partial "mcts-svg.html" . }}
-  <p class="dim">A handful of root-level candidate moves; each sampled deeper based on the network's prior weighted against exploration. After N rollouts the chosen move is whichever was visited most. <a href="{{ "/method/" | relURL }}">→ Full method, including the Elo bisection</a></p>
+  <p class="dim">The trained network is used as a <em>prior</em> over moves and a <em>value estimator</em> for leaf nodes; the decision comes from Monte Carlo Tree Search expanding the most promising lines. Routine eval uses 800 sims/move (AlphaZero's training-time value); deeper search at inference buys real Elo.</p>
+  <p><a href="{{ "/method/" | relURL }}">→ Full method, including the loss formula and Elo bisection</a></p>
 </section>
 
 <section class="experiments">
   <h2>Experiments</h2>
-  <p class="lede">Single-variable ablations on top of the distilled baseline. Each tests one hypothesis about what controls the Elo ceiling. Each card states the hypothesis, the test setup, the result, and the verdict.</p>
+  <p class="lede">Single-variable ablations on top of the distilled baseline. Each card shows the hypothesis, the verdict, and the headline numbers. Full setup + interpretation on the <a href="{{ "/experiments/" | relURL }}">experiments page</a>.</p>
 
   <div class="hypothesis-grid">
 
-    <article class="hypothesis">
+    <article class="hypothesis teaser">
       <div class="head">
         <span class="tag">Network Capacity</span>
-        <span class="badge rejected">Hypothesis Rejected</span>
+        <span class="badge rejected">Rejected</span>
       </div>
-      <h3>Doubling Network Depth From 20 → 40 Blocks Didn't Help</h3>
-      <div class="hyp-line">
-        <strong>Hypothesis:</strong> the 1,810-Elo ceiling is a representation limit. A bigger ResNet should land higher.
-      </div>
+      <h3>Doubling Network Depth 20 → 40 Blocks Didn't Help</h3>
+      <p class="hyp-line">5M positions for a 24M-param network is already in the over-parameterized regime. More capacity finds no structure that isn't there.</p>
       <div class="result-row">
-        <div class="stat"><span class="label">20-block (baseline)</span><span class="value">1,810</span><span class="dim">~24M params · 5M positions</span></div>
-        <div class="stat"><span class="label">40-block (2× depth)</span><span class="value">1,810</span><span class="dim">~48M params · same data</span></div>
-        <div class="stat"><span class="label">delta</span><span class="value">±0</span><span class="delta neg">no benefit from capacity</span></div>
+        <div class="stat"><span class="label">20-block</span><span class="value">1,810</span></div>
+        <div class="stat"><span class="label">40-block (2× depth)</span><span class="value">1,810</span></div>
+        <div class="stat"><span class="label">delta</span><span class="value">±0</span></div>
       </div>
-      {{ partial "capacity-chart-svg.html" . }}
-      <div class="body">
-        <p>We doubled the ResNet from 20 blocks (~24M params) to 40 blocks (~48M params), kept everything else identical, and trained for the same 20 epochs on the same 5M positions. The deeper network landed at the <strong>same 1,810 Elo</strong> against the UCI=1,800 anchor.</p>
-        <p class="dim">Interpretation: with 5M positions of teacher signal, 24M parameters is already over-parameterized. More capacity doesn't find structure that isn't there. Top-1 accuracy was 0.34 with the smaller net and stayed 0.34 with the bigger one — the student is hitting a <em>teacher-signal</em> limit, not a representation limit.</p>
-      </div>
+      <p class="card-link"><a href="{{ "/experiments/#capacity" | relURL }}">→ Read the capacity ablation</a></p>
     </article>
 
-    <article class="hypothesis">
+    <article class="hypothesis teaser">
       <div class="head">
         <span class="tag">Eval-Side Search</span>
-        <span class="badge confirmed">Hypothesis Confirmed</span>
+        <span class="badge confirmed">Confirmed</span>
       </div>
       <h3>+277 Elo From Deeper MCTS at Inference — No Retraining</h3>
-      <div class="hyp-line">
-        <strong>Hypothesis:</strong> the routine 800-sim eval undersells the model. The distilled prior should refine with more MCTS rollouts at inference time, in line with Lc0's reported scaling.
-      </div>
+      <p class="hyp-line">Distilled priors transfer well to deeper inference-time search, exactly Lc0's empirical finding. The "1,800 ceiling" was an eval-time artifact.</p>
       <div class="result-row">
-        <div class="stat"><span class="label">800 sims/move</span><span class="value">1,807</span><span class="dim">93 W / 8 D / 3 L</span></div>
-        <div class="stat"><span class="label">4,000 sims/move</span><span class="value">2,084</span><span class="dim">101 W / 3 D / 0 L</span></div>
-        <div class="stat"><span class="label">delta</span><span class="value">+277</span><span class="delta">same weights, just deeper search</span></div>
+        <div class="stat"><span class="label">800 sims</span><span class="value">1,807</span></div>
+        <div class="stat"><span class="label">4,000 sims</span><span class="value">2,084</span></div>
+        <div class="stat"><span class="label">delta</span><span class="value">+277</span></div>
       </div>
-      {{ partial "search-curve-svg.html" . }}
-      <div class="body">
-        <p>The routine evaluation uses 800 MCTS sims/move (AlphaZero's training-time value). We re-ran one checkpoint at <strong>4,000 sims</strong> against the same UCI=1,350 opponent and the same weights scored <strong>2,084 Elo</strong> — sweeping 101 of 104 games (3 draws, 0 losses).</p>
-        <p class="dim">Interpretation: distilled priors transfer well to deeper inference-time search — exactly Lc0's empirical finding. The network's policy prior guides MCTS toward strong moves; more rollouts refine that prior into a sharper visit distribution. The "1,800 ceiling" reported from routine evals is partly an eval artifact, not a model limit.</p>
-      </div>
+      <p class="card-link"><a href="{{ "/experiments/#search" | relURL }}">→ Read the search ablation</a></p>
     </article>
 
-    <article class="hypothesis">
+    <article class="hypothesis teaser">
       <div class="head">
         <span class="tag">Data Scale</span>
-        <span class="badge confirmed">Hypothesis Confirmed</span>
+        <span class="badge confirmed">Confirmed</span>
       </div>
-      <h3>+199 Elo From 6× More Positions — The Winning Lever</h3>
-      <div class="hyp-line">
-        <strong>Hypothesis:</strong> the bottleneck on the original baseline isn't network or teacher — it's <em>data</em>. The same recipe with 6× more positions should jump.
-      </div>
+      <h3>+199 Elo From 6× More Positions — The Bitter Lesson?</h3>
+      <p class="hyp-line">More data beat more parameters <em>and</em> a stronger teacher. The two confirmed levers (search, data) are both "more compute"; the rejected lever was "smarter network".</p>
       <div class="result-row">
-        <div class="stat"><span class="label">5M positions (d15 teacher)</span><span class="value">1,810</span><span class="dim">UCI=1,800 anchor</span></div>
-        <div class="stat"><span class="label">30M positions (d10 teacher)</span><span class="value">2,009</span><span class="dim">at ep 10 · ~16 GPU-hr</span></div>
-        <div class="stat"><span class="label">delta</span><span class="value">+199</span><span class="delta">despite a weaker teacher</span></div>
+        <div class="stat"><span class="label">5M positions</span><span class="value">1,810</span></div>
+        <div class="stat"><span class="label">30M positions</span><span class="value">2,009</span></div>
+        <div class="stat"><span class="label">delta</span><span class="value">+199</span></div>
       </div>
-      {{ partial "data-scale-chart-svg.html" . }}
-      <div class="body">
-        <p>The baseline used a 5M-position subsample of an available 30M-position dataset. We trained on the full 30M (same 20-block network, same hyperparameters, even a <em>weaker</em> teacher: Stockfish depth 10 vs depth 15) and the checkpoint at epoch 10 scores <strong>2,009 Elo</strong> at UCI=1,800 — +199 over the baseline. Epoch 5 hits <strong>2,084 Elo</strong> at UCI=1,350 (101 W / 3 D / 0 L).</p>
-        <p class="dim">The bottleneck on the original baseline was <em>data</em>, not teacher quality or network capacity. 16 h on a g6e.8xlarge, ~$50 of compute. The most cost-effective single change in the project.</p>
-      </div>
+      <p class="card-link"><a href="{{ "/experiments/#data" | relURL }}">→ Read the data-scale ablation</a></p>
     </article>
 
   </div>
 
-  <p><a href="{{ "/experiments/" | relURL }}">→ Full experiments, numbers, confidence intervals, and the soft-targets ablation</a></p>
+  <p class="cluster-links">
+    <a href="{{ "/experiments/" | relURL }}">→ All experiments, with charts and CIs</a>
+    <a href="{{ "/experiments/#soft-vs-hard" | relURL }}">→ Soft vs hard targets</a>
+    <a href="{{ "/experiments/#stacking" | relURL }}">→ Stacking search + data together</a>
+  </p>
 </section>
 
 <section class="vs-az">
@@ -124,7 +107,7 @@ loss        = policy_loss + value_loss</code></pre>
       <tr><td>approach</td><td>tabula-rasa self-play RL</td><td>supervised distillation from stockfish</td></tr>
       <tr><td>network</td><td>20 blocks × 256 ch</td><td><strong>identical</strong></td></tr>
       <tr><td>training compute</td><td>~45,000 TPU-v1-hr + 576 TPU-v2-hr</td><td>~16 GPU-hours (single L40S)</td></tr>
-      <tr><td>training data</td><td>~3.5 B positions (44M self-play games)</td><td>5M–30M positions (stockfish-played)</td></tr>
+      <tr><td>training data</td><td>~3.5 B positions</td><td>5M–30M positions</td></tr>
       <tr><td>peak elo</td><td>~3,500</td><td>2,084</td></tr>
     </tbody>
   </table>
@@ -133,8 +116,8 @@ loss        = policy_loss + value_loss</code></pre>
 
 <section class="next">
   <h2>What's Next</h2>
-  <p>The largest remaining gap to AlphaZero is that AZ has <em>no teacher</em> — its training targets come from its own MCTS visit counts, not from Stockfish. The Lc0 recipe — <strong>distill first, RL second</strong> — runs an AlphaZero-style self-play loop on top of the distilled prior. A first attempt regressed (LR was 100× too high for fine-tuning a pretrained net); a fix is in flight.</p>
-  <p class="dim">In parallel, generating another 5M d15 positions to put the stronger-teacher hypothesis on equal data footing as the d10 result.</p>
+  <p>The largest remaining gap to AlphaZero is that AZ has <em>no teacher</em> — its targets come from its own MCTS visit counts, not from Stockfish. The Lc0 recipe — <strong>distill first, RL second</strong> — runs an AlphaZero-style self-play loop on top of the distilled prior.</p>
+  <p class="dim">A first attempt regressed (LR was 100× too high for fine-tuning a pretrained net); a fix is in flight. In parallel, generating another 5M d15 positions to put the stronger-teacher hypothesis on equal data footing as the d10 result.</p>
   <p><a href="{{ "/next/" | relURL }}">→ Self-play loop status</a></p>
 </section>
 
@@ -143,19 +126,27 @@ loss        = policy_loss + value_loss</code></pre>
   <div class="grid grid-3">
     <a href="{{ "/experiments/" | relURL }}" class="card">
       <h3>Experiments</h3>
-      <p>The three ablations in detail · hypothesis prove/disprove · numbers · confidence intervals</p>
+      <p>Four ablations · hypothesis prove/disprove · charts and CIs</p>
     </a>
     <a href="{{ "/method/" | relURL }}" class="card">
       <h3>Method</h3>
-      <p>The distillation loss · MCTS at inference · Elo bisection for the single best number</p>
+      <p>The loss · MCTS at inference · Elo bisection</p>
     </a>
     <a href="{{ "/infra/" | relURL }}" class="card">
       <h3>Infrastructure</h3>
-      <p>EKS · bare-EC2 · multi-region quota tricks · self-terminating runners</p>
+      <p>EKS · bare-EC2 · multi-region · self-terminating runners</p>
+    </a>
+    <a href="{{ "/vs-alphazero/" | relURL }}" class="card">
+      <h3>vs AZ</h3>
+      <p>Same network · different recipe · 10,000× less compute</p>
+    </a>
+    <a href="{{ "/next/" | relURL }}" class="card">
+      <h3>What's Next</h3>
+      <p>Self-play loop · more d15 data · roadmap</p>
     </a>
     <a href="https://github.com/shehio/world-models" class="card">
       <h3>GitHub →</h3>
-      <p>Code · 219 tests · dockerfiles · launchers · the whole thing</p>
+      <p>Code · 219 tests · launchers · dockerfiles</p>
     </a>
   </div>
 </section>
