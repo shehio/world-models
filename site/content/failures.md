@@ -7,7 +7,7 @@ Reading this catalog before a fresh training run is much faster than
 rediscovering each one in real time. Each entry: **symptom**, **root
 cause**, **fix**.
 
-## 1 — npz extraction filled the volume
+## 1 — NPZ Extraction Filled the Volume
 
 **Symptom.** Training pod's epoch 0 stalled with no progress. The
 container's `/work-tmp` filled up; the OS killed extraction silently.
@@ -20,7 +20,7 @@ extracts to ~145 GB. The default training volume was 100–150 GB.
 `MAX_POSITIONS`). 5M → ~25 GB. Bumped the bare-EC2 volume to 300 GB
 for the full 30M run.
 
-## 2 — bare-ec2 launcher used the wrong entrypoint path
+## 2 — Bare-EC2 Launcher Used the Wrong Entrypoint Path
 
 **Symptom.** d10-l40s launcher v1:
 
@@ -37,7 +37,7 @@ EC2 self-terminated within minutes; no checkpoints produced.
 **Fix.** All launchers in `infra-eks/launchers/` now use the
 in-container path. `bash -n <launcher.sh>` lint runs before commit.
 
-## 3 — SAVE_EVERY=5 cost epochs 5–8 on every reclaim
+## 3 — SAVE_EVERY=5 Cost Epochs 5–8 on Every Reclaim
 
 **Symptom.** A reclaim or manual termination at epoch 8 of a 20-epoch
 run loses ckpts 5/6/7/8 even though they were computed; only ep4 is
@@ -49,7 +49,7 @@ interruption between save points is wasted compute.
 **Fix.** For long runs, set `SAVE_EVERY=1`. Each save is ~1 GB to S3,
 ~30 s — essentially free at this scale.
 
-## 4 — eval EC2 `docker run --gpus all` failed on plain AL2023
+## 4 — Eval EC2 `docker run --gpus all` Failed on Plain AL2023
 
 **Symptom.**
 
@@ -68,7 +68,7 @@ docker: Error response from daemon: could not select device driver
 
 Wired into the auto-eval daemon's `region_config`.
 
-## 5 — Stockfish UCI_Elo=1320 rejected
+## 5 — Stockfish UCI_Elo=1320 Rejected
 
 **Symptom.** Eval pod died with `value 1320 less than minimum 1350`.
 The first auto-eval after upgrading to Stockfish 17 broke.
@@ -79,7 +79,7 @@ to 1350.
 **Fix.** Daemon default is now 1,350. Old 1,185-Elo 02b numbers are
 normalized in the experiment's `results.md`.
 
-## 6 — repeated VcpuLimitExceeded in us-east-1
+## 6 — Repeated VcpuLimitExceeded in us-east-1
 
 **Symptom.** Two concurrent eval EC2s + one training EC2 → next
 launch fails with the 32 vCPU G/VT quota message.
@@ -89,7 +89,7 @@ launch fails with the 32 vCPU G/VT quota message.
 **Fix.** Daemon walks `REGION_ORDER=(us-east-1 eu-central-1)` per
 launch. Cross-region pull/read just works. See [infra](/infra/).
 
-## 7 — eks gpu taint broke coredns
+## 7 — EKS GPU Taint Broke CoreDNS
 
 **Symptom.** Training pod couldn't reach
 `sts.us-east-1.amazonaws.com` → `aws s3 cp` failed with
@@ -105,7 +105,7 @@ DNS resolution.
 **Fix.** Removed the taint from both `cluster-train-{us,eu}.yaml`.
 Single-purpose clusters don't need it.
 
-## 8 — finalize / merge OOM on small instances
+## 8 — Finalize / Merge OOM on Small Instances
 
 **Symptom.** Salvage pods OOM-killed silently while finalizing
 per-pod data.
@@ -128,7 +128,7 @@ one zip entry, writes the npy header, then streams each chunk's
 `tobytes()` directly into the deflate stream. Peak RAM ~100 MB
 regardless of dataset size.
 
-## 9 — depth=1 secondary eval was unreliable
+## 9 — Depth=1 Secondary Eval Was Unreliable
 
 **Symptom.** The "depth=1 top-skill" secondary eval gave wildly
 different W/D/L across nearby checkpoints — d15 ep14 was 8/8/88, ep19
@@ -143,7 +143,7 @@ Stockfish blunders into. High variance, no Elo calibration.
 current model strength. CI is now tightest where the model is
 well-matched.
 
-## takeaways for the next training run
+## Takeaways for the Next Training Run
 
 1. **Size the volume for the dataset, not the ckpts.** 100 GB is fine
    for 5M positions; bump to 300 GB for full-30M.

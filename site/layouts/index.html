@@ -1,13 +1,13 @@
 {{ define "main" }}
 <section class="hero">
-  <h1>world models · chess</h1>
-  <p class="tagline">alphazero's network · single gpu · how far can we get?</p>
+  <h1>World Models · Chess</h1>
+  <p class="tagline">AlphaZero's network · single GPU · how far can we get?</p>
 </section>
 
 <section class="result-strip">
   <div class="result-box">
     <div class="result-num">2,084</div>
-    <div class="result-unit">elo</div>
+    <div class="result-unit">Elo</div>
     <div class="result-context">strongest checkpoint · vs calibrated stockfish</div>
   </div>
   <div class="result-context-block">
@@ -16,24 +16,42 @@
   </div>
 </section>
 
-<section class="diagram-section">
-  <h2>the network</h2>
-  <p class="lede">Architecturally identical to AlphaZero. The interesting differences are <em>how the weights got there</em>.</p>
+<section class="method-section">
+  <h2>How It Works</h2>
+  <p class="lede">One supervised pipeline + one MCTS at inference. The teacher is Stockfish; the student is AlphaZero's network architecture; the search at play-time is straight AlphaZero MCTS.</p>
+
+  <h3 class="sub">The Training Pipeline</h3>
+  <ol class="steps">
+    <li><strong>Stockfish self-plays</strong> games at search-depth 15. At every position, before the chosen move is played, Stockfish reports its top-8 candidate moves with centipawn scores.</li>
+    <li>Those centipawn scores are passed through a softmax at temperature <em>T = 1 pawn</em> to make a soft distribution <code>π</code> over the 8 candidates. The game outcome <code>z ∈ {−1, 0, +1}</code> is recorded from each side-to-move POV.</li>
+    <li>The student network is trained on <strong>(state, π, z)</strong> triples: cross-entropy on the policy head against <code>π</code>, MSE on the value head against <code>z</code>. No self-play, no MCTS at training time.</li>
+  </ol>
+  <pre><code>policy_loss = -(π · log_softmax(logits)).sum(-1).mean()
+value_loss  = MSE(value_pred, z)
+loss        = policy_loss + value_loss</code></pre>
+
+  <h3 class="sub">The Network</h3>
+  <p>Architecturally identical to AlphaZero. <strong>20 residual blocks × 256 channels</strong>, ~24M parameters. Takes a <em>19-plane</em> board encoding (piece positions, side-to-move, castling rights, repetitions). Outputs a 4,672-dim policy logits vector and a scalar value in <code>[−1, +1]</code>.</p>
   {{ partial "architecture-svg.html" . }}
+
+  <h3 class="sub">MCTS at Inference</h3>
+  <p>The trained network is used as a <em>prior</em> over moves and a <em>value estimator</em> for leaf nodes. The actual decision comes from Monte Carlo Tree Search, which expands the most promising lines and reports the visit-count distribution. The routine eval uses 800 sims/move (AlphaZero's training-time value); deeper search at inference buys real Elo — see <a href="{{ "/experiments/#search" | relURL }}">the search ablation</a>.</p>
+  {{ partial "mcts-svg.html" . }}
+  <p class="dim">A handful of root-level candidate moves; each sampled deeper based on the network's prior weighted against exploration. After N rollouts the chosen move is whichever was visited most. <a href="{{ "/method/" | relURL }}">→ Full method, including the Elo bisection</a></p>
 </section>
 
 <section class="experiments">
-  <h2>experiments</h2>
-  <p class="lede">Three single-variable ablations on top of the distilled baseline. Each tests one hypothesis about what controls the Elo ceiling. Each card states the hypothesis, the test setup, the result, and the verdict.</p>
+  <h2>Experiments</h2>
+  <p class="lede">Single-variable ablations on top of the distilled baseline. Each tests one hypothesis about what controls the Elo ceiling. Each card states the hypothesis, the test setup, the result, and the verdict.</p>
 
   <div class="hypothesis-grid">
 
     <article class="hypothesis">
       <div class="head">
-        <span class="tag">network capacity</span>
-        <span class="badge rejected">hypothesis rejected</span>
+        <span class="tag">Network Capacity</span>
+        <span class="badge rejected">Hypothesis Rejected</span>
       </div>
-      <h3>Doubling network depth from 20 → 40 blocks didn't help</h3>
+      <h3>Doubling Network Depth From 20 → 40 Blocks Didn't Help</h3>
       <div class="hyp-line">
         <strong>Hypothesis:</strong> the 1,810-Elo ceiling is a representation limit. A bigger ResNet should land higher.
       </div>
@@ -51,10 +69,10 @@
 
     <article class="hypothesis">
       <div class="head">
-        <span class="tag">eval-side search</span>
-        <span class="badge confirmed">hypothesis confirmed</span>
+        <span class="tag">Eval-Side Search</span>
+        <span class="badge confirmed">Hypothesis Confirmed</span>
       </div>
-      <h3>+277 Elo from deeper MCTS at inference — no retraining</h3>
+      <h3>+277 Elo From Deeper MCTS at Inference — No Retraining</h3>
       <div class="hyp-line">
         <strong>Hypothesis:</strong> the routine 800-sim eval undersells the model. The distilled prior should refine with more MCTS rollouts at inference time, in line with Lc0's reported scaling.
       </div>
@@ -72,10 +90,10 @@
 
     <article class="hypothesis">
       <div class="head">
-        <span class="tag">data scale</span>
-        <span class="badge confirmed">hypothesis confirmed</span>
+        <span class="tag">Data Scale</span>
+        <span class="badge confirmed">Hypothesis Confirmed</span>
       </div>
-      <h3>+199 Elo from 6× more positions — the winning lever</h3>
+      <h3>+199 Elo From 6× More Positions — The Winning Lever</h3>
       <div class="hyp-line">
         <strong>Hypothesis:</strong> the bottleneck on the original baseline isn't network or teacher — it's <em>data</em>. The same recipe with 6× more positions should jump.
       </div>
@@ -87,27 +105,20 @@
       {{ partial "data-scale-chart-svg.html" . }}
       <div class="body">
         <p>The baseline used a 5M-position subsample of an available 30M-position dataset. We trained on the full 30M (same 20-block network, same hyperparameters, even a <em>weaker</em> teacher: Stockfish depth 10 vs depth 15) and the checkpoint at epoch 10 scores <strong>2,009 Elo</strong> at UCI=1,800 — +199 over the baseline. Epoch 5 hits <strong>2,084 Elo</strong> at UCI=1,350 (101 W / 3 D / 0 L).</p>
-        <p class="dim">The bottleneck on the original baseline was <em>data</em>, not teacher quality or network capacity. 16 h on a g6e.8xlarge, ~$50 of compute. The most cost-effective single change in the project. Currently generating <em>another 5M d15 positions</em> to test whether the stronger teacher pays off once data isn't starved.</p>
+        <p class="dim">The bottleneck on the original baseline was <em>data</em>, not teacher quality or network capacity. 16 h on a g6e.8xlarge, ~$50 of compute. The most cost-effective single change in the project.</p>
       </div>
     </article>
 
   </div>
 
-  <p><a href="{{ "/experiments/" | relURL }}">→ full experiments, numbers, and confidence intervals</a></p>
-</section>
-
-<section class="mcts-section">
-  <h2>how the network plays</h2>
-  <p class="lede">At inference time, the trained network is used as a <em>prior</em> over moves and a <em>value estimator</em> for leaf nodes. The actual decision comes from Monte Carlo Tree Search, which expands the most promising lines and reports the visit-count distribution.</p>
-  {{ partial "mcts-svg.html" . }}
-  <p class="dim">A handful of root-level candidate moves; each sampled deeper based on the network's prior weighted against exploration. After N rollouts the chosen move is whichever was visited most. <a href="{{ "/method/" | relURL }}">→ how the method works in detail</a></p>
+  <p><a href="{{ "/experiments/" | relURL }}">→ Full experiments, numbers, confidence intervals, and the soft-targets ablation</a></p>
 </section>
 
 <section class="vs-az">
-  <h2>vs alphazero</h2>
+  <h2>vs AlphaZero</h2>
   <table class="compact">
     <thead>
-      <tr><th></th><th>alphazero (2017)</th><th>this project</th></tr>
+      <tr><th></th><th>AlphaZero (2017)</th><th>This Project</th></tr>
     </thead>
     <tbody>
       <tr><td>approach</td><td>tabula-rasa self-play RL</td><td>supervised distillation from stockfish</td></tr>
@@ -117,34 +128,34 @@
       <tr><td>peak elo</td><td>~3,500</td><td>2,084</td></tr>
     </tbody>
   </table>
-  <p><a href="{{ "/vs-alphazero/" | relURL }}">→ full comparison and what's literally identical</a></p>
+  <p><a href="{{ "/vs-alphazero/" | relURL }}">→ Full comparison and what's literally identical</a></p>
 </section>
 
 <section class="next">
-  <h2>what's next</h2>
+  <h2>What's Next</h2>
   <p>The largest remaining gap to AlphaZero is that AZ has <em>no teacher</em> — its training targets come from its own MCTS visit counts, not from Stockfish. The Lc0 recipe — <strong>distill first, RL second</strong> — runs an AlphaZero-style self-play loop on top of the distilled prior. A first attempt regressed (LR was 100× too high for fine-tuning a pretrained net); a fix is in flight.</p>
   <p class="dim">In parallel, generating another 5M d15 positions to put the stronger-teacher hypothesis on equal data footing as the d10 result.</p>
-  <p><a href="{{ "/next/" | relURL }}">→ self-play loop status</a></p>
+  <p><a href="{{ "/next/" | relURL }}">→ Self-play loop status</a></p>
 </section>
 
 <section class="links">
-  <h2>more</h2>
+  <h2>More</h2>
   <div class="grid grid-3">
     <a href="{{ "/experiments/" | relURL }}" class="card">
-      <h3>experiments</h3>
-      <p>the three ablations in detail · hypothesis prove/disprove · numbers · confidence intervals</p>
+      <h3>Experiments</h3>
+      <p>The three ablations in detail · hypothesis prove/disprove · numbers · confidence intervals</p>
     </a>
     <a href="{{ "/method/" | relURL }}" class="card">
-      <h3>method</h3>
-      <p>distillation loss · soft multipv targets · MCTS at inference · how we measure elo</p>
+      <h3>Method</h3>
+      <p>The distillation loss · MCTS at inference · Elo bisection for the single best number</p>
     </a>
     <a href="{{ "/infra/" | relURL }}" class="card">
-      <h3>infrastructure</h3>
+      <h3>Infrastructure</h3>
       <p>EKS · bare-EC2 · multi-region quota tricks · self-terminating runners</p>
     </a>
     <a href="https://github.com/shehio/world-models" class="card">
-      <h3>github →</h3>
-      <p>code · 219 tests · dockerfiles · launchers · the whole thing</p>
+      <h3>GitHub →</h3>
+      <p>Code · 219 tests · dockerfiles · launchers · the whole thing</p>
     </a>
   </div>
 </section>

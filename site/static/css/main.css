@@ -88,7 +88,6 @@ nav {
   font-size: 2.9rem;
   font-weight: 300;
   letter-spacing: 4px;
-  text-transform: lowercase;
   color: var(--text);
   line-height: 1.1;
 }
@@ -134,7 +133,6 @@ nav {
   font-size: 0.72rem;
   letter-spacing: 3.5px;
   margin-top: 0.55rem;
-  text-transform: lowercase;
 }
 
 .result-context {
@@ -171,6 +169,7 @@ nav {
 /* ── generic section ─────────────────────────────────────────── */
 
 section.diagram-section,
+section.method-section,
 section.experiments,
 section.findings,
 section.mcts-section,
@@ -187,7 +186,6 @@ section h2 {
   font-size: 1.05rem;
   font-weight: 500;
   letter-spacing: 2.5px;
-  text-transform: lowercase;
   padding-bottom: 0.6rem;
   border-bottom: 1px solid var(--border);
   margin-bottom: 1.5rem;
@@ -205,6 +203,91 @@ section h2 {
   color: var(--accent);
   font-style: normal;
 }
+
+/* method section on the home page */
+.method-section h3.sub {
+  font-size: 0.95rem;
+  font-weight: 500;
+  letter-spacing: 1.2px;
+  color: var(--text);
+  margin: 2.2rem 0 0.75rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.method-section ol.steps {
+  list-style: none;
+  counter-reset: step;
+  padding: 0;
+  margin: 0.5rem 0 1.25rem;
+}
+
+.method-section ol.steps li {
+  counter-increment: step;
+  padding: 0.55rem 0 0.55rem 2.5rem;
+  position: relative;
+  font-size: 0.95rem;
+  line-height: 1.75;
+}
+
+.method-section ol.steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0.6rem;
+  width: 1.7rem;
+  height: 1.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 0.78rem;
+  border-radius: 50%;
+  font-weight: 500;
+}
+
+.method-section ol.steps li strong { color: var(--accent); font-weight: 500; }
+.method-section ol.steps li em { color: var(--text); font-style: normal; border-bottom: 1px dotted var(--dim); }
+.method-section ol.steps li code,
+.method-section p code {
+  color: var(--text);
+  background: var(--surface);
+  padding: 0.1rem 0.35rem;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  font-size: 0.86em;
+}
+
+.method-section pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 1rem 1.15rem;
+  overflow-x: auto;
+  font-size: 0.84rem;
+  line-height: 1.7;
+  margin: 0.5rem 0 1.5rem;
+  border-radius: 2px;
+}
+
+.method-section pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  color: var(--text);
+}
+
+.method-section p { font-size: 0.95rem; line-height: 1.8; margin-bottom: 1rem; }
+.method-section p strong { color: var(--accent); font-weight: 500; }
+.method-section p em { color: var(--text); font-style: normal; border-bottom: 1px dotted var(--dim); }
+.method-section p.dim { font-size: 0.85rem; color: var(--dim-soft); }
+.method-section p a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--accent);
+}
+.method-section p a:hover { border-bottom-style: solid; }
 
 /* ── architecture / mcts / chart frame ─────────────────────────── */
 
@@ -512,7 +595,6 @@ table.compact th {
   color: var(--accent);
   font-weight: 500;
   letter-spacing: 1.3px;
-  text-transform: lowercase;
   background: var(--surface);
   font-size: 0.76rem;
 }
@@ -569,7 +651,6 @@ table.compact tbody tr:hover td { background: rgba(0, 212, 170, 0.03); }
   margin-bottom: 0.45rem;
   color: var(--accent);
   letter-spacing: 0.5px;
-  text-transform: lowercase;
 }
 
 .card p {
@@ -596,7 +677,6 @@ table.compact tbody tr:hover td { background: rgba(0, 212, 170, 0.03); }
   font-size: 2.05rem;
   font-weight: 300;
   letter-spacing: 2.5px;
-  text-transform: lowercase;
   color: var(--text);
   line-height: 1.15;
 }
@@ -613,7 +693,6 @@ table.compact tbody tr:hover td { background: rgba(0, 212, 170, 0.03); }
   font-weight: 500;
   letter-spacing: 2.2px;
   color: var(--accent);
-  text-transform: lowercase;
   margin: 2.85rem 0 0.9rem;
   padding-bottom: 0.45rem;
   border-bottom: 1px solid var(--border);
@@ -697,7 +776,6 @@ table.compact tbody tr:hover td { background: rgba(0, 212, 170, 0.03); }
   color: var(--accent);
   font-weight: 500;
   letter-spacing: 1.2px;
-  text-transform: lowercase;
   background: var(--surface);
   font-size: 0.76rem;
 }

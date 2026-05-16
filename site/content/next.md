@@ -6,7 +6,7 @@ aliases:
   - /selfplay/
 ---
 
-## the central observation
+## The Central Observation
 
 The biggest difference between this project and AlphaZero is that AZ
 has **no teacher**. Its policy targets come from its own MCTS visit
@@ -19,7 +19,7 @@ wall-weeks to reach 1,500 Elo from random init. But it *can* run the
 realistic path: **distill-then-RL**, which is what Leela Chess Zero
 actually did to reach grandmaster level on volunteer hardware.
 
-## the loop
+## The Loop
 
 1. Take the [d15 ep20 ckpt](/experiments/#baseline) as the starting prior
    (1,807 Elo at 800 sims, 2,084 at 4,000 sims).
@@ -36,7 +36,7 @@ actually did to reach grandmaster level on volunteer hardware.
 The loss is exactly the AlphaZero loss; the only difference from
 "tabula-rasa AZ" is that the starting weights aren't random.
 
-## what's running now
+## What's Running Now
 
 | | value |
 |---|---|
@@ -56,7 +56,7 @@ Entrypoint:
 Orchestrator:
 [`infra-eks/run-selfplay.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/run-selfplay.sh).
 
-## why PCR
+## Why PCR
 
 Playout Cap Randomization is a KataGo trick worth ~+80–150 Elo at
 fixed compute. The idea: most positions get cheap reduced-sim MCTS
@@ -69,14 +69,14 @@ which is not a meaningful improvement target. At high sims, MCTS
 produces a sharply better policy than the prior. So spend the
 expensive sims on the positions whose targets you'll actually use.
 
-## what we expect
+## What We Expect
 
 If the loop works at all, gains should land in the +200 to +500 Elo
 range over the distilled prior. That's what Lc0's first
 "distill-then-RL" iteration produced for them. If it stalls or
 diverges, we have the per-iter eval data to find where.
 
-## what else is on the roadmap
+## What Else Is on the Roadmap
 
 Ranked by expected information per unit of effort:
 
@@ -94,7 +94,7 @@ Ranked by expected information per unit of effort:
    only path to AlphaZero-style numbers, realistic only as a
    follow-on.
 
-## what we're explicitly NOT going to do
+## What We're Explicitly NOT Going to Do
 
 - **Bigger net.** The capacity ablation rejected this — 40×256 =
   20×256 = ~1,810 Elo. Network isn't the bottleneck.

@@ -4,7 +4,7 @@ subtitle: "eks · bare-ec2 fallback · multi-region · self-terminating"
 next: "/failures/"
 ---
 
-## the shape
+## The Shape
 
 Everything runs on AWS. The pipeline has three roles:
 
@@ -23,7 +23,7 @@ Everything runs on AWS. The pipeline has three roles:
 Everything is committed and self-contained. Tear-down is one
 `eksctl delete cluster -f <spec>` per cluster.
 
-## the key constraint: G/VT vCPU quota
+## The Key Constraint: G/VT vCPU Quota
 
 AWS caps "G and VT instances" (the GPU families we use) at 32 vCPU
 per region by default. Two concurrent g6.4xlarge evals (16 vCPU
@@ -45,7 +45,7 @@ The pipeline works around this with **multi-region fallback**:
 Net effect: ~64 effective vCPU of G/VT capacity, no quota tickets
 required.
 
-## the eks pattern
+## The EKS Pattern
 
 Every cluster follows the same shape:
 
@@ -74,7 +74,7 @@ managedNodeGroups:
 Bring up: `eksctl create cluster -f <spec>` (~15-20 min).
 Tear down: `eksctl delete cluster -f <spec>` (~10 min).
 
-## the bare-ec2 pattern
+## The Bare-EC2 Pattern
 
 When EKS can't get a specific instance type (e.g. g6e was out of
 L40S capacity in our cluster's AZ), we bypass K8s with a bare-EC2
@@ -97,7 +97,7 @@ Catalog of existing launchers
 | `d10-full30m.sh` | Experiment C (d10 on full ~30M positions, g6e.8xlarge) |
 | `eval-deep-sims.sh` | Experiment E (sims=4000 eval) |
 
-## crash-safety + cross-run resume
+## Crash-Safety + Cross-Run Resume
 
 `entrypoint-train.sh` honors two env vars for explicit cross-run
 resume:
@@ -113,7 +113,7 @@ into `INIT_FROM_S3`, set `START_EPOCH` to one past it, and the next
 run picks up under a fresh `RUN_ID` (so checkpoints land in a new
 directory and the auto-eval daemon picks them up).
 
-## image build
+## Image Build
 
 `infra-eks/Dockerfile.train` is a single image used by both
 supervised training (`entrypoint-train.sh`) and self-play

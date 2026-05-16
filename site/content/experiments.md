@@ -1,6 +1,6 @@
 ---
 title: "Experiments"
-subtitle: "three single-variable ablations on a distilled-from-stockfish baseline"
+subtitle: "single-variable ablations on the distilled-from-stockfish baseline"
 next: "/method/"
 aliases:
   - /findings/
@@ -12,12 +12,13 @@ aliases:
 
 <nav class="page-toc">
 
-- [baseline](#baseline)
-- [capacity (rejected)](#capacity)
-- [search (confirmed, +277)](#search)
-- [data scale (confirmed, +199)](#data)
-- [stacking search + data](#stacking)
-- [summary](#summary)
+- [The Baseline](#baseline)
+- [Network Capacity (Rejected)](#capacity)
+- [Soft vs Hard Targets](#soft-vs-hard)
+- [Eval-Side Search (Confirmed, +277)](#search)
+- [Data Scale (Confirmed, +199)](#data)
+- [Stacking Search + Data](#stacking)
+- [Summary](#summary)
 
 </nav>
 
@@ -32,7 +33,7 @@ constant, and states the hypothesis it was meant to test, the result,
 and the verdict. Code links land directly on the launcher / training
 script for each.
 
-## the baseline trajectory {#baseline}
+## The Baseline Trajectory {#baseline}
 
 100-game evals vs Stockfish `UCI=1350`, 800 MCTS sims/move, 20-block
 network.
@@ -46,12 +47,12 @@ network.
 
 Loss plateaus around 2.59 by epoch 10; top-1 accuracy plateaus ~0.34.
 Each additional epoch buys 10–50 Elo within noise. This is the
-"1,800 ceiling" the three ablations probe.
+"1,800 ceiling" the ablations probe.
 
 → code: [`train_supervised.py`](https://github.com/shehio/world-models/blob/main/experiments/distill-soft/src/distill_soft/train_supervised.py) ·
 [`eval.py`](https://github.com/shehio/world-models/blob/main/experiments/distill-soft/scripts/eval.py)
 
-## network capacity — doubling depth didn't help {#capacity}
+## Network Capacity — Doubling Depth Didn't Help {#capacity}
 
 **Hypothesis:** the ceiling is the network running out of representational
 capacity. Doubling the depth (40 blocks instead of 20, ~48M params
@@ -83,7 +84,50 @@ is hitting a *teacher-signal* limit, not a *representation* limit.
 
 → code: [`d15-40x256-eu.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/d15-40x256-eu.sh)
 
-## eval-side search — +277 elo from search alone {#search}
+## Soft vs Hard Targets {#soft-vs-hard}
+
+**Hypothesis:** soft multipv targets (a distribution over Stockfish's
+top-8 candidate moves, softmax of centipawn scores) carry more useful
+information than hard one-hot ("the move Stockfish actually played").
+The student should learn faster from richer targets.
+
+**Setup:** identical recipe in both arms — same network, same data,
+same epoch count. Only the policy target differs:
+
+- **Hard:** `π(played_move) = 1`, all else 0. Standard supervised classification.
+- **Soft:** `π(move_k) = softmax(cp_k / 100)`. At `T = 1` pawn, a 50-cp gap
+  between two moves becomes a 62 / 38 split, not 100 / 0.
+
+The soft version is what every other experiment on this page uses.
+
+### Result Depends on Teacher Strength
+
+| recipe | weak teacher (d10, ~2,200 Elo) | strong teacher (d15, ~2,500 Elo) |
+|---|---:|---:|
+| hard one-hot | ~1,315 | (not measured) |
+| **soft multipv** | **~1,185** (−130) | **1,807** |
+
+At a weak teacher, soft targets actually *underperform* one-hot by
+~130 Elo — the student learns to hedge between moves the teacher
+itself wasn't sure about, so its policy is fuzzier than necessary. At
+a strong teacher the soft distribution becomes sharply peaked and the
+hedge cost disappears; soft and hard converge.
+
+**Verdict.** Soft targets help when the teacher is strong enough that
+its multipv ranking actually reflects move quality. Below that, the
+extra "information" is mostly the teacher's own uncertainty, which
+hurts the student. Picking soft vs hard isn't a free axiom — it
+trades off against teacher quality.
+
+**Practical consequence.** Everything above d10 in this project uses
+soft targets. A sharper temperature (e.g. `T = 0.3`) is on the roadmap
+— it would keep some multipv ranking information but force more
+commitment from the student.
+
+→ code: [`stockfish_data.py`](https://github.com/shehio/world-models/blob/main/experiments/distill-soft/src/distill_soft/stockfish_data.py)
+(the `softmax(cp/100*T)` construction)
+
+## Eval-Side Search — +277 Elo From Search Alone {#search}
 
 **Hypothesis:** the baseline is evaluated at 800 MCTS sims/move
 (AlphaZero's *training-time* value). At competitive play
@@ -128,7 +172,7 @@ is in place.
 → code: [`eval-deep-sims.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-deep-sims.sh) ·
 [`eval-c-ep4-sims4000.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-c-ep4-sims4000.sh)
 
-## data scale — 6× more positions (the winning lever) {#data}
+## Data Scale — 6× More Positions (The Winning Lever) {#data}
 
 **Hypothesis:** the baseline used a 5M-position subsample of an
 available 30M-position dataset. Maybe the recipe is fine and we're
@@ -147,7 +191,7 @@ batches/epoch on top), so ~3× expected. Actual was ~3.6×. The extra
 20% is OS page-cache cold start on epoch 0 (15 GB of memmapped files
 page in) plus DataLoader overhead.
 
-### results
+### Results
 
 100-game evals vs Stockfish at UCI=1,800.
 
@@ -161,7 +205,7 @@ page in) plus DataLoader overhead.
 The data ablation peaks at **ep 10: 2,009 Elo at the tight UCI=1,800
 anchor**.
 
-### same teacher, more data
+### Same Teacher, More Data
 
 | dataset (d10 teacher) | ep 5 Elo @ 1350 |
 |---|---:|
@@ -170,7 +214,7 @@ anchor**.
 
 Same teacher, 6× more data → **+335 Elo** at the easier anchor.
 
-### stronger teacher vs more data
+### Stronger Teacher vs More Data
 
 | run | Elo @ UCI=1800 |
 |---|---:|
@@ -184,11 +228,11 @@ with a *weaker* teacher (depth-10 vs depth-15).
 → code: [`d10-full30m.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/d10-full30m.sh) ·
 [`stockfish_data.py`](https://github.com/shehio/world-models/blob/main/experiments/distill-soft/src/distill_soft/stockfish_data.py)
 
-## stacking search + data scale together {#stacking}
+## Stacking Search + Data Scale Together {#stacking}
 
 The natural follow-up: apply both confirmed ablations to the *same*
-checkpoint. The
-d10-30M epoch-5 weights, evaluated at sims=4000 at UCI=1,800:
+checkpoint. The d10-30M epoch-5 weights, evaluated at sims=4000 at
+UCI=1,800:
 
 | recipe | Elo @ UCI=1,800 |
 |---|---:|
@@ -205,11 +249,12 @@ recover. Both paths converge to roughly the same agent strength near
 → code: [`eval-c-ep4-sims4000.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-c-ep4-sims4000.sh) ·
 [`eval-c-ep4-sims2000-uci1800.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-c-ep4-sims2000-uci1800.sh)
 
-## summary
+## Summary {#summary}
 
 | variable changed | hypothesis |
 |---|---|
 | network capacity (40×256 vs 20×256) | **rejected** |
+| soft vs hard targets | **partial** (helps strong teachers, hurts weak) |
 | eval-side search (4,000 vs 800 sims) | **confirmed** (+277) |
 | data scale (30M vs 5M positions) | **confirmed** (+199) |
 

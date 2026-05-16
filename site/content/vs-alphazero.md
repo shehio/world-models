@@ -6,7 +6,7 @@ aliases:
   - /alphazero/
 ---
 
-## the comparison
+## The Comparison
 
 | | AlphaZero (2017) | this project |
 |---|---|---|
@@ -19,7 +19,7 @@ aliases:
 | teacher | none | stockfish d10 (~2,200) or d15 (~2,500), multipv=8, T=1 |
 | peak Elo | ~3,500–3,600 | **2,084** (d15 ep19 @ 4,000 sims vs UCI=1350) |
 
-## what's literally identical
+## What's Literally Identical
 
 The architecture. AlphaZero is a 20-block × 256-channel ResNet with a
 policy head producing 4,672 move logits (8×8×73 chess move encoding)
@@ -31,9 +31,9 @@ The eval anchor (Stockfish at calibrated `UCI_Elo`) is a measurement
 choice, not part of the model. Everything else — *how* the weights
 get there — is different.
 
-## what's deliberately different
+## What's Deliberately Different
 
-### approach
+### Approach
 
 AlphaZero is **tabula rasa**. The weights start random; the only
 training signal is "did this position lead to a win?" Targets are
@@ -44,7 +44,7 @@ distillation**. Targets are Stockfish's top-8 moves with softmax-cp
 weights, not MCTS visit counts. The model never plays a game during
 training — it watches Stockfish play 100k of them.
 
-### compute
+### Compute
 
 AlphaZero used 5,000 first-generation TPUs for self-play data
 generation and 64 second-generation TPUs for training, for ~9 hours.
@@ -52,14 +52,14 @@ Conservatively, that's ~45,000 TPU-v1-hours plus ~576 TPU-v2-hours.
 Our supervised distillation runs cost ~5 hours on a single L4 or L40S
 GPU — roughly four orders of magnitude less.
 
-### data
+### Data
 
 AZ's 44M self-play games × ~80 moves/game = ~3.5 billion training
 positions. The largest dataset we've trained on is ~30M positions —
 about 100× less. The 5M subsample used for the headline result is
 ~700× less.
 
-### inference search
+### Inference Search
 
 AZ used 800 sims during training and many tens of thousands at
 competitive play. Our routine evals run at 800 sims; the
@@ -67,7 +67,7 @@ competitive play. Our routine evals run at 800 sims; the
 showed that the same checkpoint scores +277 Elo when re-evaluated at
 4,000 sims — and we haven't pushed it further yet.
 
-## why a small project can still be interesting
+## Why a Small Project Can Still Be Interesting
 
 Holding the architecture constant and varying the training procedure
 isolates *the procedure*. Each ablation tells you something specific
@@ -86,7 +86,7 @@ do AZ's thing and report ~3,500 Elo. The interesting question for a
 small lab is: *which procedural changes are worth a lot per unit of
 compute?* That's what the ablations are measuring.
 
-## the realistic ceiling
+## The Realistic Ceiling
 
 Without a multi-GPU scale-up the realistic ceiling is somewhere in the
 2,200–2,800 Elo range — strong-club to FIDE-master level on the same
