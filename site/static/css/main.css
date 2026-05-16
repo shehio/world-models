@@ -52,7 +52,10 @@ body {
 
 /* ── nav ──────────────────────────────────────────────────────── */
 
-nav {
+/* Scope to the body-level site nav only. The in-page <nav class="page-toc">
+   used on the experiments page is a different element and must not pick
+   up the sticky / blur / border / padding from the site nav. */
+body > nav {
   display: flex;
   justify-content: space-between;
   align-items: center;
