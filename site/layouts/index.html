@@ -23,17 +23,29 @@
 
 <section class="method-section">
   <h2>How It Works</h2>
-  <p class="lede">One supervised pipeline + one MCTS at inference. The teacher is Stockfish; the student is AlphaZero's network architecture; the search at play-time is straight AlphaZero MCTS.</p>
+  <p class="lede">Two phases. <em>Training</em> is a single supervised pass: Stockfish labels positions, the student fits those labels. <em>Inference</em> is Monte Carlo Tree Search using the trained network as its prior. The network alone never picks a move — MCTS does, and the network just guides where MCTS looks.</p>
 
+  <h3 class="sub">1 · Training (one-shot, no self-play)</h3>
   <ol class="steps">
     <li><strong>Stockfish self-plays</strong> games at search-depth 15. At every position, before the chosen move is played, Stockfish reports its top-8 candidate moves with centipawn scores.</li>
     <li>Those scores become a soft distribution <code>π</code> over the 8 candidates (softmax at <em>T = 1 pawn</em>). The game outcome <code>z ∈ {−1, 0, +1}</code> is recorded from each side-to-move POV.</li>
-    <li>The student trains on <strong>(state, π, z)</strong> triples — cross-entropy on policy, MSE on value. No self-play, no MCTS at training time.</li>
+    <li>The student trains on <strong>(state, π, z)</strong> triples — cross-entropy on the policy head against <code>π</code>, MSE on the value head against <code>z</code>. No self-play, no MCTS at training time.</li>
   </ol>
 
+  <h3 class="sub">2 · The Network</h3>
+  <p>20 residual blocks × 256 channels, ~24M parameters. Input: a 19-plane encoding of the current board (piece positions, side-to-move, castling rights, repetitions). Output: a 4,672-dim policy logits vector and a scalar value in <code>[−1, +1]</code>. Same architecture AlphaZero used — only the way we got the weights differs.</p>
   {{ partial "architecture-svg.html" . }}
 
-  <p class="dim">The trained network is used as a <em>prior</em> over moves and a <em>value estimator</em> for leaf nodes; the decision comes from Monte Carlo Tree Search expanding the most promising lines. Routine eval uses 800 sims/move (AlphaZero's training-time value); deeper search at inference buys real Elo.</p>
+  <h3 class="sub">3 · Playing a Move (Network + MCTS, end-to-end)</h3>
+  <p>The trained network is a <em>prior</em> over moves and a <em>value estimator</em> for leaf positions; the actual move comes from Monte Carlo Tree Search built on top of those two signals. One move at the root costs N <em>simulations</em> (800 for the routine eval, 4,000 for the search-saturated eval). Each simulation is:</p>
+  <ol class="steps">
+    <li><strong>Selection.</strong> Starting at the root (the current position), walk down the search tree by repeatedly picking the child that maximises <code>Q + U</code>: average value seen below this move + an exploration bonus proportional to the network's prior <code>P</code> and inversely proportional to how many times we've already visited this child. The network's policy is the bias; the running statistics correct it as evidence accumulates.</li>
+    <li><strong>Expansion + evaluation.</strong> When you hit a node that hasn't been expanded yet, encode that position to 19 planes, run <em>one</em> network forward pass, and store the policy logits as priors for its children + the value estimate as the value of the leaf.</li>
+    <li><strong>Backup.</strong> Propagate that leaf value back up the path you took, incrementing each parent's visit count and updating the running <code>Q</code> with the new estimate. Sign-flip at every ply because chess alternates side-to-move.</li>
+  </ol>
+  <p>Repeat for N sims. Then pick the move at the root with the <strong>highest visit count</strong> (not highest <code>Q</code>; visit counts are MCTS's improved policy estimate). At higher sims/move, MCTS spends more rollouts refining the prior into a sharper visit distribution — that's why the same checkpoint scores 1,807 Elo at 800 sims and 2,084 Elo at 4,000 sims (see <a href="{{ "/experiments/#search" | relURL }}">the search ablation</a>).</p>
+  {{ partial "mcts-svg.html" . }}
+  <p class="dim">Implementation: the encode is <a href="https://github.com/shehio/world-models/blob/main/wm_chess/src/wm_chess/board.py"><code>encode_board</code></a>, the network forward is <a href="https://github.com/shehio/world-models/blob/main/wm_chess/src/wm_chess/network.py"><code>AlphaZeroNet.forward</code></a>, and the MCTS loop is <a href="https://github.com/shehio/world-models/blob/main/wm_chess/src/wm_chess/mcts.py"><code>run_mcts</code> / <code>run_mcts_batched</code></a>. The selection formula is straight from the AlphaGo Zero paper: <code>U(s,a) = c_puct · P(s,a) · √Σ_b N(s,b) / (1 + N(s,a))</code>.</p>
   <p><a href="{{ "/method/" | relURL }}">→ Full method, including the loss formula and Elo bisection</a></p>
 </section>
 
