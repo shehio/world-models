@@ -40,14 +40,18 @@ network.
 
 | epoch | Elo |
 |---:|---:|
-| 5 | 1,701 |
-| 10 | 1,693 |
+| 5 | 1,651 |
+| 10 | 1,862 |
 | 15 | 1,759 |
 | **20** | **1,807** |
 
-Loss plateaus around 2.59 by epoch 10; top-1 accuracy plateaus ~0.34.
-Each additional epoch buys 10–50 Elo within noise. This is the
-"1,800 ceiling" the ablations probe.
+100-game evals at this anchor have a CI of roughly ±100 Elo, so the
+ep-10 spike (1,862) is mostly noise — not a real swing. The trend at
+this resolution is just "around 1,700–1,800 across epochs"; we take
+**ep 20 = 1,807** as the canonical baseline because it's the last
+training checkpoint, not because it's deterministically best. Loss
+plateaus around 2.59 by epoch 10; top-1 accuracy plateaus ~0.34. This
+is the "1,800 ceiling" the ablations probe.
 
 → code: [`train_supervised.py`](https://github.com/shehio/world-models/blob/main/experiments/distill-soft/src/distill_soft/train_supervised.py) ·
 [`eval.py`](https://github.com/shehio/world-models/blob/main/experiments/distill-soft/scripts/eval.py)
@@ -253,20 +257,22 @@ lesson, replayed at $50 budget on a single GPU.
 ## Stacking Search + Data Scale Together {#stacking}
 
 The natural follow-up: apply both confirmed ablations to the *same*
-checkpoint. The d10-30M epoch-5 weights, evaluated at sims=4000 at
-UCI=1,800:
+checkpoint. The d10-30M weights at sims=4,000 give us the project's
+strongest measurements:
 
-| recipe | Elo @ UCI=1,800 |
-|---|---:|
-| baseline (d15 5M, 800 sims) | 1,810 |
-| + 30M data (d10, 800 sims) | 2,004 |
-| + 4,000 sims on top | **2,084** |
+| recipe | sims | opponent | Elo |
+|---|---:|---|---:|
+| baseline (d15 5M ep 20) | 800 | UCI=1,800 | 1,810 |
+| + 30M data (d10 ep 5) | 800 | UCI=1,800 | 2,004 |
+| + 4,000 sims on top (ep 5) | 4,000 | UCI=1,800 | 2,084 [2005, 2197] |
+| same, tighter anchor (ep 5) | 4,000 | UCI=2,000 | **2,110** [2044, 2187] |
+| later epoch + same search (ep 10) | 4,000 | UCI=1,800 | **2,171** [2082, 2324] |
 
-**+277 Elo total.** The gains aren't additive — search gave +277 on
-the weaker d15-5M prior but only +75 on top of the data-scaled prior,
-because the stronger prior already has less residual that search can
-recover. Both paths converge to roughly the same agent strength near
-2,084 Elo.
+**+361 Elo from the baseline.** The deep-search numbers don't *quite*
+add: search recovered +277 on the weaker d15 5M prior but only ~+80
+on top of the data-scaled prior. The headline 2,171 figure is ep 10's
+better learned value combined with the deep-search rollouts; the
+tightest CI sits at 2,110 against the stronger UCI=2,000 opponent.
 
 → code: [`eval-c-ep4-sims4000.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-c-ep4-sims4000.sh) ·
 [`eval-c-ep4-sims2000-uci1800.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-c-ep4-sims2000-uci1800.sh)
@@ -282,7 +288,8 @@ recover. Both paths converge to roughly the same agent strength near
 
 Capacity is decisively *not* the bottleneck. Eval search recovers a
 huge slice. **Data was the real bottleneck.** Strongest checkpoint to
-date: **2,084 Elo @ UCI=1,350 / 2,004 @ UCI=1,800** from the d10
-full-30M run at epoch 5 — the headline number for the whole project.
+date: **2,171 Elo @ UCI=1,800** from the d10 full-30M run at epoch 10
+with sims=4,000 (CI [2082, 2324]). Tightest CI:
+**2,110 Elo @ UCI=2,000** at epoch 5 with sims=4,000 (CI [2044, 2187]).
 A 5× larger d15 dataset is the natural next step
 ([what's next →](/next/)).

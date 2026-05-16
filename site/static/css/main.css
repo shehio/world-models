@@ -705,6 +705,16 @@ table.compact td:first-child,
   text-transform: lowercase;
 }
 
+/* matrix-style tables intentionally fill the reading column —
+   they're the summary view, not data points inside prose. */
+table.matrix {
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 1rem 0 1.25rem;
+}
+table.matrix td { font-size: var(--fs-table); }
+table.matrix td:first-child { font-size: var(--fs-aux); }
+
 table.compact strong,
 .content strong { color: var(--accent); font-weight: 500; }
 

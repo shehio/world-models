@@ -6,12 +6,12 @@
 
 <section class="result-strip">
   <div class="result-box">
-    <div class="result-num">2,084</div>
+    <div class="result-num">2,171</div>
     <div class="result-unit">Elo</div>
-    <div class="result-context">strongest checkpoint · vs calibrated stockfish</div>
+    <div class="result-context">d10 30M ep10 · sims=4,000 · vs UCI=1,800</div>
   </div>
   <div class="result-context-block">
-    <p>AlphaZero used <em>5,000 TPUs</em> for self-play data generation and <em>64 TPU-v2s</em> to train. We use the <strong>same network</strong> (a 20-block × 256-channel ResNet, ~24M parameters) on <em>one GPU</em>, supervised distillation from Stockfish on 30M positions, evaluated against a calibrated 1,350-Elo opponent. Total cost: ~16 GPU-hours on a single L40S. Roughly <strong>four orders of magnitude less compute</strong> than the AlphaZero paper.</p>
+    <p>AlphaZero used <em>5,000 TPUs</em> for self-play data generation and <em>64 TPU-v2s</em> to train. We use the <strong>same network</strong> (a 20-block × 256-channel ResNet, ~24M parameters) on <em>one GPU</em>, supervised distillation from Stockfish on 30M positions, evaluated against a calibrated Stockfish opponent. Total cost: ~16 GPU-hours on a single L40S. Roughly <strong>four orders of magnitude less compute</strong> than the AlphaZero paper.</p>
     <p class="quick-links">
       <a href="{{ "/experiments/" | relURL }}">→ How we got here</a>
       <a href="{{ "/method/" | relURL }}">→ Method &amp; Elo bisection</a>
@@ -124,6 +124,43 @@
     </tbody>
   </table>
   <p><a href="{{ "/vs-alphazero/" | relURL }}">→ Full comparison and what's literally identical</a></p>
+</section>
+
+<section class="results-matrix">
+  <h2>Results Matrix</h2>
+  <p class="lede">Every checkpoint we trained, at the standard 800-sim eval. <em>UCI=1,350</em> anchor — the only one every checkpoint has been measured against, so the comparison is apples-to-apples across runs. Bold marks the canonical run's best epoch.</p>
+
+  <table class="compact matrix">
+    <thead>
+      <tr><th>Run</th><th>ep 5</th><th>ep 10</th><th>ep 15</th><th>ep 20</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>d15 5M baseline (20×256)</td><td>1,651</td><td>1,862</td><td>1,759</td><td><strong>1,807</strong></td></tr>
+      <tr><td>d15 5M capacity (40×256)</td><td>1,851</td><td>1,851</td><td>1,759</td><td>1,820</td></tr>
+      <tr><td>d10 5M subset (20×256)</td><td>1,749</td><td>1,770</td><td>1,688</td><td>1,730</td></tr>
+      <tr><td>d10 30M full (20×256)</td><td><strong>2,084</strong></td><td>1,961</td><td>1,888</td><td>1,961</td></tr>
+    </tbody>
+  </table>
+
+  <p class="dim">100-game evals at UCI=1,350. CI is ~±100 Elo per cell — the variation epoch-to-epoch within a run (e.g. baseline 10 = 1,862) is mostly noise, not real swing. The cross-run comparisons (5M baseline → 5M capacity → 30M data) are larger than the noise.</p>
+
+  <h3 class="sub">Deep-Search Results</h3>
+  <p>Same checkpoints, more MCTS sims at inference. Numbers in <code>[ ]</code> are 95% CIs.</p>
+  <table class="compact matrix">
+    <thead>
+      <tr><th>Checkpoint</th><th>sims</th><th>opponent</th><th>Elo</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>d15 baseline ep 20</td><td>800</td><td>UCI=1,350</td><td>1,807</td></tr>
+      <tr><td>d15 baseline ep 20</td><td>4,000</td><td>UCI=1,350</td><td>2,084</td></tr>
+      <tr><td>d10 30M ep 5</td><td>800</td><td>UCI=1,800</td><td>2,004</td></tr>
+      <tr><td>d10 30M ep 5</td><td>2,000</td><td>UCI=1,800</td><td>2,034</td></tr>
+      <tr><td>d10 30M ep 5</td><td>4,000</td><td>UCI=1,800</td><td>2,084 [2005, 2197]</td></tr>
+      <tr><td>d10 30M ep 5</td><td>4,000</td><td>UCI=2,000</td><td>2,110 [2044, 2187]</td></tr>
+      <tr><td><strong>d10 30M ep 10</strong></td><td><strong>4,000</strong></td><td><strong>UCI=1,800</strong></td><td><strong>2,171 [2082, 2324]</strong></td></tr>
+    </tbody>
+  </table>
+  <p class="dim">Highest point estimate: <strong>2,171 Elo</strong> at d10-30M ep 10 + sims=4,000. Tightest CI: <strong>2,110 Elo</strong> at ep 5 vs the UCI=2,000 anchor where score (0.65) sits closer to 0.5. The 4,000-sim deep-search numbers stack the two confirmed ablations (search + data) on one checkpoint.</p>
 </section>
 
 <section class="next">

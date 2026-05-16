@@ -37,7 +37,7 @@ teacher — just more data.
 | Training compute | 64 TPU-v2 × 9h + ~45k TPU-v1-hr self-play | 1 GPU × 5h ≈ 5 GPU-hours (~10,000× less) |
 | Eval MCTS sims | 800 training / many tens of thousands tournament | 800 routine / 4000 on Experiment E |
 | Teacher | None | Stockfish d10 (~2200) or d15 (~2500), multipv=8, T=1 |
-| Peak Elo | ~3500–3600 | 2084 (d15 ep19 @ 4000 sims vs UCI=1350) |
+| Peak Elo | ~3500–3600 | **2171** (d10 30M ep10 @ 4000 sims vs UCI=1800, CI [2082, 2324]); 2110 [2044, 2187] @ UCI=2000 |
 
 The architecture (20×256 ResNet) is *literally identical* to AlphaZero's.
 Everything that's different is on the **training-procedure** side:
@@ -56,8 +56,8 @@ multipv=8 soft targets, 20-block × 256-channel ResNet.
 
 | epoch | UCI=1350 Elo | W/D/L vs UCI=1350 | UCI=1800 Elo (sub-test before May 14) |
 |---:|---:|---:|---:|
-| 4 | 1701 | 62 / 35 / 3 | n/a |
-| 9 | 1693 | 62 / 36 / 2 | n/a |
+| 4 | 1651 | 62 / 35 / 3 | n/a |
+| 9 | 1862 | 62 / 36 / 2 | n/a |
 | 14 | 1759 | 91 / 8 / 5 | n/a |
 | **19** | **1807** | 93 / 8 / 3 | n/a |
 
