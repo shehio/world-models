@@ -19,20 +19,27 @@
   --reading-max: 760px;
 
   /* type scale — every font-size in this file should reference one of
-     these. Mobile values are remapped inside the media queries. */
+     these. Mobile values are remapped inside the media queries.
+     Lede is collapsed into fs-body so every "running paragraph" on
+     the site renders at the same size. */
   --fs-display: 3.4rem;  /* result-num */
   --fs-hero:    2.6rem;  /* hero h1 */
   --fs-h1:      1.85rem; /* detail-page h1 */
   --fs-stat:    1.45rem; /* hypothesis stat value */
   --fs-h3:      1.15rem; /* card / hypothesis title */
   --fs-h2:      1.05rem; /* section h2 */
-  --fs-lede:    1rem;    /* section lede */
+  --fs-lede:    0.95rem; /* section lede (same as body) */
   --fs-body:    0.95rem; /* default body paragraph */
   --fs-aux:     0.85rem; /* dim / secondary body */
   --fs-small:   0.78rem; /* tagline, captions, page subtitle */
   --fs-micro:   0.62rem; /* tags, badges, micro labels */
   --fs-table:   0.86rem; /* table data cells */
   --fs-th:      0.74rem; /* table headers */
+
+  /* every body-text block on the site shares this line-height so the
+     "bigger font" perception that comes from a heavier line-height
+     can't drift between blocks. */
+  --lh-body: 1.75;
 }
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -44,7 +51,7 @@ body {
   color: var(--text);
   font-family: var(--font);
   font-size: 15px;
-  line-height: 1.72;
+  line-height: var(--lh-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: "calt" 1, "liga" 1;
@@ -165,7 +172,7 @@ body > nav {
 .result-context-block p {
   color: var(--text);
   font-size: var(--fs-body);
-  line-height: 1.85;
+  line-height: var(--lh-body);
   margin-bottom: 0.95rem;
 }
 
@@ -215,7 +222,7 @@ section h2 {
   font-size: var(--fs-lede);
   max-width: var(--reading-max);
   margin-bottom: 1.75rem;
-  line-height: 1.75;
+  line-height: var(--lh-body);
 }
 
 .lede em {
@@ -246,7 +253,7 @@ section h2 {
   padding: 0.55rem 0 0.55rem 2.5rem;
   position: relative;
   font-size: var(--fs-body);
-  line-height: 1.75;
+  line-height: var(--lh-body);
 }
 
 .method-section ol.steps li::before {
@@ -297,7 +304,7 @@ section h2 {
   color: var(--text);
 }
 
-.method-section p { font-size: var(--fs-body); line-height: 1.8; margin-bottom: 1rem; }
+.method-section p { font-size: var(--fs-body); line-height: var(--lh-body); margin-bottom: 1rem; }
 .method-section p strong { color: var(--accent); font-weight: 500; }
 .method-section p em { color: var(--text); font-style: normal; border-bottom: 1px dotted var(--dim); }
 .method-section p.dim { font-size: var(--fs-aux); color: var(--dim-soft); }
@@ -473,7 +480,7 @@ section h2 {
   margin-bottom: 1rem;
   padding-left: 0.9rem;
   border-left: 1px solid var(--border-hi);
-  line-height: 1.7;
+  line-height: var(--lh-body);
 }
 
 .hypothesis .hyp-line strong {
@@ -484,7 +491,7 @@ section h2 {
 .hypothesis .body p {
   font-size: var(--fs-body);
   margin-bottom: 0.9rem;
-  line-height: 1.8;
+  line-height: var(--lh-body);
 }
 
 .hypothesis .body p:last-child { margin-bottom: 0; }
@@ -744,9 +751,9 @@ table.compact tbody tr:hover td,
 }
 
 .card p {
-  font-size: var(--fs-small);
+  font-size: var(--fs-aux);
   color: var(--dim-soft);
-  line-height: 1.6;
+  line-height: var(--lh-body);
 }
 
 /* ── per-page (detail pages) ──────────────────────────────────── */
@@ -800,7 +807,7 @@ table.compact tbody tr:hover td,
 .content p, .content ul, .content ol {
   color: var(--text);
   font-size: var(--fs-body);
-  line-height: 1.85;
+  line-height: var(--lh-body);
   margin-bottom: 1rem;
 }
 

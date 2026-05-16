@@ -71,6 +71,8 @@ narrower-batch trades roughly cancel.
 | 15 | 1,722 |
 | **20** | **1,810** |
 
+{{< chart-capacity >}}
+
 The UCI=1,800 anchor is where the score sits near 0.5 and the Elo CI is
 tightest — read that column.
 
@@ -144,6 +146,8 @@ just deeper search at inference.
 | 800 | 1,807 |
 | **4,000** | **2,084** |
 
+{{< chart-search >}}
+
 **Result.** **+277 Elo from search alone, no retraining.** The model
 sweeps 101 of 104 games at 4,000 sims; score saturation means we're
 now hitting the ceiling of *the opponent's* strength rather than the
@@ -201,6 +205,8 @@ page in) plus DataLoader overhead.
 | **10** | **2,009** |
 | 15 | 1,957 |
 | 20 | 1,957 |
+
+{{< chart-data-scale >}}
 
 The data ablation peaks at **ep 10: 2,009 Elo at the tight UCI=1,800
 anchor**.
