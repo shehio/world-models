@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <rect width="1200" height="630" fill="#0a0a0a"/>
+  <g font-family="ui-monospace, monospace" fill="#e2e2e2">
+    <text x="80" y="120" font-size="34" letter-spacing="5" font-weight="300">world models · chess</text>
+    <text x="80" y="160" font-size="22" fill="#7a7a7a" letter-spacing="2">alphazero's network · single gpu</text>
+
+    <!-- big number -->
+    <text x="80" y="380" font-size="200" letter-spacing="-2" font-weight="300" fill="#00d4aa">2,171</text>
+    <text x="80" y="430" font-size="28" fill="#c8c8c8" letter-spacing="3">Elo · d10 30M ep10 · sims=4,000 · vs UCI=1,800</text>
+
+    <!-- callouts -->
+    <text x="80" y="510" font-size="22" fill="#888">supervised distillation from stockfish · 16 GPU-hours · ~$50 compute</text>
+    <text x="80" y="545" font-size="22" fill="#888">~4 orders of magnitude less compute than AlphaZero (2017)</text>
+
+    <text x="80" y="600" font-size="18" fill="#7a7a7a" letter-spacing="2">shehio.github.io/world-models</text>
+  </g>
+</svg>

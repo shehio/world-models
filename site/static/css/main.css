@@ -878,6 +878,79 @@ table.compact tbody tr:hover td,
   font-size: var(--fs-aux);
 }
 
+/* sticky sidebar TOC on long detail pages */
+.page-with-toc {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 3rem;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 3rem 1.85rem 5rem;
+}
+
+.page-with-toc .page-body {
+  min-width: 0; /* lets long pre/code lines wrap inside the grid track */
+}
+
+.page-side-toc {
+  position: sticky;
+  top: 5rem;
+  align-self: start;
+  max-height: calc(100vh - 6rem);
+  overflow-y: auto;
+  padding: 0;
+  font-size: var(--fs-small);
+  line-height: 1.6;
+}
+
+.page-side-toc-inner {
+  border-left: 1px solid var(--border);
+  padding: 0.2rem 0 0.2rem 0.9rem;
+}
+
+.page-side-toc-label {
+  font-size: var(--fs-micro);
+  color: var(--dim);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 0.65rem;
+  font-weight: 500;
+}
+
+.page-side-toc ul,
+.page-side-toc ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.page-side-toc li { margin: 0.18rem 0; }
+
+.page-side-toc ul ul {
+  padding-left: 0.85rem;
+  margin: 0.18rem 0;
+  border-left: 1px solid var(--border);
+}
+
+.page-side-toc a {
+  display: block;
+  color: var(--dim-soft);
+  text-decoration: none;
+  padding: 0.18rem 0.5rem 0.18rem 0.6rem;
+  border-left: 2px solid transparent;
+  margin-left: -1px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.page-side-toc a:hover { color: var(--text); }
+
+.page-side-toc a.active {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  font-weight: 500;
+}
+
+/* fallback inline TOC (legacy, kept in case any older markdown still uses it) */
 .page-toc {
   margin: 0 0 2rem;
   padding: 0.9rem 1.1rem;
@@ -1046,6 +1119,23 @@ footer a:hover { text-decoration: underline; }
   .footer-inner { flex-direction: column; gap: 0.5rem; text-align: center; }
 
   .page { padding: 2rem 1.1rem 3.5rem; }
+  .page-with-toc {
+    grid-template-columns: 1fr;
+    gap: 0;
+    padding: 2rem 1.1rem 3.5rem;
+  }
+  .page-side-toc {
+    position: static;
+    max-height: none;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .page-side-toc-inner {
+    border-left: none;
+    padding: 0;
+  }
+  .page-side-toc ul ul { padding-left: 1rem; }
   .page h1 { letter-spacing: 1px; }
   .content h2 { letter-spacing: 1.8px; margin-top: 2rem; }
   .content pre { padding: 0.8rem 0.9rem; }

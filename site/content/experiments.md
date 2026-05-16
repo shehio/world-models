@@ -10,18 +10,6 @@ aliases:
   - /search/
 ---
 
-<nav class="page-toc">
-
-- [The Baseline](#baseline)
-- [Network Capacity (Rejected)](#capacity)
-- [Soft vs Hard Targets](#soft-vs-hard)
-- [Eval-Side Search (Confirmed, +277)](#search)
-- [Data Scale — the Bitter Lesson? (Confirmed, +199)](#data)
-- [Stacking Search + Data](#stacking)
-- [Summary](#summary)
-
-</nav>
-
 The setup is fixed: a 20-block × 256-channel ResNet, supervised
 distillation from Stockfish 17 at search-depth 15, multipv=8 soft
 targets at temperature `T = 1` pawn, 100-game evals against a

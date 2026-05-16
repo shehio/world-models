@@ -1,16 +1,30 @@
 {{ define "main" }}
-<article class="page">
-  <header>
-    <h1>{{ .Title }}</h1>
-    {{ with .Params.subtitle }}<p class="subtitle">{{ . }}</p>{{ end }}
-  </header>
-  <div class="content">
-    {{ .Content }}
-  </div>
-  {{ with .Params.next }}
-  <nav class="page-next">
-    <a href="{{ . }}">next →</a>
-  </nav>
+{{ $hasToc := and (gt (len .TableOfContents) 50) (not .Params.no_toc) }}
+<article class="page{{ if $hasToc }} page-with-toc{{ end }}">
+  {{ if $hasToc }}
+  <aside class="page-side-toc">
+    <div class="page-side-toc-inner">
+      <div class="page-side-toc-label">On This Page</div>
+      {{ .TableOfContents }}
+    </div>
+  </aside>
   {{ end }}
+  <div class="page-body">
+    <header>
+      <h1>{{ .Title }}</h1>
+      {{ with .Params.subtitle }}<p class="subtitle">{{ . }}</p>{{ end }}
+    </header>
+    <div class="content">
+      {{ .Content }}
+    </div>
+    {{ with .Params.next }}
+    <nav class="page-next">
+      <a href="{{ . }}">next →</a>
+    </nav>
+    {{ end }}
+  </div>
 </article>
+{{ if $hasToc }}
+<script src="{{ "js/toc.js" | relURL }}" defer></script>
+{{ end }}
 {{ end }}
