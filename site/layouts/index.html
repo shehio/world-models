@@ -81,12 +81,12 @@
       </div>
       <div class="result-row">
         <div class="stat"><span class="label">5M positions (d15 teacher)</span><span class="value">1,810</span><span class="dim">UCI=1,800 anchor</span></div>
-        <div class="stat"><span class="label">30M positions (d10 teacher)</span><span class="value">2,009</span><span class="dim">at ep9 · ~16 GPU-hr</span></div>
+        <div class="stat"><span class="label">30M positions (d10 teacher)</span><span class="value">2,009</span><span class="dim">at ep 10 · ~16 GPU-hr</span></div>
         <div class="stat"><span class="label">delta</span><span class="value">+199</span><span class="delta">despite a weaker teacher</span></div>
       </div>
       {{ partial "data-scale-chart-svg.html" . }}
       <div class="body">
-        <p>The baseline used a 5M-position subsample of an available 30M-position dataset. We trained on the full 30M (same 20-block network, same hyperparameters, even a <em>weaker</em> teacher: Stockfish depth 10 vs depth 15) and the checkpoint at epoch 9 scores <strong>2,009 Elo</strong> at UCI=1,800 — +199 over the baseline. Epoch 4 hits <strong>2,084 Elo</strong> at UCI=1,350 (101 W / 3 D / 0 L).</p>
+        <p>The baseline used a 5M-position subsample of an available 30M-position dataset. We trained on the full 30M (same 20-block network, same hyperparameters, even a <em>weaker</em> teacher: Stockfish depth 10 vs depth 15) and the checkpoint at epoch 10 scores <strong>2,009 Elo</strong> at UCI=1,800 — +199 over the baseline. Epoch 5 hits <strong>2,084 Elo</strong> at UCI=1,350 (101 W / 3 D / 0 L).</p>
         <p class="dim">The bottleneck on the original baseline was <em>data</em>, not teacher quality or network capacity. 16 h on a g6e.8xlarge, ~$50 of compute. The most cost-effective single change in the project. Currently generating <em>another 5M d15 positions</em> to test whether the stronger teacher pays off once data isn't starved.</p>
       </div>
     </article>

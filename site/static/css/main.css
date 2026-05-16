@@ -812,17 +812,19 @@ footer a:hover { text-decoration: underline; }
 
   .finding { padding: 1.25rem 1.2rem; }
 
-  /* tables: tighter cells + horizontal scroll lifeline if a row really
-     can't fit (vs-alphazero has long rhs cells) */
+  /* tables: tighter cells, one-line rows, horizontal scroll if a row
+     genuinely can't fit (vs-alphazero's long rhs cell). */
   table.compact { font-size: 0.78rem; display: block; overflow-x: auto; }
   table.compact th, table.compact td {
     padding: 0.55rem 0.7rem;
-    white-space: normal;
-    word-break: break-word;
+    white-space: nowrap;
   }
-  table.compact td:first-child { font-size: 0.72rem; min-width: 5.5rem; }
-  .content table { font-size: 0.8rem; display: block; overflow-x: auto; }
-  .content th, .content td { padding: 0.55rem 0.7rem; }
+  table.compact td:first-child { font-size: 0.72rem; }
+  .content table { font-size: 0.82rem; display: block; overflow-x: auto; }
+  .content th, .content td {
+    padding: 0.55rem 0.75rem;
+    white-space: nowrap;
+  }
 
   .footer-inner { flex-direction: column; gap: 0.6rem; text-align: center; }
 }

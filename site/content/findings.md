@@ -23,12 +23,12 @@ constant, and asks what Elo it buys.
 100-game evals vs Stockfish `UCI=1350`, 800 MCTS sims/move, 20-block
 network.
 
-| epoch | UCI=1350 elo | W / D / L |
-|---:|---:|---:|
-| 4 | 1,701 | 62 / 35 / 3 |
-| 9 | 1,693 | 62 / 36 / 2 |
-| 14 | 1,759 | 91 / 8 / 5 |
-| **19** | **1,807** | 93 / 8 / 3 |
+| epoch | Elo |
+|---:|---:|
+| 5 | 1,701 |
+| 10 | 1,693 |
+| 15 | 1,759 |
+| **20** | **1,807** |
 
 Loss plateaus around 2.59 by epoch 10; top-1 accuracy plateaus ~0.34.
 Each additional epoch buys 10–50 Elo within noise. This is the
@@ -46,12 +46,12 @@ deeper net costs ~2× per batch so we cut batch in half to keep memory
 sane). 13.5 min/epoch — close to the baseline because deeper-but-
 narrower-batch trades roughly cancel.
 
-| epoch | UCI=1350 elo | UCI=1800 elo | W/D/L vs UCI=1800 |
-|---:|---:|---:|---:|
-| 4 | 1,851 | **1,813** | 37 / 34 / 33 |
-| 9 | 1,851 | 1,780 | 26 / 46 / 32 |
-| 14 | 1,759 | 1,722 | 22 / 37 / 45 |
-| **19** | **1,820** | **1,810** | 32 / 43 / 29 |
+| epoch | Elo @ UCI=1800 |
+|---:|---:|
+| 5 | **1,813** |
+| 10 | 1,780 |
+| 15 | 1,722 |
+| **20** | **1,810** |
 
 The UCI=1,800 anchor is where the score sits near 0.5 and the Elo CI is
 tightest — read that column.
@@ -71,14 +71,14 @@ is hitting a *teacher-signal* limit, not a *representation* limit.
 tens of thousands of sims. Maybe the model is stronger than the
 routine eval reveals.
 
-**Setup:** same checkpoint (d15 epoch 19), re-eval at `--sims 4000`.
+**Setup:** same checkpoint (d15 epoch 20), re-eval at `--sims 4000`.
 Single g6.4xlarge, 104 games, 93.6 min wallclock. No retraining,
 just deeper search at inference.
 
-| sims / move | W / D / L vs UCI=1350 | score | Elo |
-|---:|---:|---:|---:|
-| 800 (baseline) | 93 / 8 / 3 | 0.933 | **1,807** |
-| **4,000** | **101 / 3 / 0** | **0.986** | **2,084** |
+| sims / move | Elo |
+|---:|---:|
+| 800 | 1,807 |
+| **4,000** | **2,084** |
 
 **Result.** **+277 Elo from search alone, no retraining.** The model
 sweeps 101 of 104 games at 4,000 sims; score saturation means we're
@@ -115,50 +115,42 @@ reasonable (~14,650 batches/epoch). In-RAM via 256 GB on a
 `g6e.8xlarge` (32 vCPU + 1× L40S). 20 epochs, ~49 min/epoch,
 ~16 h wallclock.
 
-**Why this is 3× slower per epoch than the capacity experiment.**
-Same single L40S in both. The wallclock difference comes from raw
-compute:
-
-| | capacity (40×256, 5M) | data (20×256, 30M) | ratio |
-|---|---:|---:|---:|
-| Compute per batch | 20,480 | 40,960 | 2× |
-| Batches per epoch | ~9,766 | ~14,648 | 1.5× |
-| **Expected epoch time** | — | — | **3×** |
-| Actual epoch time | 13.5 min | 49 min | **3.6×** |
-
-The extra ~20% above the napkin estimate is OS page-cache cold start
-on epoch 0 (15 GB of memmapped files page in) + DataLoader overhead
-on the bigger dataset.
+**Why this is 3× slower per epoch than the capacity experiment.** Same
+single L40S in both. The wallclock difference comes from raw compute
+— 2× per batch (30M÷5M ≈ 1× but `BATCH_SIZE=2048` vs 512 means 1.5×
+batches/epoch on top), so ~3× expected. Actual was ~3.6×. The extra
+20% is OS page-cache cold start on epoch 0 (15 GB of memmapped files
+page in) plus DataLoader overhead.
 
 ### results
 
-100-game evals vs Stockfish at two anchors:
+100-game evals vs Stockfish at UCI=1,800.
 
-| epoch | UCI=1350 Elo | UCI=1800 Elo | W/D/L vs UCI=1800 |
-|---:|---:|---:|---:|
-| **4** | **2,084** [1915, ∞] | **2,004** | 71 / 17 / 16 |
-| **9** | 1,961 [1825, ∞] | **2,009** | 70 / 20 / 14 |
-| 14 | 1,888 [1769, 2301] | 1,957 | 57 / 34 / 13 |
-| 19 | 1,961 [1825, ∞] | 1,957 | 53 / 42 / 9 |
+| epoch | Elo |
+|---:|---:|
+| **5** | **2,004** |
+| **10** | **2,009** |
+| 15 | 1,957 |
+| 20 | 1,957 |
 
-The data ablation peaks at **ep 9: 2,009 Elo at the tight UCI=1,800
+The data ablation peaks at **ep 10: 2,009 Elo at the tight UCI=1,800
 anchor**.
 
-### same teacher, different dataset size
+### same teacher, more data
 
-| dataset (depth-10 teacher) | ep4 Elo @1350 | ep19 Elo @1350 |
-|---|---:|---:|
-| 5 M subset | 1,749 | 1,730 |
-| **30 M full** | **2,084** | **1,961** |
-| delta | **+335** | **+231** |
-
-### stronger-teacher-less-data vs weaker-teacher-more-data
-
-| | UCI=1800 Elo |
+| dataset (d10 teacher) | ep 5 Elo @ 1350 |
 |---|---:|
-| baseline (d15 teacher, 5 M) | 1,810 |
-| **data ablation (d10 teacher, 30 M)** | **2,009** |
-| delta | **+199** |
+| 5 M subset | 1,749 |
+| **30 M full** | **2,084** |
+
+Same teacher, 6× more data → **+335 Elo** at the easier anchor.
+
+### stronger teacher vs more data
+
+| run | Elo @ UCI=1800 |
+|---|---:|
+| baseline (d15, 5 M) | 1,810 |
+| **30 M (d10, weaker teacher)** | **2,009** |
 
 **Verdict: the bottleneck on the original baseline was data.** Six
 times more positions buys ~200 Elo at the calibrated anchor — even
@@ -166,15 +158,15 @@ with a *weaker* teacher (depth-10 vs depth-15).
 
 ## summary
 
-| variable changed | result | hypothesis |
-|---|---|---|
-| **network capacity** (40×256 vs 20×256) | ~1,810 → ~1,810 | **rejected** |
-| **eval-side search** (4,000 vs 800 sims) | 1,807 → 2,084 (+277) | **confirmed** |
-| **data scale** (30M vs 5M positions) | 1,810 → 2,009 (+199 at UCI=1,800) | **confirmed** |
+| variable changed | hypothesis |
+|---|---|
+| network capacity (40×256 vs 20×256) | **rejected** |
+| eval-side search (4,000 vs 800 sims) | **confirmed** (+277) |
+| data scale (30M vs 5M positions) | **confirmed** (+199) |
 
 Capacity is decisively *not* the bottleneck. Eval search recovers a
 huge slice. **Data was the real bottleneck.** Strongest checkpoint to
 date: **2,084 Elo @ UCI=1,350 / 2,004 @ UCI=1,800** from the d10
-full-30M run at epoch 4 — the headline number for the whole project.
+full-30M run at epoch 5 — the headline number for the whole project.
 A 5× larger d15 dataset is the natural next step
 ([what's next →](/next/)).
