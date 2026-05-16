@@ -1,13 +1,25 @@
 ---
-title: "Findings"
-subtitle: "three ablations on a distilled-from-stockfish baseline"
+title: "Experiments"
+subtitle: "three single-variable ablations on a distilled-from-stockfish baseline"
 next: "/method/"
 aliases:
+  - /findings/
   - /baseline/
   - /capacity/
   - /data/
   - /search/
 ---
+
+<nav class="page-toc">
+
+- [baseline](#baseline)
+- [capacity (rejected)](#capacity)
+- [search (confirmed, +277)](#search)
+- [data scale (confirmed, +199)](#data)
+- [stacking search + data](#stacking)
+- [summary](#summary)
+
+</nav>
 
 The setup is fixed: a 20-block × 256-channel ResNet, supervised
 distillation from Stockfish 17 at search-depth 15, multipv=8 soft
@@ -15,10 +27,12 @@ targets at temperature `T = 1` pawn, 100-game evals against a
 calibrated Stockfish opponent at fixed `UCI_Elo`. The baseline scores
 **1,807 Elo** at 800 MCTS sims/move on a 5M-position dataset.
 
-Each finding below changes *one variable*, holds everything else
-constant, and asks what Elo it buys.
+Each experiment below changes *one variable*, holds everything else
+constant, and states the hypothesis it was meant to test, the result,
+and the verdict. Code links land directly on the launcher / training
+script for each.
 
-## the baseline trajectory
+## the baseline trajectory {#baseline}
 
 100-game evals vs Stockfish `UCI=1350`, 800 MCTS sims/move, 20-block
 network.
@@ -34,7 +48,10 @@ Loss plateaus around 2.59 by epoch 10; top-1 accuracy plateaus ~0.34.
 Each additional epoch buys 10–50 Elo within noise. This is the
 "1,800 ceiling" the three ablations probe.
 
-## network capacity — doubling depth didn't help
+→ code: [`train_supervised.py`](https://github.com/shehio/world-models/blob/main/experiments/distill-soft/src/distill_soft/train_supervised.py) ·
+[`eval.py`](https://github.com/shehio/world-models/blob/main/experiments/distill-soft/scripts/eval.py)
+
+## network capacity — doubling depth didn't help {#capacity}
 
 **Hypothesis:** the ceiling is the network running out of representational
 capacity. Doubling the depth (40 blocks instead of 20, ~48M params
@@ -64,12 +81,15 @@ is already in the over-parameterized regime. Top-1 was already 0.34
 with the smaller net and stays 0.34 with the bigger one. The student
 is hitting a *teacher-signal* limit, not a *representation* limit.
 
-## eval-side search — +277 elo from search alone
+→ code: [`d15-40x256-eu.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/d15-40x256-eu.sh)
+
+## eval-side search — +277 elo from search alone {#search}
 
 **Hypothesis:** the baseline is evaluated at 800 MCTS sims/move
-(AlphaZero's *training-time* value). At competitive play AZ used many
-tens of thousands of sims. Maybe the model is stronger than the
-routine eval reveals.
+(AlphaZero's *training-time* value). At competitive play
+[AlphaZero](https://arxiv.org/abs/1712.01815) used many tens of
+thousands of sims, and [Lc0](https://lczero.org) reports policy
+priors that transfer well to deeper inference search.
 
 **Setup:** same checkpoint (d15 epoch 20), re-eval at `--sims 4000`.
 Single g6.4xlarge, 104 games, 93.6 min wallclock. No retraining,
@@ -90,20 +110,25 @@ time search — exactly what Lc0 demonstrated empirically. The network's
 policy prior guides MCTS toward strong moves; more rollouts let MCTS
 refine that prior into a sharper visit distribution. The student
 becomes a better chess player not by learning more, but by *thinking
-longer*.
+longer*. Conceptually similar to the policy-improvement step in
+[KataGo's Playout Cap Randomization](https://arxiv.org/abs/1902.10565)
+— more compute → sharper target.
 
 **Practical consequence.** The "1,800 ceiling" reported from routine
 evals is a *floor*, not a ceiling. There's ~280 Elo trivially
 available from deeper eval search. For honest comparison with
 AlphaZero, the relevant number is the search-saturated one.
 
-The natural follow-up is a full sims sweep — same checkpoint, eval at
+A full sims sweep is in progress — same checkpoint, eval at
 200 / 800 / 2,000 / 4,000 / 8,000 / 16,000 sims. The Elo-vs-log(sims)
 curve will reveal the saturation point. The machinery
 ([`elo_bisect.py`](https://github.com/shehio/world-models/blob/main/experiments/distill-soft/scripts/elo_bisect.py))
 is in place.
 
-## data scale — 6× more positions (the winning lever)
+→ code: [`eval-deep-sims.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-deep-sims.sh) ·
+[`eval-c-ep4-sims4000.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-c-ep4-sims4000.sh)
+
+## data scale — 6× more positions (the winning lever) {#data}
 
 **Hypothesis:** the baseline used a 5M-position subsample of an
 available 30M-position dataset. Maybe the recipe is fine and we're
@@ -155,6 +180,30 @@ Same teacher, 6× more data → **+335 Elo** at the easier anchor.
 **Verdict: the bottleneck on the original baseline was data.** Six
 times more positions buys ~200 Elo at the calibrated anchor — even
 with a *weaker* teacher (depth-10 vs depth-15).
+
+→ code: [`d10-full30m.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/d10-full30m.sh) ·
+[`stockfish_data.py`](https://github.com/shehio/world-models/blob/main/experiments/distill-soft/src/distill_soft/stockfish_data.py)
+
+## stacking search + data scale together {#stacking}
+
+The natural follow-up: apply both confirmed ablations to the *same*
+checkpoint. The
+d10-30M epoch-5 weights, evaluated at sims=4000 at UCI=1,800:
+
+| recipe | Elo @ UCI=1,800 |
+|---|---:|
+| baseline (d15 5M, 800 sims) | 1,810 |
+| + 30M data (d10, 800 sims) | 2,004 |
+| + 4,000 sims on top | **2,084** |
+
+**+277 Elo total.** The gains aren't additive — search gave +277 on
+the weaker d15-5M prior but only +75 on top of the data-scaled prior,
+because the stronger prior already has less residual that search can
+recover. Both paths converge to roughly the same agent strength near
+2,084 Elo.
+
+→ code: [`eval-c-ep4-sims4000.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-c-ep4-sims4000.sh) ·
+[`eval-c-ep4-sims2000-uci1800.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-c-ep4-sims2000-uci1800.sh)
 
 ## summary
 

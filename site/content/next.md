@@ -21,7 +21,7 @@ actually did to reach grandmaster level on volunteer hardware.
 
 ## the loop
 
-1. Take the [d15 ep19 ckpt](/findings/) as the starting prior
+1. Take the [d15 ep20 ckpt](/experiments/#baseline) as the starting prior
    (1,807 Elo at 800 sims, 2,084 at 4,000 sims).
 2. Self-play: agent-vs-agent games with 800-sim MCTS at every
    position.

@@ -63,7 +63,7 @@ about 100× less. The 5M subsample used for the headline result is
 
 AZ used 800 sims during training and many tens of thousands at
 competitive play. Our routine evals run at 800 sims; the
-[search ablation](/findings/#eval-side-search--277-elo-from-search-alone)
+[search ablation](/experiments/#search)
 showed that the same checkpoint scores +277 Elo when re-evaluated at
 4,000 sims — and we haven't pushed it further yet.
 

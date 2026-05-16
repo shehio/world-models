@@ -62,7 +62,7 @@ Empirically, supervised distillation lands ~600–800 Elo below the
 teacher. That's the alpha-beta search contribution that *can't* be
 transferred to a small ResNet. To close the gap requires either
 deeper search at inference time (a free +277 Elo, see
-[findings → search](/findings/#eval-side-search--277-elo-from-search-alone))
+[experiments → search](/experiments/#search))
 or self-play RL on top (the Lc0 path, [running now](/next/)).
 
 ## how we measure Elo
