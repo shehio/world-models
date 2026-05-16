@@ -145,7 +145,13 @@ def main():
     # Training
     p.add_argument("--train-steps", type=int, default=40,
                    help="SGD steps per iter. KataGo target ~4 samples-seen / new sample.")
-    p.add_argument("--lr", type=float, default=1e-3)
+    # LR default lowered from 1e-3 → 1e-5 after the first 12h run regressed
+    # ~700 Elo. The loop initializes from a *pretrained* distilled prior, so
+    # Adam at 1e-3 immediately sprints out of the Stockfish-mimic basin.
+    # KataGo's continual-RL recipe is 1e-4 → 1e-5; this is at the gentle end
+    # of that range. AlphaZero's 1e-2 figure was SGD+momentum from scratch,
+    # not Adam from a pretrained net — not comparable.
+    p.add_argument("--lr", type=float, default=1e-5)
     p.add_argument("--replay-shards", type=int, default=20,
                    help="how many recent iters to keep in the sharded replay (suragnair default 20)")
     # Optimizer (paper-faithful options for AlphaZero)
