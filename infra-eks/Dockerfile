@@ -19,25 +19,30 @@ RUN apt-get update && \
     && rm -rf /tmp/aws /tmp/awscli.zip \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# uv (fast python pkg manager). The entrypoint shells out to `uv run`
+# for both gen and merge, so we install uv globally and let it manage
+# the workspace .venv.
+RUN pip install --no-cache-dir uv
+
+# Mirror the repo's workspace layout into /work. Required because
+# distill-soft's pyproject declares wm-chess as a workspace dep
+# (tool.uv.sources = { workspace = true }), which only resolves when
+# the workspace root pyproject + uv.lock are in scope AND all members
+# listed in [tool.uv.workspace] exist on disk. Total git-tracked
+# content across all four members is ~700 KB.
 WORKDIR /work
+COPY pyproject.toml uv.lock /work/
 COPY wm_chess /work/wm_chess
+COPY experiments/selfplay /work/experiments/selfplay
+COPY experiments/distill-hard /work/experiments/distill-hard
 COPY experiments/distill-soft /work/experiments/distill-soft
 
-# Install runtime deps + our editable packages.
-#
-# This used to be `uv sync --frozen` from inside experiments/distill-soft.
-# That broke after the workspace migration (a36a324) because the
-# distill-soft pyproject's `tool.uv.sources = { wm-chess = { workspace = true } }`
-# only resolves with the workspace root pyproject.toml + uv.lock in
-# scope, neither of which is copied into the image.
-#
-# Fix: same plain-pip pattern as Dockerfile.train. CPU-only torch (no
-# CUDA — datagen workload is Stockfish, not the NN). `--no-deps` on the
-# editable installs prevents re-pulling torch/numpy.
-RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch>=2.5" \
-    && pip install --no-cache-dir "numpy>=1.26" "python-chess>=1.999" "tqdm>=4.66" \
-    && pip install --no-cache-dir --no-deps -e /work/wm_chess \
-    && pip install --no-cache-dir --no-deps -e /work/experiments/distill-soft
+# Sync the locked deps into /work/.venv. `--frozen` makes uv.lock
+# authoritative (no resolver run); `--package distill-soft` installs
+# distill-soft and its transitive deps (including wm-chess) only —
+# selfplay and distill-hard pyprojects are present so the workspace
+# graph validates, but their deps aren't installed.
+RUN uv sync --frozen --package distill-soft
 
 # Entrypoint script: dispatch on first arg.
 COPY infra-eks/entrypoint.sh /entrypoint.sh
