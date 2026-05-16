@@ -60,16 +60,8 @@ case "$CMD" in
         log "Without the bump, the Job runs at ~8 pods (the rest stay Pending)."
         ;;
     image)
-        log "ensure ECR repo + push the datagen image"
-        aws ecr describe-repositories --region "$REGION" --repository-names "$ECR_REPO" >/dev/null 2>&1 \
-            || aws ecr create-repository --region "$REGION" --repository-name "$ECR_REPO"
-        aws ecr get-login-password --region "$REGION" \
-            | docker login --username AWS --password-stdin "$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com"
-        docker buildx build --platform linux/amd64 \
-            --file "$REPO_ROOT/infra-eks/Dockerfile" \
-            --tag "$ECR_URI:latest" \
-            --push \
-            "$REPO_ROOT"
+        log "triggering CodeBuild → $ECR_REPO:latest (no local Docker)"
+        bash "$REPO_ROOT/infra-eks/scripts/rebuild-image.sh" "$ECR_REPO"
         ;;
     submit)
         log "rendering job-gen-10x.yaml with ECR=$ECR_URI prefix=$S3_PREFIX"

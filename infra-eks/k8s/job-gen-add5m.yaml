@@ -1,0 +1,61 @@
+# add5m d15 datagen Job — 8 pods × 6,250 games = 50,000 games.
+#
+# Generates ~5M new positions to combine with the existing 5M d15
+# baseline (s3://.../d15-mpv8-T1-g100000-20260512T1844Z/merged/data.npz).
+# Same recipe as the original (depth 15, multipv 8, T=1 pawn) but a
+# disjoint seed range (BASE_SEED=20042 vs original 42 and 10x's 10042)
+# so games don't repeat.
+#
+# Rendered + applied by infra-eks/launchers/gen-d15-add5m.sh.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wm-chess-gen-add5m
+  labels:
+    app: wm-chess
+    role: gen
+    scale: add5m
+spec:
+  parallelism: 8
+  completions: 8
+  completionMode: Indexed
+  backoffLimit: 24
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: wm-chess
+        role: gen
+        scale: add5m
+    spec:
+      restartPolicy: Never
+      serviceAccountName: wm-chess-runner
+      nodeSelector:
+        role: worker
+      containers:
+        - name: gen
+          image: ${ECR_URI}:latest
+          args: ["gen"]
+          env:
+            - name: S3_BUCKET
+              value: "${S3_BUCKET}"
+            - name: S3_PREFIX
+              value: "${S3_PREFIX}"
+            - name: BASE_SEED
+              value: "20042"           # disjoint from original (42) and 10x (10042)
+            - name: GAMES_PER_POD
+              value: "6250"             # 8 * 6250 = 50,000 total
+            - name: DEPTH
+              value: "15"
+            - name: MULTIPV
+              value: "8"
+            - name: T_PAWNS
+              value: "1.0"
+          resources:
+            requests:
+              cpu: "30"
+              memory: "20Gi"
+            limits:
+              cpu: "32"
+              memory: "60Gi"
