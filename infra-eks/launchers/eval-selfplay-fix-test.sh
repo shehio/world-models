@@ -72,17 +72,21 @@ docker run --rm \\
             --eval-every 999 \\
             --ckpt-dir /work-tmp/cp 2>&1 | tee -a \$OUT
 
-        # ---- 3. Eval the resulting current.pt vs UCI=1800 ----
+        # ---- 3. Eval the POST-iter weights vs UCI=1800 ----
+        # NOTE: current.pt is the PRE-iter weights (written at the start
+        # of each iter for workers). The post-train state lives in
+        # final.pt (wrapped {net, opt, iter, hour}). distill-soft eval.py
+        # unwraps that via distill_soft.ckpt.unwrap_state_dict.
         cd /work/experiments/distill-soft
         echo "" | tee -a \$OUT
-        echo "=== eval current.pt vs Stockfish UCI=1800 (sims=800, 80 games) ===" | tee -a \$OUT
+        echo "=== eval final.pt (post-iter-0 trained weights) vs Stockfish UCI=1800 (sims=800, 80 games) ===" | tee -a \$OUT
         python scripts/eval.py \\
-            --ckpt /work-tmp/cp/current.pt --workers 8 --games-per-worker 10 \\
+            --ckpt /work-tmp/cp/final.pt --workers 8 --games-per-worker 10 \\
             --sims 800 --n-blocks 20 --n-filters 256 \\
             --stockfish-elo 1800 --agent-device cuda 2>&1 | tee -a \$OUT
 
         aws s3 cp \$OUT \$RESULT_PREFIX/result.txt --no-progress
-        aws s3 cp /work-tmp/cp/current.pt \$RESULT_PREFIX/current.pt --no-progress
+        aws s3 cp /work-tmp/cp/final.pt \$RESULT_PREFIX/final.pt --no-progress
     '
 EOF
 )
