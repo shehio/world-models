@@ -21,7 +21,7 @@ INSTANCE_TYPE=g6.4xlarge
 INSTANCE_PROFILE=wm-chess-merge-instance-profile
 ECR=$ACCOUNT_ID.dkr.ecr.$IMAGE_REGION.amazonaws.com
 
-# The self-play run that initialized from d15 ep19 distilled prior.
+# The self-play run that initialized from d15 ep 20 distilled prior.
 # Eval the final.pt (post-10-iter time-budget) which represents the
 # strongest weights the loop produced.
 SELFPLAY_S3=s3://wm-chess-library-594561963943/d15-mpv8-T1-g100000-20260512T1844Z/selfplay/net-20x256/20260515T0157Z

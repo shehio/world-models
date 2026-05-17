@@ -32,10 +32,10 @@ vCPU quota in any single region.
 
 | Script | What it does |
 | --- | --- |
-| `d10-l40s-eu.sh` | Resume d10 training from `distilled_epoch004` on an L40S in eu-central-1. Bypasses EKS when us-east has no L40S capacity. |
+| `d10-l40s-eu.sh` | Resume d10 training from `distilled_epoch004` (ep 5) on an L40S in eu-central-1. Bypasses EKS when us-east has no L40S capacity. |
 | `d15-40x256-eu.sh` | Experiment A: train a 40-block ResNet on d15 — tests whether the ~1800 Elo plateau is capacity-limited. |
 | `d10-full30m.sh` | Experiment C: train d10 on the FULL ~30M positions (vs 5M subsample) — tests whether the plateau is dataset-size-limited. Needs g6e.8xlarge (256 GB RAM). |
-| `eval-deep-sims.sh` | Experiment E: re-eval d15 ep19 with `--sims 4000` (vs daily 800) — tests whether the model is under-read by routine eval depth. |
+| `eval-deep-sims.sh` | Experiment E: re-eval d15 ep 20 with `--sims 4000` (vs daily 800) — tests whether the model is under-read by routine eval depth. |
 
 ## Retry-until-quota pattern
 

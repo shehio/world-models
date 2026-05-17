@@ -47,7 +47,7 @@ The loss is exactly the AlphaZero loss; the only difference from
 | Sims | 800 full + 160 reduced (KataGo PCR, p_full=0.25) |
 | Train steps / iter | 200 SGD steps with Adam, lr=1e-3 |
 | Time budget | 12 hours |
-| Prior | d15 ep19 distilled checkpoint |
+| Prior | d15 ep 20 distilled checkpoint |
 
 Job manifest:
 [`infra-eks/k8s/job-selfplay.yaml`](https://github.com/shehio/world-models/blob/main/infra-eks/k8s/job-selfplay.yaml).
@@ -81,7 +81,7 @@ diverges, we have the per-iter eval data to find where.
 Ranked by expected information per unit of effort:
 
 1. **Distill-then-self-play** — running now.
-2. **Eval-sims sweep** — same d15 ep19 checkpoint, eval at 200 / 800 /
+2. **Eval-sims sweep** — same d15 ep 20 checkpoint, eval at 200 / 800 /
    2,000 / 4,000 / 8,000 / 16,000 sims. ~6 h on one g6.4xlarge. The
    curve from 1,807 → 2,084 at 800 → 4,000 sims says there's more
    here.
@@ -100,6 +100,6 @@ Ranked by expected information per unit of effort:
   20×256 = ~1,810 Elo. Network isn't the bottleneck.
 - **More epochs of the same distillation.** The d15 baseline
   plateaued by epoch 10.
-- **Tabula-rasa AZ from scratch on one GPU.** d15 ep19 is a much
+- **Tabula-rasa AZ from scratch on one GPU.** d15 ep 20 is a much
   better starting point than random; no point burning weeks to
   rediscover it.

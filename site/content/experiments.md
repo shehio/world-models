@@ -166,7 +166,7 @@ curve will reveal the saturation point. The machinery
 is in place.
 
 → code: [`eval-deep-sims.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-deep-sims.sh) ·
-[`eval-c-ep4-sims4000.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-c-ep4-sims4000.sh)
+[`eval-c-ep5-sims4000.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-c-ep5-sims4000.sh)
 
 ## Data Scale — 6× More Positions (The Bitter Lesson?) {#data}
 
@@ -184,7 +184,7 @@ reasonable (~14,650 batches/epoch). In-RAM via 256 GB on a
 single L40S in both. The wallclock difference comes from raw compute
 — 2× per batch (30M÷5M ≈ 1× but `BATCH_SIZE=2048` vs 512 means 1.5×
 batches/epoch on top), so ~3× expected. Actual was ~3.6×. The extra
-20% is OS page-cache cold start on epoch 0 (15 GB of memmapped files
+20% is OS page-cache cold start on epoch 1 (15 GB of memmapped files
 page in) plus DataLoader overhead.
 
 ### Results
@@ -262,8 +262,8 @@ on top of the data-scaled prior. The headline 2,171 figure is ep 10's
 better learned value combined with the deep-search rollouts; the
 tightest CI sits at 2,110 against the stronger UCI=2,000 opponent.
 
-→ code: [`eval-c-ep4-sims4000.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-c-ep4-sims4000.sh) ·
-[`eval-c-ep4-sims2000-uci1800.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-c-ep4-sims2000-uci1800.sh)
+→ code: [`eval-c-ep5-sims4000.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-c-ep5-sims4000.sh) ·
+[`eval-c-ep5-sims2000-uci1800.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-c-ep5-sims2000-uci1800.sh)
 
 ## Summary {#summary}
 

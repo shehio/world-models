@@ -3,7 +3,7 @@
 # Lc0's recipe: distill first, RL second.
 #
 # Flow:
-#   1. Download the prior checkpoint from $INIT_FROM_S3 (e.g. d15 ep19).
+#   1. Download the prior checkpoint from $INIT_FROM_S3 (e.g. d15 ep 20).
 #   2. Run selfplay_loop_mp.py with --resume on that ckpt.
 #      Workers play self-play games with 800-sim MCTS, the trainer fits
 #      the network to (state, MCTS visit distribution, game outcome)

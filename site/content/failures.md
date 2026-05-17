@@ -9,7 +9,7 @@ cause**, **fix**.
 
 ## 1 — NPZ Extraction Filled the Volume
 
-**Symptom.** Training pod's epoch 0 stalled with no progress. The
+**Symptom.** Training pod's epoch 1 stalled with no progress. The
 container's `/work-tmp` filled up; the OS killed extraction silently.
 
 **Root cause.** `MultipvDataset` extracts the `.npz` into a flat
@@ -37,14 +37,14 @@ EC2 self-terminated within minutes; no checkpoints produced.
 **Fix.** All launchers in `infra-eks/launchers/` now use the
 in-container path. `bash -n <launcher.sh>` lint runs before commit.
 
-## 3 — SAVE_EVERY=5 Cost Epochs 5–8 on Every Reclaim
+## 3 — SAVE_EVERY=5 Cost Epochs 6–9 on Every Reclaim
 
-**Symptom.** A reclaim or manual termination at epoch 8 of a 20-epoch
-run loses ckpts 5/6/7/8 even though they were computed; only ep4 is
+**Symptom.** A reclaim or manual termination at epoch 9 of a 20-epoch
+run loses ckpts 6/7/8/9 even though they were computed; only ep 5 is
 in S3.
 
-**Root cause.** `--save-every 5` writes ckpts at 4, 9, 14, 19. Any
-interruption between save points is wasted compute.
+**Root cause.** `--save-every 5` writes ckpts at epochs 5, 10, 15, 20.
+Any interruption between save points is wasted compute.
 
 **Fix.** For long runs, set `SAVE_EVERY=1`. Each save is ~1 GB to S3,
 ~30 s — essentially free at this scale.
@@ -131,8 +131,8 @@ regardless of dataset size.
 ## 9 — Depth=1 Secondary Eval Was Unreliable
 
 **Symptom.** The "depth=1 top-skill" secondary eval gave wildly
-different W/D/L across nearby checkpoints — d15 ep14 was 8/8/88, ep19
-was 93/11/0. Inconsistent with the otherwise-monotonic UCI=1350
+different W/D/L across nearby checkpoints — d15 ep 15 was 8/8/88,
+ep 20 was 93/11/0. Inconsistent with the otherwise-monotonic UCI=1350
 trajectory.
 
 **Root cause.** depth=1 produces drawish positional games where the

@@ -1,25 +1,28 @@
 #!/usr/bin/env bash
-# Sims-curve fill for C ep4: 2000 sims @ UCI=1800.
+# Epoch-vs-search interaction for C ep 10: 4000 sims @ UCI=1800.
 #
-# We have endpoints already:
-#   800 sims  → 2,004 Elo at UCI=1800
-#   4000 sims → 2,084 Elo at UCI=1800
-# The 2000-sim point lets us draw the Elo-vs-log(sims) curve from one
-# end to the other for the d10-30M-ep4 checkpoint.
+# At sims=800, ep 10 scored 2,009 (vs ep 5's 2,004) at UCI=1800 — basically
+# the same, with ep 10 slightly ahead. Does deeper search amplify or
+# erase the gap? Tests whether more training (peakier policy, slightly
+# overfit value) helps or hurts when the eval-side search has more
+# rollouts to refine the prior.
+#
+# Note: file `distilled_epoch009.pt` is 0-indexed in code; this is the
+# 10th completed epoch, displayed as ep 10.
 
 set -euo pipefail
 
 ACCOUNT_ID=594561963943
-LAUNCH_REGION=eu-central-1
+LAUNCH_REGION=us-east-1
 IMAGE_REGION=us-east-1
-AMI=ami-064d2d57b247fd300
-SUBNET=subnet-0a4bed60
+AMI=ami-027c3ae8019fc0d3a
+SUBNET=subnet-042fb3c497e2631a7
 INSTANCE_TYPE=g6.4xlarge
 INSTANCE_PROFILE=wm-chess-merge-instance-profile
 ECR=$ACCOUNT_ID.dkr.ecr.$IMAGE_REGION.amazonaws.com
 
-CKPT_S3=s3://wm-chess-library-594561963943/d10-mpv8-T1-g250000-20260513T0615Z/checkpoints/net-20x256/20260514T2332Z-full30M/distilled_epoch004.pt
-RESULT_KEY=s3://wm-chess-library-594561963943/d10-mpv8-T1-g250000-20260513T0615Z/checkpoints/net-20x256/20260514T2332Z-full30M/eval_results-distilled_epoch004-sims2000-uci1800.txt
+CKPT_S3=s3://wm-chess-library-594561963943/d10-mpv8-T1-g250000-20260513T0615Z/checkpoints/net-20x256/20260514T2332Z-full30M/distilled_epoch009.pt
+RESULT_KEY=s3://wm-chess-library-594561963943/d10-mpv8-T1-g250000-20260513T0615Z/checkpoints/net-20x256/20260514T2332Z-full30M/eval_results-distilled_epoch009-sims4000-uci1800.txt
 
 USER_DATA=$(cat <<EOF
 #!/bin/bash
@@ -52,11 +55,11 @@ docker run --rm \\
         cd /work/experiments/distill-soft
         CKPT_LOCAL=/work-tmp/\$(basename \$CKPT_S3)
         aws s3 cp \$CKPT_S3 \$CKPT_LOCAL --no-progress
-        OUT=/work-tmp/eval_results-sims2000-uci1800.txt
-        echo "=== C ep4 vs Stockfish UCI=1800 (sims=2000) ===" | tee \$OUT
+        OUT=/work-tmp/eval_results-ep10-sims4000-uci1800.txt
+        echo "=== C ep 10 vs Stockfish UCI=1800 (sims=4000) ===" | tee \$OUT
         python scripts/eval.py \\
             --ckpt \$CKPT_LOCAL --workers 8 --games-per-worker 13 \\
-            --sims 2000 --n-blocks 20 --n-filters 256 \\
+            --sims 4000 --n-blocks 20 --n-filters 256 \\
             --stockfish-elo 1800 --agent-device cuda 2>&1 | tee -a \$OUT
         aws s3 cp \$OUT \$RESULT_KEY --no-progress
     '
@@ -71,5 +74,5 @@ aws ec2 run-instances --region $LAUNCH_REGION \
     --block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=100,VolumeType=gp3,DeleteOnTermination=true}' \
     --instance-initiated-shutdown-behavior terminate \
     --user-data "$USER_DATA" \
-    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-eval-c-ep4-sims2000-uci1800},{Key=role,Value=wm-chess-eval}]" \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-eval-c-ep10-sims4000-uci1800},{Key=role,Value=wm-chess-eval}]" \
     --query 'Instances[0].[InstanceId,State.Name]' --output text

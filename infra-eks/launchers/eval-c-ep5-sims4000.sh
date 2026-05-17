@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Deep-sims eval on Experiment C's strongest checkpoint:
-#   d10 full-30M 20x256 epoch 4 — 2,084 Elo at UCI=1350 / 2,004 at UCI=1800
+#   d10 full-30M 20x256 epoch 5 — 2,084 Elo at UCI=1350 / 2,004 at UCI=1800
 # Re-evaluate with sims=4000 to see how much further search recovers, the
-# same way we did with d15 ep19 (Experiment E found +277 Elo there).
+# same way we did with d15 ep 20 (Experiment E found +277 Elo there).
+#
+# Note: file `distilled_epoch004.pt` on S3 is 0-indexed in the training
+# code (epoch004 = the 5th completed epoch). Display refers to it as ep 5.
 #
 # Result lands at a distinct filename so the auto-eval daemon's
 # idempotency check still skips the existing 800-sim result.
@@ -77,5 +80,5 @@ aws ec2 run-instances --region $LAUNCH_REGION \
     --block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=100,VolumeType=gp3,DeleteOnTermination=true}' \
     --instance-initiated-shutdown-behavior terminate \
     --user-data "$USER_DATA" \
-    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-eval-sims4000-d10c-ep4},{Key=role,Value=wm-chess-eval}]" \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-eval-sims4000-d10c-ep5},{Key=role,Value=wm-chess-eval}]" \
     --query 'Instances[0].[InstanceId,State.Name]' --output text

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Experiment E: re-eval d15 ep19 with sims=4000 (5x deeper MCTS than the
+# Experiment E: re-eval d15 ep 20 with sims=4000 (5x deeper MCTS than the
 # routine 800-sim evals). Tests whether the model is actually stronger
 # than our daily evals show — if 4000-sim Elo is meaningfully higher than
 # 800-sim, the model is "under-read" by routine eval depth.
@@ -72,5 +72,5 @@ aws ec2 run-instances --region $LAUNCH_REGION \
     --block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=100,VolumeType=gp3,DeleteOnTermination=true}' \
     --instance-initiated-shutdown-behavior terminate \
     --user-data "$USER_DATA" \
-    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-eval-sims4000-d15ep19},{Key=role,Value=wm-chess-eval}]" \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-eval-sims4000-d15ep20},{Key=role,Value=wm-chess-eval}]" \
     --query 'Instances[0].[InstanceId,State.Name]' --output text

@@ -44,13 +44,13 @@ now use `--entrypoint /entrypoint-train.sh` (or
 `/entrypoint-selfplay.sh`). Verified by running
 `bash -n` on each launcher before commit.
 
-## 3. SAVE_EVERY=5 cost epochs 5-8 on every reclaim
+## 3. SAVE_EVERY=5 cost epochs 6-9 on every reclaim
 
-**Symptom:** A reclaim or manual termination at epoch 8 of a 20-epoch
-run loses ckpts 5/6/7/8 even though they were computed; only the ep4
+**Symptom:** A reclaim or manual termination at epoch 9 of a 20-epoch
+run loses ckpts 6/7/8/9 even though they were computed; only the ep 5
 ckpt is in S3.
 
-**Root cause:** `--save-every 5` writes ckpts at epochs 4, 9, 14, 19.
+**Root cause:** `--save-every 5` writes ckpts at epochs 5, 10, 15, 20.
 Any interruption between save points is wasted compute.
 
 **Workaround:** For long runs (overnight, full 30M positions),
@@ -134,7 +134,7 @@ Workaround: streaming `wm_chess/scripts/merge_chunks.py`.
 
 **Symptom:** The "secondary" eval (depth=1 top-skill Stockfish) gave
 wildly different W/D/L distributions across nearby checkpoints —
-ep14 of d15 was 8/8/88, ep19 was 93/11/0. Inconsistent with the
+ep 15 of d15 was 8/8/88, ep 20 was 93/11/0. Inconsistent with the
 otherwise-monotonic UCI=1350 trajectory.
 
 **Root cause:** depth=1 produces many drawn positional games where the

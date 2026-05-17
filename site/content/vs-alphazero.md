@@ -17,7 +17,7 @@ aliases:
 | training compute | 64 TPU-v2 × 9h + ~45k TPU-v1-hr self-play | 1 GPU × 5 h ≈ 5 GPU-hours (~10,000× less) |
 | eval MCTS sims | 800 training / many tens of thousands tournament | 800 routine / 4,000 on the search ablation |
 | teacher | none | stockfish d10 (~2,200) or d15 (~2,500), multipv=8, T=1 |
-| peak Elo | ~3,500–3,600 | **2,084** (d15 ep19 @ 4,000 sims vs UCI=1350) |
+| peak Elo | ~3,500–3,600 | **2,171** (d10 30M ep 10 @ 4,000 sims vs UCI=1800, CI [2082, 2324]) |
 
 ## What's Literally Identical
 
@@ -42,7 +42,8 @@ MCTS visit counts from the agent's *own* search.
 In this project, the network is initialized by **supervised
 distillation**. Targets are Stockfish's top-8 moves with softmax-cp
 weights, not MCTS visit counts. The model never plays a game during
-training — it watches Stockfish play 100k of them.
+training — it watches Stockfish play ~50K of them (100K was the target;
+49,525 games actually completed before pods churned).
 
 ### Compute
 

@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Strength-ceiling probe for C ep4: 4000 sims @ UCI=2000.
+# Strength-ceiling probe for C ep 5: 4000 sims @ UCI=2000.
 #
-# At UCI=1800 + sims=4000, ep4 scored 0.84 / 2,084 Elo — not saturated
+# At UCI=1800 + sims=4000, ep 5 scored 0.84 / 2,084 Elo — not saturated
 # (the score still has headroom), but the Elo CI [2005, 2197] is pinned
 # by the opponent's strength. Re-running against a 200-Elo-stronger
 # opponent gives a sharper upper bound.
+#
+# Note: file `distilled_epoch004.pt` is 0-indexed in code; this is the
+# 5th completed epoch, displayed as ep 5.
 
 set -euo pipefail
 
@@ -52,7 +55,7 @@ docker run --rm \\
         CKPT_LOCAL=/work-tmp/\$(basename \$CKPT_S3)
         aws s3 cp \$CKPT_S3 \$CKPT_LOCAL --no-progress
         OUT=/work-tmp/eval_results-sims4000-uci2000.txt
-        echo "=== C ep4 vs Stockfish UCI=2000 (sims=4000) ===" | tee \$OUT
+        echo "=== C ep 5 vs Stockfish UCI=2000 (sims=4000) ===" | tee \$OUT
         python scripts/eval.py \\
             --ckpt \$CKPT_LOCAL --workers 8 --games-per-worker 13 \\
             --sims 4000 --n-blocks 20 --n-filters 256 \\
@@ -70,5 +73,5 @@ aws ec2 run-instances --region $LAUNCH_REGION \
     --block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=100,VolumeType=gp3,DeleteOnTermination=true}' \
     --instance-initiated-shutdown-behavior terminate \
     --user-data "$USER_DATA" \
-    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-eval-c-ep4-sims4000-uci2000},{Key=role,Value=wm-chess-eval}]" \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-eval-c-ep5-sims4000-uci2000},{Key=role,Value=wm-chess-eval}]" \
     --query 'Instances[0].[InstanceId,State.Name]' --output text
