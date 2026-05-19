@@ -130,7 +130,40 @@ Documented in detail in
 materialize all chunks in RAM, which doesn't fit on `m6i.large`.
 Workaround: streaming `wm_chess/scripts/merge_chunks.py`.
 
-## 9. eval `--stockfish-elo -1 --stockfish-depth 1` was unreliable
+## 9. Worker chunk_idx reset to 0 on every pod restart
+
+**Symptom:** During the d15 250K run, S3 chunk count stayed flat at 640
+for ~70 min while worker logs showed games-done counters advancing
+correctly (~0.5 games/min/worker, 15 games each in the current
+incarnation). Pod-0 was visibly producing but `chunk_0000.npz` for each
+worker had been silently overwritten from ~516 KB (50-game chunk) to
+~113 KB (10-game chunk). The 50-game data from the morning was gone
+from `.npz` (still in `.pgn` files, but those aren't what the merge
+step reads).
+
+**Root cause:** `stockfish_data.py:437` hardcoded `chunk_idx = 0` at
+the start of every worker invocation. On a fresh run this is correct,
+but on resume after spot reclaim the entrypoint downloads the existing
+`worker_NN_chunk_NNNN.npz` from S3, then re-launches `generate_data.py`
+which restarts numbering from 0 and overwrites the prior chunks.
+
+Workers writing one chunk every ~20 min (at chunk-size=10) would
+overwrite chunk_0000 at game 10, then chunk_0001 at game 20, then
+chunk_0002 at game 30 — burning all preserved per-worker chunks within
+~1-2 hours of the first restart.
+
+**Fix:** Added `_next_chunk_idx(chunks_dir, worker_id)` which scans
+existing `worker_NN_chunk_NNNN.npz` files and returns `max(idx) + 1`.
+Workers now resume at the next free index instead of overwriting.
+Regression coverage in
+[`tests/test_data_generation.py::TestNextChunkIdx`](../../experiments/distill-soft/tests/test_data_generation.py).
+
+The d15 250K run lost ~10 K games' worth of chunk_0000 data this way
+before the bug was caught (preserved chunks 0001-0004 were safe). The
+fix landed at 21:00 local on 2026-05-19; production rate recovered to
+~9 K games/hr immediately after.
+
+## 10. eval `--stockfish-elo -1 --stockfish-depth 1` was unreliable
 
 **Symptom:** The "secondary" eval (depth=1 top-skill Stockfish) gave
 wildly different W/D/L distributions across nearby checkpoints —
@@ -147,6 +180,7 @@ where the model is well-matched. See
 [`EVALS.md`](../../EVALS.md#the-two-sub-tests-the-daemon-runs).
 
 ## Takeaways for the next training run
+
 
 1. **Size the volume for the dataset, not the ckpts.** 100 GB is fine
    for 5 M positions; bump to 300 GB for full-30M.

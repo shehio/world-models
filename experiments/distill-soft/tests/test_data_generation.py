@@ -31,6 +31,7 @@ from distill_soft.stockfish_data import (
     _atomic_npz_save,
     _board_to_pgn,
     _multipv_to_distribution,
+    _next_chunk_idx,
     _save_worker_chunk,
     _score_to_cp,
     _stockfish_path_or_die,
@@ -137,6 +138,58 @@ class TestChunkRoundtrip:
         assert text.count('[Event "') == 2
         assert "1. e4" in text
         assert "1. d4" in text
+
+
+class TestNextChunkIdx:
+    """Regression coverage for the pod-restart chunk-numbering bug.
+
+    Before the fix, every worker started chunk_idx=0 on resume and overwrote
+    the existing worker_NN_chunk_0000.npz from the previous incarnation. As
+    the worker advanced through the chunk-size boundary it would similarly
+    clobber 0001, 0002, etc. The d15 250K run lost ~10K games' worth of
+    chunk_0000 data this way before the bug was caught (2026-05-19).
+    """
+
+    def test_empty_dir_returns_zero(self, tmp_path):
+        assert _next_chunk_idx(str(tmp_path), 0) == 0
+
+    def test_missing_dir_returns_zero(self):
+        assert _next_chunk_idx("/nonexistent/path", 0) == 0
+
+    def test_none_chunks_dir_returns_zero(self):
+        assert _next_chunk_idx(None, 0) == 0  # type: ignore[arg-type]
+
+    def test_single_chunk_returns_next(self, tmp_path):
+        (tmp_path / "worker_00_chunk_0000.npz").touch()
+        assert _next_chunk_idx(str(tmp_path), 0) == 1
+
+    def test_multiple_chunks_returns_max_plus_one(self, tmp_path):
+        for idx in (0, 1, 2):
+            (tmp_path / f"worker_00_chunk_{idx:04d}.npz").touch()
+        assert _next_chunk_idx(str(tmp_path), 0) == 3
+
+    def test_gap_tolerant(self, tmp_path):
+        # Sparse indices — e.g. 0001 lost mid-restart — should still resume
+        # past the highest extant index, not fill the gap.
+        (tmp_path / "worker_00_chunk_0000.npz").touch()
+        (tmp_path / "worker_00_chunk_0003.npz").touch()
+        assert _next_chunk_idx(str(tmp_path), 0) == 4
+
+    def test_worker_isolation(self, tmp_path):
+        # worker_00's chunks must not affect worker_01's next idx.
+        (tmp_path / "worker_00_chunk_0000.npz").touch()
+        (tmp_path / "worker_00_chunk_0001.npz").touch()
+        assert _next_chunk_idx(str(tmp_path), 0) == 2
+        assert _next_chunk_idx(str(tmp_path), 1) == 0
+
+    def test_ignores_unrelated_files(self, tmp_path):
+        # PGN files, partial writes, and other workers' files must not be
+        # mistaken for this worker's chunks.
+        (tmp_path / "worker_00.pgn").touch()
+        (tmp_path / "worker_00_chunk_0000.npz.tmp").touch()
+        (tmp_path / "worker_05_chunk_0009.npz").touch()
+        (tmp_path / "data.npz").touch()
+        assert _next_chunk_idx(str(tmp_path), 0) == 0
 
 
 class TestFinalize:

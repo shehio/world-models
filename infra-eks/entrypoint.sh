@@ -117,22 +117,26 @@ case "$MODE" in
         : "${N_PODS:=8}"
         : "${MULTIPV:=8}"
         : "${T_PAWNS:=1.0}"
-        echo "[merge] pulling $N_PODS shards from s3://$S3_BUCKET/$S3_PREFIX/shards/"
+        # Pull the live per-worker chunks from shards_partial/ and stream them
+        # straight into the merged data.npz with merge_chunks.py. This skips
+        # the per-pod --finalize-only step (which np.concatenate's the whole
+        # pod into RAM) and the merge_shards.py concat (which np.concatenate's
+        # all 8 pods at once). merge_chunks.py is streaming — peak memory is
+        # one chunk (~30 MB) regardless of dataset size — and handles a mix
+        # of chunk sizes (e.g. preserved 50-game chunks alongside fresh
+        # 10-game chunks from a chunk-size change mid-run).
+        echo "[merge] pulling $N_PODS pods' chunks from s3://$S3_BUCKET/$S3_PREFIX/shards_partial/"
 
-        LOCAL=/tmp/shards
+        LOCAL=/tmp/shards_partial
         mkdir -p "$LOCAL"
-        aws s3 sync "s3://$S3_BUCKET/$S3_PREFIX/shards/" "$LOCAL/" --no-progress
+        aws s3 sync "s3://$S3_BUCKET/$S3_PREFIX/shards_partial/" "$LOCAL/" --no-progress
         echo "[merge] tree pulled:"
-        find "$LOCAL" -maxdepth 5 -type d | head
-
-        # Each pod-N/ contains an sf-<v>/d.../g<N>-seed<S>/ subtree.
-        # Glob for any data.npz under the synced tree to find all shards.
-        SHARDS_GLOB="$LOCAL/pod-*/sf-*/d*-mpv*-T*/g*-seed*"
+        find "$LOCAL" -maxdepth 6 -type d | head
 
         OUT=/tmp/merged
         mkdir -p "$OUT"
-        uv run --project /work/wm_chess python /work/wm_chess/scripts/merge_shards.py \
-            --shards-glob "$SHARDS_GLOB" \
+        uv run --project /work/wm_chess python /work/wm_chess/scripts/merge_chunks.py \
+            --shards-root "$LOCAL" \
             --output "$OUT" \
             --multipv "$MULTIPV" --temperature "$T_PAWNS"
 
