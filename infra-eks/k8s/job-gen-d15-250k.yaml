@@ -1,0 +1,65 @@
+# d15 250K datagen Job — 8 pods × 31,250 games each = 250,000 games target.
+#
+# Mirrors the d10 250K run that produced our 2,171-Elo headline, but
+# with depth-15 (~2500 Elo teacher) instead of depth-10 (~2200 Elo).
+#
+# Recipe choices that survived prior attempts:
+#   - backoffLimit: 240 (each pod can be reclaimed ~3× and still finish)
+#   - Indexed completion mode (reclaimed pods get the same index and
+#     resume from S3 partial shards, no duplicate games)
+#   - BASE_SEED=30042: disjoint from original d15 (42), 10x (10042),
+#     and add5m (20042) — no game overlap when merging across runs
+#
+# Rendered + applied by infra-eks/launchers/gen-d15-250k.sh.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wm-chess-gen-d15-250k
+  labels:
+    app: wm-chess
+    role: gen
+    scale: d15-250k
+spec:
+  parallelism: 8
+  completions: 8
+  completionMode: Indexed
+  backoffLimit: 240
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: wm-chess
+        role: gen
+        scale: d15-250k
+    spec:
+      restartPolicy: Never
+      serviceAccountName: wm-chess-runner
+      nodeSelector:
+        role: worker
+      containers:
+        - name: gen
+          image: ${ECR_URI}:latest
+          args: ["gen"]
+          env:
+            - name: S3_BUCKET
+              value: "${S3_BUCKET}"
+            - name: S3_PREFIX
+              value: "${S3_PREFIX}"
+            - name: BASE_SEED
+              value: "30042"
+            - name: GAMES_PER_POD
+              value: "31250"
+            - name: DEPTH
+              value: "15"
+            - name: MULTIPV
+              value: "8"
+            - name: T_PAWNS
+              value: "1.0"
+          resources:
+            requests:
+              cpu: "30"
+              memory: "20Gi"
+            limits:
+              cpu: "32"
+              memory: "60Gi"

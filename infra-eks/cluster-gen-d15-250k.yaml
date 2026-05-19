@@ -1,0 +1,63 @@
+# d15 250K datagen cluster.
+#
+# Same diversified-spot template as cluster-gen-10x.yaml but scaled
+# for the 250,000-game d15 run: 8 pods × 31,250 games each = 250K total.
+# 8 × 32 vCPU = 256 vCPU, comfortably inside the current 320-vCPU
+# spot quota in us-east-1 (room for one extra pod if a worker is
+# unhealthy).
+#
+# Apply: eksctl create cluster -f infra-eks/cluster-gen-d15-250k.yaml
+# Tear:  eksctl delete cluster -f infra-eks/cluster-gen-d15-250k.yaml
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: wm-chess-gen-d15-250k
+  region: us-east-1
+  version: "1.31"
+  tags:
+    Project: wm-chess
+    Component: datagen-d15-250k
+    ManagedBy: eksctl
+
+iam:
+  withOIDC: true
+  serviceAccounts:
+    - metadata:
+        name: wm-chess-runner
+        namespace: default
+      attachPolicyARNs:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+managedNodeGroups:
+  - name: workers-spot-d15-250k
+    instanceTypes:
+      - c7i.8xlarge
+      - c6i.8xlarge
+      - c7a.8xlarge
+      - c5.9xlarge
+      - m7i.8xlarge
+      - m6i.8xlarge
+    spot: true
+    desiredCapacity: 8
+    minSize: 0
+    maxSize: 10
+    volumeSize: 80
+    volumeType: gp3
+    ssh:
+      enableSsm: true
+    labels:
+      role: worker
+      capacityType: spot
+    taints: []
+    tags:
+      Project: wm-chess
+
+addons:
+  - name: vpc-cni
+  - name: coredns
+  - name: kube-proxy
+  - name: aws-ebs-csi-driver
+    wellKnownPolicies:
+      ebsCSIController: true
