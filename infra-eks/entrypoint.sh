@@ -58,7 +58,11 @@ case "$MODE" in
         if aws s3 ls "$PARTIAL_S3/" >/dev/null 2>&1; then
             echo "[gen] resuming: pulling partial chunks from $PARTIAL_S3"
             aws s3 sync "$PARTIAL_S3/" "$LIB_LOCAL/" --no-progress
-            CHUNK_COUNT=$(find "$LIB_LOCAL/games" -name "chunk_*.npz" 2>/dev/null | wc -l)
+            # Partial chunks live at $LIB_LOCAL/sf-<v>/d../g../chunks/worker_*.pgn
+            # (not under $LIB_LOCAL/games — that was an older layout). The
+            # `|| true` makes failure non-fatal under `set -euo pipefail`
+            # even when the tree is empty.
+            CHUNK_COUNT=$(find "$LIB_LOCAL" -name "worker_*.pgn" 2>/dev/null | wc -l || true)
             echo "[gen] resumed with $CHUNK_COUNT prior chunks"
         else
             echo "[gen] no prior partial chunks — fresh start"
