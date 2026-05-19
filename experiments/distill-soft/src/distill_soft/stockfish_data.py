@@ -150,6 +150,29 @@ def _atomic_npz_save(path: str, **arrays) -> None:
     os.replace(tmp, path)
 
 
+def _next_chunk_idx(chunks_dir: str, worker_id: int) -> int:
+    """Return the next chunk index past any existing worker_NN_chunk_NNNN.npz.
+
+    On a fresh run the directory is empty (or doesn't have files for this
+    worker) and we return 0. On a resume after pod reclaim, the entrypoint
+    has already downloaded prior chunks from S3, and we pick up at the next
+    index instead of overwriting them.
+    """
+    if not chunks_dir or not os.path.isdir(chunks_dir):
+        return 0
+    prefix = f"worker_{worker_id:02d}_chunk_"
+    suffix = ".npz"
+    indices: list[int] = []
+    for name in os.listdir(chunks_dir):
+        if not (name.startswith(prefix) and name.endswith(suffix)):
+            continue
+        try:
+            indices.append(int(name[len(prefix):-len(suffix)]))
+        except ValueError:
+            continue
+    return max(indices) + 1 if indices else 0
+
+
 def _save_worker_chunk(chunks_dir: str, worker_id: int, chunk_idx: int,
                        states, moves, mpv_idx, mpv_logp, zs, multipv: int) -> str:
     """Write one chunk of accumulated games for a worker."""
@@ -434,7 +457,7 @@ def _worker_generate(args) -> dict:
 
     # Per-chunk accumulation buffers. Flushed to disk every chunk_size games.
     buf_states, buf_moves, buf_mpv_idx, buf_mpv_logp, buf_zs = [], [], [], [], []
-    chunk_idx = 0
+    chunk_idx = _next_chunk_idx(chunks_dir, worker_id) if chunks_dir else 0
     cumulative_done = 0
     cumulative_positions = 0
     total_below_k = 0
