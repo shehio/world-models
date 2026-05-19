@@ -14,10 +14,17 @@ Two pipelines, one cluster pattern:
 The datagen pipeline solves the two pain points of the raw-EC2 approach:
 
 1. **Spot reclamation resilience.** The managed node group spans
-   six instance types (`c7i.8xlarge`, `c6i.8xlarge`, `c7a.8xlarge`,
-   `c5.9xlarge`, `m7i.8xlarge`, `m6i.8xlarge`). The K8s Job
-   controller restarts reclaimed pods with the same completion index
-   automatically (up to `backoffLimit: 24`). No bespoke retry loops.
+   six modern instance types (`c7i.8xlarge`, `c7a.8xlarge`,
+   `c6i.8xlarge`, `c6a.8xlarge`, `m7i.8xlarge`, `m6i.8xlarge`).
+   The K8s Job controller restarts reclaimed pods with the same
+   completion index automatically (up to `backoffLimit: 240`). No
+   bespoke retry loops.
+
+   **Note:** `c5` / `m5` (Cascade Lake, 2019) are deliberately
+   excluded. They run Stockfish d15 at ~25% the speed of `c7a`
+   (EPYC 4th gen, 2023) — same vCPU count, much slower per core.
+   Mixing generations in the spot pool makes the slow pods the long
+   pole. Verified on the 2026-05-19 d15 250K run.
 
 2. **No `ssh` / `tmux` / laptop in the loop.** Pods are container-
    native, scheduled by K8s, communicate via S3 for shard staging.

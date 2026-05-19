@@ -32,11 +32,16 @@ iam:
 
 managedNodeGroups:
   - name: workers-spot-d15-250k
+    # NO c5/m5 — Cascade Lake (2019) runs Stockfish d15 at ~25% the speed
+    # of c7a (EPYC 4th gen, 2023). The diversified spot pool used to mix
+    # them and tank throughput. Confirmed empirically on the 2026-05-19 run:
+    # c5.9xlarge pods produced 240 games/hr vs 900 on c7a.8xlarge. See
+    # `feedback_no_slow_nodes.md` in memory for the full lesson.
     instanceTypes:
       - c7i.8xlarge
-      - c6i.8xlarge
       - c7a.8xlarge
-      - c5.9xlarge
+      - c6i.8xlarge
+      - c6a.8xlarge
       - m7i.8xlarge
       - m6i.8xlarge
     spot: true

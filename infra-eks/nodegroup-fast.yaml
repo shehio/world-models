@@ -1,0 +1,37 @@
+# Fast-only nodegroup for d15 250K datagen: c7i/c7a/c6i 8xlarge only.
+# Avoids c5.9xlarge (Cascade Lake, 2019) which runs Stockfish d15 at
+# ~25% the speed of c7a.8xlarge (EPYC 4th gen, 2023). Same vCPU count,
+# much higher per-core throughput.
+#
+# Apply: eksctl create nodegroup -f infra-eks/nodegroup-fast.yaml
+# Delete: eksctl delete nodegroup --cluster wm-chess-gen-d15-250k \
+#         --name workers-fast --region us-east-1
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: wm-chess-gen-d15-250k
+  region: us-east-1
+
+managedNodeGroups:
+  - name: workers-fast
+    instanceTypes:
+      - c7i.8xlarge
+      - c7a.8xlarge
+      - c6i.8xlarge
+    spot: true
+    desiredCapacity: 6
+    minSize: 0
+    maxSize: 8
+    volumeSize: 80
+    volumeType: gp3
+    ssh:
+      enableSsm: true
+    labels:
+      role: worker
+      capacityType: spot
+      pool: fast
+    taints: []
+    tags:
+      Project: wm-chess

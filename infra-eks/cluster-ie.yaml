@@ -22,13 +22,16 @@ iam:
 
 managedNodeGroups:
   - name: workers-spot-ie
+    # NO c5/m5 — Cascade Lake (2019) runs Stockfish d15 at ~25% the speed
+    # of c7a (EPYC 4th gen, 2023). The c5 line was tempting for capacity
+    # but became the long pole in the 2026-05-19 d15 250K run.
     instanceTypes:
-      - c7i.16xlarge     # 64 vCPU
+      - c7i.16xlarge     # 64 vCPU Intel Ice Lake/Sapphire Rapids
+      - c7a.16xlarge     # 64 vCPU AMD EPYC 4th gen
       - c6i.16xlarge
-      - c7a.16xlarge     # AMD
+      - c6a.16xlarge
       - m7i.16xlarge
       - m6i.16xlarge
-      - c5.18xlarge      # older but often more capacity
     spot: true
     # IMPORTANT: desiredCapacity matches maxSize so the nodegroup comes up
     # already scaled when `eksctl create cluster` runs. Setting this to 0

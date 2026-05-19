@@ -34,11 +34,15 @@ iam:
 # multiple instance types in the same group.
 managedNodeGroups:
   - name: workers-spot
+    # NO c5/m5 — Cascade Lake (2019) runs Stockfish d15 at ~25% the speed
+    # of c7a (EPYC 4th gen, 2023). The c5 line was tempting for capacity
+    # but became the long pole in the 2026-05-19 d15 250K run: c5.9xlarge
+    # pods generated 240 games/hr vs c7a.8xlarge at 900 games/hr.
     instanceTypes:
-      - c7i.8xlarge      # 32 vCPU, $0.34/h spot ideal
+      - c7i.8xlarge      # 32 vCPU Intel Ice Lake/Sapphire Rapids
+      - c7a.8xlarge      # 32 vCPU AMD EPYC 4th gen (often fastest)
       - c6i.8xlarge
-      - c7a.8xlarge      # AMD variant
-      - c5.9xlarge       # older Intel, often more capacity
+      - c6a.8xlarge
       - m7i.8xlarge
       - m6i.8xlarge
     spot: true
