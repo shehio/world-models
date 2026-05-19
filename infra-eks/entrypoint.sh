@@ -91,7 +91,7 @@ case "$MODE" in
             --n-games "$GAMES_PER_POD" --workers "$WORKERS" \
             --depth "$DEPTH" --multipv "$MULTIPV" \
             --temperature-pawns "$T_PAWNS" --seed "$SEED" \
-            --chunk-size 50 \
+            --chunk-size 10 \
             --library-root "$LIB_LOCAL"
 
         # Stop the background uploader before final sync so we don't race.
