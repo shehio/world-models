@@ -16,11 +16,14 @@
 # Base from NVIDIA NGC (nvcr.io) instead of Docker Hub to avoid the
 # 429 Too Many Requests rate limit that killed the first GPU build.
 # Same image content, different registry mirror.
-FROM nvcr.io/nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
+#
+# Match the KataGo release we'll install: cuda12.8 + cudnn9.8 build.
+FROM nvcr.io/nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
 
 ARG KATAGO_VERSION=1.16.4
-# cuda12.x build — runs on any sm_70+ GPU (V100, T4, A10G, L4, L40S, H100, etc.)
-ARG KATAGO_FLAVOR=cuda12.x
+# cuda12.8-cudnn9.8 build — matches the base image. Runs on any sm_70+
+# GPU (T4, A10G, L4, L40S, H100, etc.).
+ARG KATAGO_FLAVOR=cuda12.8-cudnn9.8.0
 ARG KATAGO_MODEL_URL=https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b18c384nbt-s9131461376-d4087399203.bin.gz
 
 # tzdata package gets pulled in transitively (perl → ... → tzdata) and
