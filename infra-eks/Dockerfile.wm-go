@@ -29,12 +29,20 @@ RUN apt-get update && \
 # Install KataGo from GitHub release. Eigen-AVX2 build is CPU-only — ideal
 # for c7a.8xlarge nodes (AVX2 supported). For GPU nodes, swap KATAGO_FLAVOR
 # to cuda12 and pull a CUDA-enabled release.
+#
+# v1.16.x releases ship the binary as an AppImage. AppImages need FUSE to
+# self-mount, which container runtimes don't have without privileged mode.
+# Fix: extract the AppImage at build time and use AppRun as the entrypoint.
 RUN curl -fsSL -o /tmp/katago.zip \
         "https://github.com/lightvector/KataGo/releases/download/v${KATAGO_VERSION}/katago-v${KATAGO_VERSION}-${KATAGO_FLAVOR}-linux-x64.zip" \
     && mkdir -p /opt/katago \
     && unzip -q /tmp/katago.zip -d /opt/katago \
     && chmod +x /opt/katago/katago \
-    && ln -sf /opt/katago/katago /usr/local/bin/katago \
+    && cd /opt/katago && ./katago --appimage-extract >/dev/null \
+    && mv squashfs-root katago-extracted \
+    && rm katago \
+    && printf '#!/bin/sh\nexec /opt/katago/katago-extracted/AppRun "$@"\n' > /usr/local/bin/katago \
+    && chmod +x /usr/local/bin/katago \
     && rm /tmp/katago.zip
 
 # Bundle the KataGo model in the image. ~83 MB on the wire; keeps datagen
