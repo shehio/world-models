@@ -1,0 +1,65 @@
+# wm-go 9x9 datagen cluster — us-east-2.
+#
+# Region choice: spot-rover 2026-05-21 snapshot put us-east-2 at the top
+# for cheap stable c7a/c6i/c7i spot (project_spot_capacity_snapshot memory).
+# c7a.8xlarge in us-east-2a was $0.2816/hr — best c7a spot we found anywhere.
+#
+# c-family ONLY — no m-family fallback, per the m7i postmortem
+# (project_d15_250k_run "Throughput postmortem" + feedback_no_slow_nodes).
+#
+# Apply: eksctl create cluster -f infra-eks/cluster-gen-go-use2.yaml
+# Tear:  eksctl delete cluster -f infra-eks/cluster-gen-go-use2.yaml
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: wm-go-gen-use2
+  region: us-east-2
+  version: "1.31"
+  tags:
+    Project: wm-go
+    Component: datagen-9x9
+    ManagedBy: eksctl
+
+iam:
+  withOIDC: true
+  serviceAccounts:
+    - metadata:
+        name: wm-go-runner
+        namespace: default
+      attachPolicyARNs:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+managedNodeGroups:
+  - name: workers-spot-go-use2
+    instanceTypes:
+      - c7a.8xlarge       # AMD EPYC 4th gen — primary; rover-confirmed cheap
+      - c7i.8xlarge       # Intel Sapphire Rapids
+      - c6a.8xlarge       # AMD Milan
+      - c6i.8xlarge       # Intel Ice Lake
+    spot: true
+    desiredCapacity: 8
+    minSize: 0
+    maxSize: 10
+    volumeSize: 80
+    volumeType: gp3
+    ssh:
+      enableSsm: true
+    labels:
+      role: worker
+      capacityType: spot
+      nodeFamily: c
+      workload: wm-go
+    taints: []
+    tags:
+      Project: wm-go
+      Component: datagen-9x9
+
+addons:
+  - name: vpc-cni
+  - name: coredns
+  - name: kube-proxy
+  - name: aws-ebs-csi-driver
+    wellKnownPolicies:
+      ebsCSIController: true

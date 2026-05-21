@@ -1,0 +1,71 @@
+# wm-go 9x9 datagen Job — 8 pods × 4,000 games each = 32,000 games target.
+#
+# Targets ~1.6M positions (vs the 5K-position local demo). Visits=400 gives
+# meaningful soft policy targets (the 100-visit demo collapsed to near-one-hot,
+# H(tgt)=0.09 — see results.md). Top-K=8 mirrors the chess multipv setting.
+#
+# Rendered + applied by the deployment commands documented in
+# infra-eks/spot-rover/configs/go-9x9.yaml, or directly via envsubst.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wm-go-gen-9x9
+  labels:
+    app: wm-go
+    role: gen
+    scale: 9x9-32k
+spec:
+  parallelism: 8
+  completions: 8
+  completionMode: Indexed
+  backoffLimit: 80          # ~10 reclaims per pod; KataGo bootstraps fast
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: wm-go
+        role: gen
+        scale: 9x9-32k
+    spec:
+      restartPolicy: Never
+      serviceAccountName: wm-go-runner
+      nodeSelector:
+        role: worker
+        workload: wm-go     # only schedule on the wm-go c-family nodegroup
+      containers:
+        - name: gen
+          image: ${ECR_URI}:latest
+          args: ["gen"]
+          env:
+            - name: AWS_DEFAULT_REGION
+              value: "${S3_REGION}"
+            - name: S3_BUCKET
+              value: "${S3_BUCKET}"
+            - name: S3_PREFIX
+              value: "${S3_PREFIX}"
+            - name: BASE_SEED
+              value: "42"
+            - name: GAMES_PER_POD
+              value: "4000"
+            - name: BOARD_SIZE
+              value: "9"
+            - name: N_INPUT_PLANES
+              value: "4"
+            - name: VISITS
+              value: "400"
+            - name: TOP_K
+              value: "8"
+            - name: TEMPERATURE
+              value: "1.0"
+            - name: KOMI
+              value: "7.5"
+            - name: RULES
+              value: "tromp-taylor"
+          resources:
+            requests:
+              cpu: "30"
+              memory: "20Gi"
+            limits:
+              cpu: "32"
+              memory: "48Gi"

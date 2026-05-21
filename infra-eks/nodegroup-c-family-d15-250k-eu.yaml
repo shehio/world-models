@@ -1,0 +1,49 @@
+# Added 2026-05-21: a compute-optimized-ONLY nodegroup for the eu cluster.
+#
+# The original nodegroup `workers-spot-d15-250k-eu` listed c7a/c7i/c6a/c6i +
+# m7i/m6i in one fallback list. At cluster create time eu-central-1 spot only
+# had m7i, so eksctl took m7i — and held it for the entire datagen, paying a
+# ~4x per-core Stockfish penalty (see feedback_no_slow_nodes + the
+# project_spot_capacity_snapshot memory).
+#
+# This new nodegroup has c-family ONLY: if eu-central-1 spot can't fulfill
+# c-family right now, the nodes stay Pending — a loud failure, much better
+# than silent m7i fallback.
+#
+# Apply: eksctl create nodegroup -f infra-eks/nodegroup-c-family-d15-250k-eu.yaml
+# Then drain the m7i nodes so the running pods reschedule onto c-family:
+#   kubectl --context wm-gen-d15-250k-eu drain <m7i-node> --ignore-daemonsets --delete-emptydir-data
+# Pods resume from S3 partial-sync — no data loss, ~5 min reboot time.
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: wm-chess-gen-d15-250k-eu
+  region: eu-central-1
+
+managedNodeGroups:
+  - name: workers-c-family-d15-250k-eu
+    instanceTypes:
+      - c7a.8xlarge      # AMD EPYC 4th gen — fastest per-core for Stockfish
+      - c7i.8xlarge      # Intel Sapphire Rapids
+      - c6a.8xlarge      # AMD Milan — older but cheap + widely available
+      - c6i.8xlarge      # Intel Ice Lake
+    spot: true
+    desiredCapacity: 8
+    minSize: 0
+    maxSize: 10
+    volumeSize: 80
+    volumeType: gp3
+    ssh:
+      enableSsm: true
+    labels:
+      role: worker
+      capacityType: spot
+      nodeFamily: c
+    taints: []
+    tags:
+      Project: wm-chess
+      Component: datagen-d15-250k-eu
+      ManagedBy: eksctl
+      AddedBy: spot-rover-postmortem-2026-05-21

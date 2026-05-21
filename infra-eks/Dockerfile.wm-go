@@ -1,0 +1,72 @@
+# Container for wm-go (KataGo distillation) generation jobs on EKS.
+# Mode `gen` runs distill_go.generate_data with seed derived from
+# JOB_COMPLETION_INDEX; the partial-sync pattern matches the chess image so
+# wm_chess/scripts/merge_chunks.py reads the resulting .npz tree unchanged
+# (Go chunks share the chess pipeline's 5-key schema; only board shape
+# differs — see project_distill_go memory).
+
+FROM public.ecr.aws/docker/library/python:3.12-slim-bookworm
+
+ARG KATAGO_VERSION=1.16.4
+# eigenavx2 is the CPU-optimal backend for c7a/c7i instances (AVX2 +
+# Eigen BLAS). For GPU-bound 19x19 we'd switch to cuda12 + g6 nodes.
+ARG KATAGO_FLAVOR=eigenavx2
+# Mid-size network — same one the spike used. ~83 MB, downloads in seconds.
+ARG KATAGO_MODEL_URL=https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b18c384nbt-s9131461376-d4087399203.bin.gz
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        unzip \
+        libzip4 \
+    && curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip \
+    && unzip -q /tmp/awscli.zip -d /tmp \
+    && /tmp/aws/install \
+    && rm -rf /tmp/aws /tmp/awscli.zip \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install KataGo from GitHub release. Eigen-AVX2 build is CPU-only — ideal
+# for c7a.8xlarge nodes (AVX2 supported). For GPU nodes, swap KATAGO_FLAVOR
+# to cuda12 and pull a CUDA-enabled release.
+RUN curl -fsSL -o /tmp/katago.zip \
+        "https://github.com/lightvector/KataGo/releases/download/v${KATAGO_VERSION}/katago-v${KATAGO_VERSION}-${KATAGO_FLAVOR}-linux-x64.zip" \
+    && mkdir -p /opt/katago \
+    && unzip -q /tmp/katago.zip -d /opt/katago \
+    && chmod +x /opt/katago/katago \
+    && ln -sf /opt/katago/katago /usr/local/bin/katago \
+    && rm /tmp/katago.zip
+
+# Bundle the KataGo model in the image. ~83 MB on the wire; keeps datagen
+# fully offline once the image is pulled.
+RUN mkdir -p /opt/katago/models \
+    && curl -fsSL "$KATAGO_MODEL_URL" -o /opt/katago/models/network.bin.gz
+
+# Bundle the analysis config too — KataGo's analysis engine needs this
+# for the thread count and search heuristics.
+COPY infra-eks/katago-analysis.cfg /opt/katago/configs/analysis.cfg
+
+ENV KATAGO_BIN=/usr/local/bin/katago \
+    KATAGO_MODEL=/opt/katago/models/network.bin.gz \
+    KATAGO_CONFIG=/opt/katago/configs/analysis.cfg
+
+RUN pip install --no-cache-dir uv
+
+# Workspace layout — distill-go declares its own venv via pyproject.toml.
+WORKDIR /work
+COPY pyproject.toml uv.lock /work/
+COPY wm_chess /work/wm_chess
+COPY experiments/selfplay /work/experiments/selfplay
+COPY experiments/distill-hard /work/experiments/distill-hard
+COPY experiments/distill-soft /work/experiments/distill-soft
+COPY experiments/distill-go /work/experiments/distill-go
+
+# Sync distill-go's deps into its own .venv. The chess workspace needs
+# distill-soft and wm-chess wired in too because the merge step uses
+# `wm_chess/scripts/merge_chunks.py` to fold Go chunks (same schema).
+RUN cd experiments/distill-go && uv sync
+
+COPY infra-eks/entrypoint-go.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
