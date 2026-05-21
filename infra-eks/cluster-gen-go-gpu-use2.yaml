@@ -46,7 +46,11 @@ managedNodeGroups:
     maxSize: 10
     volumeSize: 100   # bigger than CPU image; cuda runtime adds ~3-4 GB
     volumeType: gp3
-    ami: AL2023_x86_64_NVIDIA   # NVIDIA-pre-installed AMI; nvidia-device-plugin auto-adds
+    # eksctl auto-picks the EKS-optimized GPU AMI for g5/g6 instance
+    # types (Amazon Linux 2 with NVIDIA drivers + container toolkit
+    # pre-installed). The nvidia-device-plugin DaemonSet then exposes
+    # nvidia.com/gpu as a schedulable resource.
+    amiFamily: AmazonLinux2
     ssh:
       enableSsm: true
     labels:
