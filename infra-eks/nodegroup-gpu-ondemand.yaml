@@ -1,0 +1,42 @@
+# On-demand GPU nodegroup for the wm-go-gpu cluster.
+#
+# Spot didn't fulfill on the 2026-05-21 first attempt — eksctl waited
+# 20 min and got zero g5/g6 nodes (prices showed available but actual
+# capacity wasn't there). Switching to on-demand for guaranteed
+# fulfillment. 4 nodes × g6.xlarge ($0.8048/hr) = $3.22/hr while
+# datagen runs.
+#
+# Apply: eksctl create nodegroup -f infra-eks/nodegroup-gpu-ondemand.yaml
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: wm-go-gpu-use2
+  region: us-east-2
+
+managedNodeGroups:
+  - name: workers-ondemand-gpu
+    instanceTypes:
+      - g6.xlarge      # 1× L4, 4 vCPU, on-demand. Cheapest L4 + good for KataGo inference.
+      - g5.xlarge      # 1× A10G, fallback
+    spot: false        # on-demand — guaranteed fulfillment
+    desiredCapacity: 4
+    minSize: 0
+    maxSize: 6
+    volumeSize: 100
+    volumeType: gp3
+    amiFamily: AmazonLinux2
+    ssh:
+      enableSsm: true
+    labels:
+      role: worker
+      capacityType: ondemand
+      workload: wm-go-gpu
+    taints:
+      - key: nvidia.com/gpu
+        value: "true"
+        effect: NoSchedule
+    tags:
+      Project: wm-go
+      Component: datagen-9x9-gpu

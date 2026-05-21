@@ -1,0 +1,64 @@
+# GPU wm-go datagen cluster — us-east-1.
+#
+# Why us-east-1: the account has 0 GPU vCPU quota in us-east-2 (where the
+# CPU wm-go cluster lives), so spot AND on-demand silently fail there.
+# us-east-1 has 32 vCPUs of G/VT quota — enough for 4× g6.xlarge or
+# 4× g5.xlarge.
+#
+# Image: pulled cross-region from us-east-2 ECR (wm-go-gpu image).
+# Adds ~30s to first-pod pull; same trick chess uses.
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: wm-go-gpu-use1
+  region: us-east-1
+  version: "1.31"
+  tags:
+    Project: wm-go
+    Component: datagen-9x9-gpu
+    ManagedBy: eksctl
+
+iam:
+  withOIDC: true
+  serviceAccounts:
+    - metadata:
+        name: wm-go-runner
+        namespace: default
+      attachPolicyARNs:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+managedNodeGroups:
+  - name: workers-ondemand-gpu
+    instanceTypes:
+      - g6.xlarge       # 1× L4, 4 vCPU — primary
+      - g5.xlarge       # 1× A10G, 4 vCPU — fallback
+    spot: false         # on-demand: guaranteed within quota
+    desiredCapacity: 4  # 4× 4 vCPU = 16 vCPU, half of the 32-vCPU quota
+    minSize: 0
+    maxSize: 6
+    volumeSize: 100
+    volumeType: gp3
+    amiFamily: AmazonLinux2
+    ssh:
+      enableSsm: true
+    labels:
+      role: worker
+      capacityType: ondemand
+      workload: wm-go-gpu
+    taints:
+      - key: nvidia.com/gpu
+        value: "true"
+        effect: NoSchedule
+    tags:
+      Project: wm-go
+      Component: datagen-9x9-gpu
+
+addons:
+  - name: vpc-cni
+  - name: coredns
+  - name: kube-proxy
+  - name: aws-ebs-csi-driver
+    wellKnownPolicies:
+      ebsCSIController: true
