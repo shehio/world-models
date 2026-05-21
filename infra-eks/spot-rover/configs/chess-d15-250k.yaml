@@ -1,0 +1,49 @@
+# Workload config for the d15 250K chess datagen rover deployment.
+#
+# Usage:
+#   uv run --project infra-eks/spot-rover python infra-eks/spot-rover/scripts/rove.py \
+#     --config infra-eks/spot-rover/configs/chess-d15-250k.yaml \
+#     --execute    # omit for dry-run
+
+workload: wm-chess-d15-250k
+
+# Regions to scan. The 2026-05-20 spot collapse forced us-east-1 →
+# eu-central-1 failover — both kept here so the rover can pick either,
+# and ap- regions added as further fallbacks.
+regions:
+  - us-east-1
+  - us-east-2
+  - us-west-2
+  - eu-central-1
+  - eu-west-1
+  # - ap-northeast-1   # enable if quotas + cross-region S3 latency are OK
+
+# Instance families the chess datagen tolerates. c7a/c7i first because
+# per `feedback_no_slow_nodes`, c5/m5 are explicitly forbidden — kept
+# them out of the list entirely.
+instance_types:
+  - c7a.8xlarge
+  - c7a.16xlarge
+  - c7i.8xlarge
+  - c7i.16xlarge
+  - c6i.8xlarge
+  - c6i.16xlarge
+  - c6a.8xlarge
+  - c6a.16xlarge
+  - m7i.8xlarge
+
+# Capacity sizing.
+desired_capacity: 8
+min_size: 0
+max_size: 12
+
+# Job template + S3 sink.
+job_template: infra-eks/k8s/job-gen-d15-250k.yaml
+ecr_uri: 594561963943.dkr.ecr.us-east-1.amazonaws.com/wm-chess
+s3_region: us-east-1
+s3_bucket: wm-chess-library-594561963943
+s3_prefix: d15-mpv8-T1-g250000-20260519T0412Z
+
+# Where to record state.
+state_bucket: wm-chess-library-594561963943
+state_prefix: spot-rover

@@ -1,0 +1,70 @@
+# eksctl ClusterConfig — rendered by spot-rover from the workload config +
+# the rover's chosen (region, instance-type, AZ).
+#
+# Placeholders (substituted by template.render):
+#   {{name}}              — cluster name (workload + region suffix)
+#   {{region}}            — AWS region (e.g. us-east-1)
+#   {{az}}                — preferred availability zone
+#   {{workload}}          — workload label (e.g. wm-chess-d15-250k)
+#   {{instance_types}}    — newline-prefixed list of instance type fallbacks
+#   {{desired_capacity}}  — initial node count
+#   {{min_size}} / {{max_size}}
+#   {{tags}}              — extra tags as YAML block
+#
+# The chosen instance type is FIRST in instance_types; subsequent entries
+# are fallback families the rover ranked in the same region (so the
+# nodegroup can re-fill if the preferred type is reclaimed).
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: {{name}}
+  region: {{region}}
+  version: "1.31"
+  tags:
+    Project: {{workload}}
+    Component: datagen-spot-rover
+    ManagedBy: spot-rover
+    PreferredAZ: {{az}}
+{{tags}}
+
+iam:
+  withOIDC: true
+  serviceAccounts:
+    - metadata:
+        name: wm-chess-runner
+        namespace: default
+      attachPolicyARNs:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+managedNodeGroups:
+  - name: workers-spot-rover
+    # Instance types in fallback order — winner first, then siblings in the
+    # same region the rover scored next-best. eksctl will request capacity
+    # in order, so the nodegroup is resilient to a single-type reclaim wave.
+    instanceTypes:
+{{instance_types}}
+    spot: true
+    desiredCapacity: {{desired_capacity}}
+    minSize: {{min_size}}
+    maxSize: {{max_size}}
+    volumeSize: 80
+    volumeType: gp3
+    ssh:
+      enableSsm: true
+    labels:
+      role: worker
+      capacityType: spot
+      rover-deployed: "true"
+    tags:
+      Project: {{workload}}
+      ManagedBy: spot-rover
+
+addons:
+  - name: vpc-cni
+  - name: coredns
+  - name: kube-proxy
+  - name: aws-ebs-csi-driver
+    wellKnownPolicies:
+      ebsCSIController: true

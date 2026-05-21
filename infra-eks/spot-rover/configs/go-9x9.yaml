@@ -1,0 +1,47 @@
+# Workload config for the Go 9x9 datagen — placeholder until the wm-go
+# image + job spec exist (see experiments/distill-go/README.md for the
+# scale-up plan).
+#
+# When the wm-go image is built and pushed to ECR, update:
+#   - ecr_uri
+#   - job_template (path to the rendered Go Job YAML)
+#   - s3_prefix    (a per-run dataset prefix; create a new one per run)
+#
+# Then this becomes runnable with:
+#   uv run --project infra-eks/spot-rover python infra-eks/spot-rover/scripts/rove.py \
+#     --config infra-eks/spot-rover/configs/go-9x9.yaml --execute
+
+workload: wm-go-9x9
+
+# KataGo runs CPU-fine at low visits but benefits massively from GPU at
+# high visits (which is where 19x19 datagen will go). Two profiles below
+# — for 9x9 demo at 100-400 visits, the CPU pool is fine and cheap. For
+# 19x19 / 800+ visits, swap in g5/g6.
+regions:
+  - us-east-1
+  - us-east-2
+  - us-west-2
+  - eu-central-1
+  - eu-west-1
+
+instance_types:
+  - c7a.8xlarge
+  - c7a.16xlarge
+  - c7i.8xlarge
+  - c6i.8xlarge
+  - c6a.8xlarge
+
+desired_capacity: 4
+min_size: 0
+max_size: 6
+
+# TODO: build wm-go image (lift infra-eks/Dockerfile + apt-get katago + bake model)
+# TODO: write infra-eks/k8s/job-gen-go.yaml (lift job-gen-d15-250k.yaml)
+job_template: infra-eks/k8s/job-gen-go.yaml          # not yet committed
+ecr_uri: 594561963943.dkr.ecr.us-east-1.amazonaws.com/wm-go   # not yet pushed
+s3_region: us-east-1
+s3_bucket: wm-chess-library-594561963943
+s3_prefix: go-9x9-mpv8-TBD
+
+state_bucket: wm-chess-library-594561963943
+state_prefix: spot-rover
