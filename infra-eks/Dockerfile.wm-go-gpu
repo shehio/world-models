@@ -1,0 +1,86 @@
+# Container for wm-go (KataGo) datagen on GPU EKS nodes.
+#
+# Why this exists: the CPU/eigenavx2 build of KataGo on c7a.8xlarge
+# turned out to be ~10x slower per worker than the local-Mac estimates
+# suggested. At v=400 (where soft policy actually starts being soft),
+# c7a couldn't produce a chunk in 50 min of cluster wallclock. The
+# cuda12 backend on g5/g6 nodes is 50-100x faster than eigen on CPU,
+# making v=400 + meaningful soft policy actually tractable.
+#
+# Differences from Dockerfile.wm-go (CPU image):
+#   - nvidia/cuda runtime base instead of python:3.12-slim
+#   - Python 3.12 installed via deadsnakes PPA (not bundled with cuda)
+#   - cuda12.x KataGo binary instead of eigenavx2
+#   - katago-analysis.cfg overridden to use cuda backend
+
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
+
+ARG KATAGO_VERSION=1.16.4
+# cuda12.x build — runs on any sm_70+ GPU (V100, T4, A10G, L4, L40S, H100, etc.)
+ARG KATAGO_FLAVOR=cuda12.x
+ARG KATAGO_MODEL_URL=https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b18c384nbt-s9131461376-d4087399203.bin.gz
+
+# Python 3.12 + base build tools.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        software-properties-common \
+        ca-certificates \
+        curl \
+        unzip \
+        libzip4 \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3.12 \
+        python3.12-venv \
+        python3-pip \
+    && ln -sf /usr/bin/python3.12 /usr/local/bin/python \
+    && ln -sf /usr/bin/python3.12 /usr/local/bin/python3 \
+    && curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip \
+    && unzip -q /tmp/awscli.zip -d /tmp \
+    && /tmp/aws/install \
+    && rm -rf /tmp/aws /tmp/awscli.zip \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install KataGo cuda12 build. Same AppImage-extract trick as the CPU
+# image — see feedback_katago_appimage memory.
+RUN curl -fsSL -o /tmp/katago.zip \
+        "https://github.com/lightvector/KataGo/releases/download/v${KATAGO_VERSION}/katago-v${KATAGO_VERSION}-${KATAGO_FLAVOR}-linux-x64.zip" \
+    && mkdir -p /opt/katago \
+    && unzip -q /tmp/katago.zip -d /opt/katago \
+    && chmod +x /opt/katago/katago \
+    && cd /opt/katago && ./katago --appimage-extract >/dev/null \
+    && mv squashfs-root katago-extracted \
+    && rm katago \
+    && printf '#!/bin/sh\nexec /opt/katago/katago-extracted/AppRun "$@"\n' > /usr/local/bin/katago \
+    && chmod +x /usr/local/bin/katago \
+    && rm /tmp/katago.zip
+
+# Pre-create the katago log dir (referenced by katago-analysis-gpu.cfg).
+RUN mkdir -p /tmp/katago-logs && chmod 777 /tmp/katago-logs
+
+RUN mkdir -p /opt/katago/models \
+    && curl -fsSL "$KATAGO_MODEL_URL" -o /opt/katago/models/network.bin.gz
+
+COPY infra-eks/katago-analysis-gpu.cfg /opt/katago/configs/analysis.cfg
+
+ENV KATAGO_BIN=/usr/local/bin/katago \
+    KATAGO_MODEL=/opt/katago/models/network.bin.gz \
+    KATAGO_CONFIG=/opt/katago/configs/analysis.cfg
+
+RUN pip install --no-cache-dir uv
+
+WORKDIR /work
+COPY pyproject.toml uv.lock /work/
+COPY wm_chess /work/wm_chess
+COPY experiments/selfplay /work/experiments/selfplay
+COPY experiments/distill-hard /work/experiments/distill-hard
+COPY experiments/distill-soft /work/experiments/distill-soft
+COPY experiments/distill-go /work/experiments/distill-go
+
+RUN cd experiments/distill-go && uv sync
+
+COPY infra-eks/entrypoint-go.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

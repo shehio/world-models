@@ -1,0 +1,70 @@
+# GPU wm-go datagen cluster — us-east-2.
+#
+# Why GPU: c7a CPU + KataGo eigen at v=400 was ~10x too slow to produce
+# meaningful soft policy data in the time budget. cuda12 backend on L4
+# (g6.xlarge) or A10G (g5.xlarge) is 50-100x faster, making v=400 actually
+# tractable.
+#
+# Instance types: g6.xlarge first (cheapest L4 spot), g5.xlarge fallback
+# (A10G, slightly more expensive but commonly available). NO g4dn (T4
+# without CUDA12 support — wouldn't run our cuda12 KataGo).
+#
+# Apply: eksctl create cluster -f infra-eks/cluster-gen-go-gpu-use2.yaml
+# Tear:  eksctl delete cluster -f infra-eks/cluster-gen-go-gpu-use2.yaml
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: wm-go-gpu-use2
+  region: us-east-2
+  version: "1.31"
+  tags:
+    Project: wm-go
+    Component: datagen-9x9-gpu
+    ManagedBy: eksctl
+
+iam:
+  withOIDC: true
+  serviceAccounts:
+    - metadata:
+        name: wm-go-runner
+        namespace: default
+      attachPolicyARNs:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+managedNodeGroups:
+  - name: workers-spot-gpu
+    instanceTypes:
+      - g6.xlarge     # 1× L4, 4 vCPU, 16 GB — cheapest GPU spot
+      - g6.2xlarge    # 1× L4, 8 vCPU, 32 GB
+      - g5.xlarge     # 1× A10G, 4 vCPU, 16 GB
+      - g5.2xlarge    # 1× A10G, 8 vCPU, 32 GB
+    spot: true
+    desiredCapacity: 8
+    minSize: 0
+    maxSize: 10
+    volumeSize: 100   # bigger than CPU image; cuda runtime adds ~3-4 GB
+    volumeType: gp3
+    ami: AL2023_x86_64_NVIDIA   # NVIDIA-pre-installed AMI; nvidia-device-plugin auto-adds
+    ssh:
+      enableSsm: true
+    labels:
+      role: worker
+      capacityType: spot
+      workload: wm-go-gpu
+    taints:
+      - key: nvidia.com/gpu
+        value: "true"
+        effect: NoSchedule
+    tags:
+      Project: wm-go
+      Component: datagen-9x9-gpu
+
+addons:
+  - name: vpc-cni
+  - name: coredns
+  - name: kube-proxy
+  - name: aws-ebs-csi-driver
+    wellKnownPolicies:
+      ebsCSIController: true

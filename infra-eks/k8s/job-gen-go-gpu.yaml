@@ -1,0 +1,81 @@
+# wm-go GPU datagen Job — 8 pods × g6.xlarge × 1 GPU each.
+# 4000 games/pod × 8 = 32K games target at v=400 (real soft policy this time).
+#
+# 1 worker process per pod (1 katago per GPU; multiple processes don't
+# help because they'd contend for the same GPU). KataGo internally
+# uses numSearchThreads=16 (per katago-analysis-gpu.cfg) — that's the
+# real parallelism inside the katago process.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wm-go-gpu-9x9
+  labels:
+    app: wm-go-gpu
+    role: gen
+    scale: 9x9-32k-v400
+spec:
+  parallelism: 8
+  completions: 8
+  completionMode: Indexed
+  backoffLimit: 80
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: wm-go-gpu
+        role: gen
+        scale: 9x9-32k-v400
+    spec:
+      restartPolicy: Never
+      serviceAccountName: wm-go-runner
+      nodeSelector:
+        role: worker
+        workload: wm-go-gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      containers:
+        - name: gen
+          image: ${ECR_URI}:latest
+          args: ["gen"]
+          env:
+            - name: AWS_DEFAULT_REGION
+              value: "${S3_REGION}"
+            - name: S3_BUCKET
+              value: "${S3_BUCKET}"
+            - name: S3_PREFIX
+              value: "${S3_PREFIX}"
+            - name: BASE_SEED
+              value: "42"
+            - name: GAMES_PER_POD
+              value: "4000"
+            - name: BOARD_SIZE
+              value: "9"
+            - name: N_INPUT_PLANES
+              value: "4"
+            - name: VISITS
+              value: "400"
+            - name: TOP_K
+              value: "8"
+            - name: TEMPERATURE
+              value: "1.0"
+            - name: KOMI
+              value: "7.5"
+            - name: RULES
+              value: "tromp-taylor"
+            # 1 worker per pod for GPU pods — see Dockerfile.wm-go-gpu
+            # header comment. Override the auto-sizing in entrypoint-go.sh.
+            - name: WORKERS
+              value: "1"
+          resources:
+            requests:
+              cpu: "3"
+              memory: "8Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "4"
+              memory: "12Gi"
+              nvidia.com/gpu: "1"
