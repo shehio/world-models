@@ -1,0 +1,10 @@
+# KataGo analysis-engine log dumps — auto-created when datagen runs.
+# Useful for debugging a single game but huge volume and not load-bearing
+# for reproducing the pipeline.
+analysis_logs/
+
+# Local venv
+.venv/
+
+# Local datagen / training output
+/tmp/
