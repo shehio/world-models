@@ -87,6 +87,14 @@ case "$MODE" in
         GAMES_PER_WORKER=$(( (GAMES_PER_POD + WORKERS - 1) / WORKERS ))
         echo "[gen-go] $GAMES_PER_WORKER games per worker × $WORKERS workers"
 
+        # chunk-size 1: each game flushes immediately. KataGo on CPU
+        # eigen at 9x9 / 100v is ~6-7 min/game with 4 workers competing
+        # for cores; chunk-size 10 means first chunks wouldn't land for
+        # ~70 min. With size=1 we see chunks in ~5-7 min and the
+        # partial-sync daemon ships them on its 5-min interval.
+        # Also: pre-create the katago log dir referenced in
+        # katago-analysis.cfg so we stop logging a startup warning.
+        mkdir -p /tmp/katago-logs
         uv run python scripts/generate_data.py \
             --workers "$WORKERS" \
             --games-per-worker "$GAMES_PER_WORKER" \
@@ -97,7 +105,7 @@ case "$MODE" in
             --temperature "$TEMPERATURE" \
             --komi "$KOMI" \
             --rules "$RULES" \
-            --chunk-size 10 \
+            --chunk-size 1 \
             --output-dir "$LIB_LOCAL"
 
         kill "$PARTIAL_PID" 2>/dev/null || true
