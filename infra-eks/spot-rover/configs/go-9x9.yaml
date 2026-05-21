@@ -31,6 +31,11 @@ instance_types:
   - c6i.8xlarge
   - c6a.8xlarge
 
+# Compute-optimized only — KataGo at low visits is CPU-bound just like
+# Stockfish; for 19x19/high-visits production we'd switch to a GPU
+# config and set `min_instance_tier: 0`.
+min_instance_tier: 1
+
 desired_capacity: 4
 min_size: 0
 max_size: 6

@@ -72,6 +72,36 @@ VCPUS = {
 }
 
 
+# Workload-suitability tier for compute-bound datagen (Stockfish d15, KataGo,
+# selfplay MCTS — anything that pegs cores). Lower = better.
+#
+# Tier 1: compute-optimized (c-family). Recommended for everything that
+# scales linearly with CPU throughput.
+# Tier 2: general-purpose (m-family). Real-world ~4× slower per core for
+# Stockfish d15 — see `feedback_no_slow_nodes` memory. Not a fallback
+# the rover should silently accept; the operator must explicitly opt
+# in by setting `min_instance_tier: 2` (or higher) in the workload config.
+# Tier 3+: reserved for memory-optimized (r-family) or storage-optimized
+# instances if we ever care.
+#
+# GPU instances are tier 0 — they sit outside this hierarchy because the
+# scoring formula doesn't apply usefully to them (vCPU isn't the right
+# bottleneck unit). When a workload needs GPU, the config should set
+# `min_instance_tier: 0` and the rover trusts the instance_types list.
+INSTANCE_TIER = {
+    # Tier 1 — compute-optimized
+    "c7a.4xlarge": 1, "c7a.8xlarge": 1, "c7a.16xlarge": 1,
+    "c7i.4xlarge": 1, "c7i.8xlarge": 1, "c7i.16xlarge": 1,
+    "c6a.4xlarge": 1, "c6a.8xlarge": 1, "c6a.16xlarge": 1,
+    "c6i.4xlarge": 1, "c6i.8xlarge": 1, "c6i.16xlarge": 1,
+    # Tier 2 — general-purpose (slower for Stockfish; explicit opt-in only)
+    "m7i.4xlarge": 2, "m7i.8xlarge": 2,
+    # Tier 0 — GPU (orthogonal to the c/m hierarchy)
+    "g5.xlarge": 0, "g5.2xlarge": 0, "g5.4xlarge": 0, "g5.8xlarge": 0,
+    "g6.xlarge": 0, "g6.2xlarge": 0, "g6.4xlarge": 0, "g6.8xlarge": 0,
+}
+
+
 SPOT_ADVISOR_URL = (
     "https://spot-bid-advisor.s3.amazonaws.com/spot-advisor-data.json"
 )
@@ -89,6 +119,7 @@ class CapacityProbe:
     price_stddev_7d: float
     interrupt_band: str | None    # "<5%" | "5-10%" | "10-15%" | "15-20%" | ">20%"
     vcpus: int
+    tier: int                     # 1=compute-optimized, 2=general-purpose, 0=GPU, 9=unknown
 
     @property
     def spot_per_vcpu(self) -> float:
@@ -202,5 +233,6 @@ def probe(
                 price_stddev_7d=stddev,
                 interrupt_band=_interrupt_band_for(advisor, region, itype),
                 vcpus=VCPUS.get(itype, 0),
+                tier=INSTANCE_TIER.get(itype, 9),
             ))
     return probes

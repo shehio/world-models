@@ -109,7 +109,23 @@ def main() -> int:
         return 2
     print(f"  {len(probes)} (region, AZ, type) combos sampled", flush=True)
 
-    ranked = rank(probes)
+    # min_instance_tier defaults to 1 (compute-optimized only). Workload
+    # configs can lower it (e.g. 0 for GPU) or raise it (2 to explicitly
+    # allow general-purpose fallback). See score.rank docstring + the
+    # project_spot_capacity_snapshot memory for context.
+    min_tier = cfg.get("min_instance_tier", 1)
+    ranked = rank(probes, min_tier=min_tier)
+    if not ranked:
+        tiers_seen = sorted({p.tier for p in probes})
+        print(
+            f"\nERROR: no candidates passed min_instance_tier={min_tier} "
+            f"(seen tiers: {tiers_seen}). Either widen the regions, add "
+            f"higher-tier instance types to the config, or relax "
+            f"`min_instance_tier` if you really mean to accept a lower "
+            f"tier (warning: tier 2 is ~4x slower per core for Stockfish).",
+            flush=True,
+        )
+        return 3
     _print_report(ranked, top_n=args.top_n)
     _print_per_region(ranked)
 

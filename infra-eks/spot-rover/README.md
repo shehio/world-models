@@ -31,6 +31,39 @@ Composite = product of the four. The product (not sum) means a single
 bad factor kills the candidate, which matches how spot interruption
 actually hurts: one reclaim wave can erase hours of work.
 
+## Tier filter (added 2026-05-21)
+
+Each instance type carries an `INSTANCE_TIER` annotation:
+
+- **Tier 1** — compute-optimized (c-family). Use for Stockfish d15
+  datagen, KataGo low-visit datagen, anything CPU-bound.
+- **Tier 2** — general-purpose (m-family). Real-world ~4× slower per
+  core for Stockfish d15 (see `feedback_no_slow_nodes` memory). Not
+  a fallback the rover silently accepts.
+- **Tier 0** — GPU (g5/g6 family). Sits outside the c/m hierarchy
+  because the scoring formula doesn't apply usefully.
+
+`rank()` defaults to `min_tier=1` and silently drops anything worse.
+Workload configs may override via `min_instance_tier`:
+
+```yaml
+# default — chess datagen, refuses m-family even as fallback
+min_instance_tier: 1
+
+# explicit opt-in — only do this if you know about the 4× perf penalty
+min_instance_tier: 2
+
+# GPU workloads — bypass the tier check entirely
+min_instance_tier: 0
+```
+
+Why this filter exists: on 2026-05-20 the eu-central-1 cluster silently
+took m7i.8xlarge because c-family had no spot, paying a 4× per-core
+Stockfish penalty for the whole 30-hour datagen. The rover would have
+caught this if it had been deployed back then; this filter ensures
+that the failure mode is now loud (`ERROR: no candidates passed
+min_instance_tier=1`) instead of silent degradation.
+
 ## Usage
 
 ```bash

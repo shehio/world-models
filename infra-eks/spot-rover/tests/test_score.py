@@ -9,11 +9,13 @@ from spot_rover.score import best_per_region, rank
 
 def _probe(region: str, az: str, itype: str, price: float,
            on_demand: float | None = None, stddev: float = 0.0,
-           interrupt: str | None = "<5%", vcpus: int = 32) -> CapacityProbe:
+           interrupt: str | None = "<5%", vcpus: int = 32,
+           tier: int = 1) -> CapacityProbe:
     return CapacityProbe(
         region=region, az=az, instance_type=itype,
         spot_price=price, on_demand_price=on_demand,
         price_stddev_7d=stddev, interrupt_band=interrupt, vcpus=vcpus,
+        tier=tier,
     )
 
 
@@ -78,9 +80,45 @@ def test_zero_vcpu_doesnt_crash():
     p = CapacityProbe(
         region="us-east-1", az="a1", instance_type="unknown.unknown",
         spot_price=0.30, on_demand_price=None, price_stddev_7d=0.0,
-        interrupt_band=None, vcpus=0,
+        interrupt_band=None, vcpus=0, tier=1,
     )
     out = rank([p])
     assert len(out) == 1
     # Should rank — total is finite (just not necessarily great).
     assert out[0].total >= 0
+
+
+def test_tier_filter_default_excludes_m_family():
+    """rank() with default min_tier=1 must drop tier-2 (general-purpose)."""
+    c_family = _probe("us-east-2", "a1", "c7a.8xlarge", 0.28,
+                      on_demand=1.50, tier=1)
+    m_family = _probe("eu-central-1", "b1", "m7i.8xlarge", 0.35,
+                      on_demand=1.61, tier=2)
+    out = rank([c_family, m_family])
+    assert len(out) == 1
+    assert out[0].probe.instance_type == "c7a.8xlarge"
+
+
+def test_tier_filter_relaxed_includes_m_family():
+    """min_tier=2 lets tier-2 in (with the documented 4x perf warning)."""
+    c_family = _probe("us-east-2", "a1", "c7a.8xlarge", 0.28,
+                      on_demand=1.50, tier=1)
+    m_family = _probe("eu-central-1", "b1", "m7i.8xlarge", 0.35,
+                      on_demand=1.61, tier=2)
+    out = rank([c_family, m_family], min_tier=2)
+    assert len(out) == 2
+
+
+def test_tier_filter_none_disables():
+    """min_tier=None lets everything through, including unknown tier=9."""
+    unknown = _probe("us-east-1", "a1", "unknown.unknown", 0.30, tier=9)
+    out = rank([unknown], min_tier=None)
+    assert len(out) == 1
+
+
+def test_tier_filter_empty_when_no_tier1_present():
+    """If only tier-2 probes are passed, default-filtered rank returns []."""
+    m1 = _probe("eu-central-1", "a", "m7i.8xlarge", 0.35, tier=2)
+    m2 = _probe("eu-west-1", "b", "m7i.8xlarge", 0.42, tier=2)
+    assert rank([m1, m2]) == []                  # default filter: nothing
+    assert len(rank([m1, m2], min_tier=2)) == 2  # explicit relax: both pass

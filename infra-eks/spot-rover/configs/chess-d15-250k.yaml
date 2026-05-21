@@ -18,9 +18,13 @@ regions:
   - eu-west-1
   # - ap-northeast-1   # enable if quotas + cross-region S3 latency are OK
 
-# Instance families the chess datagen tolerates. c7a/c7i first because
-# per `feedback_no_slow_nodes`, c5/m5 are explicitly forbidden — kept
-# them out of the list entirely.
+# Instance families the chess datagen tolerates. c-family ONLY — per
+# `feedback_no_slow_nodes`, c5/m5 are explicitly forbidden, and per the
+# 2026-05-20 m7i lesson (see project_spot_capacity_snapshot memory),
+# general-purpose m-family is silently ~4x slower for Stockfish d15.
+#
+# The `min_instance_tier: 1` below enforces this even if someone later
+# appends m-family to this list — the rover will filter it out at scoring.
 instance_types:
   - c7a.8xlarge
   - c7a.16xlarge
@@ -30,7 +34,10 @@ instance_types:
   - c6i.16xlarge
   - c6a.8xlarge
   - c6a.16xlarge
-  - m7i.8xlarge
+
+# Tier 1 = compute-optimized only. Set to 2 if you really want to allow
+# m-family fallback (don't, for Stockfish workloads).
+min_instance_tier: 1
 
 # Capacity sizing.
 desired_capacity: 8

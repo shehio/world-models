@@ -12,7 +12,7 @@ def _ranked(region: str, az: str, itype: str, score: float = 0.5) -> RankedCandi
     p = CapacityProbe(
         region=region, az=az, instance_type=itype,
         spot_price=0.30, on_demand_price=1.50,
-        price_stddev_7d=0.01, interrupt_band="<5%", vcpus=32,
+        price_stddev_7d=0.01, interrupt_band="<5%", vcpus=32, tier=1,
     )
     return RankedCandidate(
         probe=p, cost_score=1.0, stability_score=1.0,

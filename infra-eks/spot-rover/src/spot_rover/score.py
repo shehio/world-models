@@ -74,9 +74,30 @@ def _discount_score(probe: CapacityProbe) -> float:
     return max(0.0, min(1.0, (discount - 0.3) / 0.7 + 0.3))
 
 
-def rank(probes: Iterable[CapacityProbe]) -> list[RankedCandidate]:
-    """Return probes sorted by composite score, best first."""
+def rank(
+    probes: Iterable[CapacityProbe],
+    *,
+    min_tier: int | None = 1,
+) -> list[RankedCandidate]:
+    """Return probes sorted by composite score, best first.
+
+    `min_tier` filters out probes worse than the given workload tier
+    (lower number = better tier). Default 1 = compute-optimized only;
+    callers that genuinely want to allow general-purpose fallback must
+    pass `min_tier=2` explicitly. Pass `None` to disable the filter
+    entirely (e.g. for GPU workloads — set the workload config's
+    `min_instance_tier: 0` to do this).
+
+    Rationale: in 2026-05-20's eu-central-1 failover, the cluster
+    silently took m7i.8xlarge spot (tier 2) because c-family was out,
+    paying a 4× per-core Stockfish penalty for the whole 30+ hour
+    datagen. The default `min_tier=1` makes that failure mode loud:
+    the rover returns an empty ranking, the operator sees it, and
+    moves regions instead of degrading silently.
+    """
     probes = list(probes)
+    if min_tier is not None:
+        probes = [p for p in probes if p.tier <= min_tier]
     if not probes:
         return []
     cheapest = min(p.spot_per_vcpu for p in probes if p.spot_per_vcpu > 0)
