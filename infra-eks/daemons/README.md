@@ -23,6 +23,34 @@ nohup bash infra-eks/daemons/wm-pod-sync-daemon.sh >/dev/null 2>&1 &
 Not needed for any run built from `a3c6576` or later — `train.py`
 syncs each checkpoint to S3 inline.
 
+## `wm-d15-30m-handoff-daemon.sh`
+
+One-shot handoff daemon for the d15 250K → d15-30M training pipeline.
+Walks the three stages of the handoff so we don't have to babysit the
+boundaries:
+
+1. **Wait for datagen complete.** Polls
+   `kubectl get job wm-chess-gen-d15-250k -o jsonpath='{.status.succeeded}'`
+   until it hits `8`.
+2. **Apply merge + wait for `merged/data.npz`.** Runs
+   `bash infra-eks/launchers/gen-d15-250k.sh merge` to apply the merge
+   K8s Job, then polls S3 for `s3://wm-chess-library-…/d15-mpv8-T1-g250000-20260519T0412Z/merged/data.npz`
+   to appear (typically ~5 min after merge Job applied).
+3. **Fire training.** Runs `bash infra-eks/launchers/d15-full30m.sh` —
+   bare-EC2 g6e.8xlarge in us-east-1 against the merged dataset.
+
+Idempotent via per-step state files under `/tmp/wm-d15-30m-handoff.state/`:
+`datagen.done` → `merge.done` → `training.fired`. Restart the daemon and
+it resumes at the next pending step.
+
+To stop cleanly: `echo stop > /tmp/wm-d15-30m-handoff.stop`. To force a
+full re-run after success: `rm -rf /tmp/wm-d15-30m-handoff.state`.
+
+```
+nohup bash infra-eks/daemons/wm-d15-30m-handoff-daemon.sh > /tmp/wm-d15-30m-handoff.log 2>&1 &
+tail -F /tmp/wm-d15-30m-handoff.log
+```
+
 ## `wm-autoeval-daemon.sh`
 
 Polls every S3 bucket in `BUCKETS` for new `distilled_epoch*.pt` files.

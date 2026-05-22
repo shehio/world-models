@@ -47,13 +47,13 @@ spec:
             - name: BASE_SEED
               value: "42"
             - name: GAMES_PER_POD
-              value: "4000"
+              value: "2000"
             - name: BOARD_SIZE
               value: "9"
             - name: N_INPUT_PLANES
               value: "4"
             - name: VISITS
-              value: "400"
+              value: "100"
             - name: TOP_K
               value: "8"
             - name: TEMPERATURE

@@ -42,6 +42,12 @@ spec:
           image: ${ECR_URI}:latest
           args: ["gen"]
           env:
+            # AWS_DEFAULT_REGION pins the aws CLI to the S3 bucket's home
+            # region. Required for cross-region clusters (e.g. eu-central-1
+            # cluster reading the us-east-1 wm-chess-library bucket during
+            # the 2026-05-20 spot-collapse failover).
+            - name: AWS_DEFAULT_REGION
+              value: "${S3_REGION}"
             - name: S3_BUCKET
               value: "${S3_BUCKET}"
             - name: S3_PREFIX

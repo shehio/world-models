@@ -76,21 +76,42 @@ range over the distilled prior. That's what Lc0's first
 "distill-then-RL" iteration produced for them. If it stalls or
 diverges, we have the per-iter eval data to find where.
 
+## Also In Flight — d15 at Full Data Scale
+
+The data ablation says +199 Elo from a 6× larger dataset *with a weaker
+teacher* (d10). The natural next step is to combine the strongest
+teacher (d15) with the same data scale.
+
+Datagen is running now on EKS: 250,000 games of Stockfish d15 multipv=8
+T=1, split across 8 spot pods in `wm-chess-gen-d15-250k`. Same shape as
+the d10 g250000 run that produced the 30M-position training set. ETA
+~30–40 h once spot reclamation churn is netted out (a slow-instance
+mishap mid-run was patched on 2026-05-19 — see
+[infra-eks/cluster-gen-d15-250k.yaml](https://github.com/shehio/world-models/blob/main/infra-eks/cluster-gen-d15-250k.yaml)).
+
+Once `merged/data.npz` lands, training fires via
+[`d15-full30m.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/d15-full30m.sh)
+— same recipe as the d10-30M run (20×256, IN_RAM, BATCH_SIZE=2048,
+20 epochs on a g6e.8xlarge L40S). Headline question: does the stronger
+teacher buy us anything *on top of* the data-scale gain, or does the
+30M-position regime saturate at the teacher's ceiling regardless?
+
 ## What Else Is on the Roadmap
 
 Ranked by expected information per unit of effort:
 
 1. **Distill-then-self-play** — running now.
-2. **Eval-sims sweep** — same d15 ep 20 checkpoint, eval at 200 / 800 /
+2. **d15 at full data scale** — datagen running now (see above).
+3. **Eval-sims sweep** — same d15 ep 20 checkpoint, eval at 200 / 800 /
    2,000 / 4,000 / 8,000 / 16,000 sims. ~6 h on one g6.4xlarge. The
    curve from 1,807 → 2,084 at 800 → 4,000 sims says there's more
    here.
-3. **Sharper soft targets** (T=0.3 instead of T=1) — regenerate
+4. **Sharper soft targets** (T=0.3 instead of T=1) — regenerate
    labels from the existing PGNs, retrain. Tests whether T=1 was too
    smooth.
-4. **Stronger teacher** (Stockfish d20 / d25) — raises the ceiling
+5. **Stronger teacher** (Stockfish d20 / d25) — raises the ceiling
    but cost scales steeply.
-5. **Compute scale-up** — multi-GPU DDP, multi-week self-play. The
+6. **Compute scale-up** — multi-GPU DDP, multi-week self-play. The
    only path to AlphaZero-style numbers, realistic only as a
    follow-on.
 

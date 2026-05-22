@@ -1,0 +1,18 @@
+[project]
+name = "distill-go-spike"
+version = "0.1.0"
+description = "Spike: KataGo-as-teacher distillation. Proves the data-generation integration works before committing to a full Go fork of distill-soft."
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/distill_go_spike"]
