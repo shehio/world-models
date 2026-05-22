@@ -84,8 +84,13 @@ case "$MODE" in
             done
         ) &
         PARTIAL_PID=$!
-        # Make sure background loop dies with the script.
-        trap "kill $PARTIAL_PID 2>/dev/null" EXIT
+        # Make sure background loop dies with the script. `|| true` guards
+        # against the trap exiting non-zero when the explicit `kill` on
+        # line ~98 has already reaped the background uploader — under
+        # `set -e` an EXIT-trap with a failing last command can propagate
+        # to the pod's exit code and trigger a spurious k8s retry (see
+        # the 2026-05-22 wm-go-gpu-9x9 incident).
+        trap "kill $PARTIAL_PID 2>/dev/null || true" EXIT
 
         uv run python scripts/generate_data.py \
             --n-games "$GAMES_PER_POD" --workers "$WORKERS" \
@@ -111,6 +116,9 @@ case "$MODE" in
         # Clean up partial staging — final shard supersedes it.
         aws s3 rm "$PARTIAL_S3/" --recursive --quiet 2>/dev/null || true
         echo "[gen] pod $IDX done."
+        # Explicit success exit — belt-and-suspenders alongside the
+        # trap fix above, so the pod always reports SUCCEEDED to k8s.
+        exit 0
         ;;
 
     merge)

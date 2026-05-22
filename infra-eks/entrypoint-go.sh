@@ -80,7 +80,12 @@ case "$MODE" in
             done
         ) &
         PARTIAL_PID=$!
-        trap "kill $PARTIAL_PID 2>/dev/null" EXIT
+        # `|| true` guards against the trap exiting non-zero when the
+        # explicit `kill $PARTIAL_PID` on line ~110 has already reaped the
+        # background uploader — under `set -e` an EXIT-trap with a failing
+        # last command can propagate to the pod's exit code and trigger a
+        # spurious k8s retry (see 2026-05-22 incident).
+        trap "kill $PARTIAL_PID 2>/dev/null || true" EXIT
 
         # Games per worker = total per pod / N workers. Round up so we
         # always hit the target.
@@ -117,6 +122,9 @@ case "$MODE" in
         # reads from shards/, not shards_partial/.
         aws s3 rm "$PARTIAL_S3/" --recursive --quiet 2>/dev/null || true
         echo "[gen-go] pod $IDX done."
+        # Explicit success exit — belt-and-suspenders alongside the
+        # trap fix above, so the pod always reports SUCCEEDED to k8s.
+        exit 0
         ;;
 
     "" )
