@@ -20,9 +20,9 @@ set -euo pipefail
 
 ACCOUNT_ID=594561963943
 IMAGE_REGION=us-east-1                   # ECR + S3 stay in us-east-1
-LAUNCH_REGION=eu-central-1               # us-east-1 spot quota was full; eu-central-1c had capacity
-AMI=ami-01e9d13d4c5e54237               # DL Base GPU AL2023 eu-central-1
-SUBNET=subnet-fbab48b7                   # eu-central-1c (had g6e.8xlarge spot when 1a/1b didn't)
+LAUNCH_REGION=us-east-1                  # spot quota free again; eu-central-1c sold out
+AMI=ami-027c3ae8019fc0d3a                # DL Base GPU AL2023 us-east-1
+SUBNET=subnet-059b67fde3350d8b8          # us-east-1d (use1-az1, score 3 — best L40S spot today)
 INSTANCE_TYPE=g6e.8xlarge                # 32 vCPU, 256 GB RAM, 1× L40S
 INSTANCE_PROFILE=wm-chess-merge-instance-profile
 ECR=$ACCOUNT_ID.dkr.ecr.$IMAGE_REGION.amazonaws.com
@@ -76,7 +76,7 @@ docker run --rm \\
     -e WARMUP_EPOCHS=3 \\
     -e LR_MIN=1e-5 \\
     --entrypoint bash \\
-    \$ECR/wm-chess-gpu:latest -lc '
+    $ECR/wm-chess-gpu:latest -lc '
         # The baked image was built before cosine-LR support landed
         # (commit on 2026-05-24). Pull the latest entrypoint + train.py
         # from main so this run gets the new schedule without waiting
