@@ -97,6 +97,16 @@ def main():
                         "saved ckpt filenames keep monotonically increasing "
                         "(distilled_epochNNN.pt). Without this, a resumed "
                         "run overwrites the source run's early-epoch ckpts.")
+    p.add_argument("--lr-scheduler", default="none", choices=["none", "cosine"],
+                   help="cosine = CosineAnnealingLR from --lr down to --lr-min "
+                        "over the remaining epochs. 'none' keeps lr constant. "
+                        "Use with --warmup-epochs to add a linear ramp from "
+                        "--lr-min up to --lr first.")
+    p.add_argument("--warmup-epochs", type=int, default=0,
+                   help="linear LR warmup over the first N epochs (lr_min -> lr). "
+                        "0 = no warmup. Only honored when --lr-scheduler != none.")
+    p.add_argument("--lr-min", type=float, default=1e-5,
+                   help="minimum LR for cosine schedule (and starting LR for warmup).")
     args = p.parse_args()
 
     cfg = replace(Config(), n_res_blocks=args.n_blocks, n_filters=args.n_filters)
@@ -119,6 +129,23 @@ def main():
                                  weight_decay=args.weight_decay)
     print(f"amp={args.amp}  compile={args.compile}  batch_size={args.batch_size}",
           flush=True)
+
+    # Optional LR schedule. Built before the start_epoch advance so resumed
+    # runs land at the right LR.
+    scheduler = None
+    if args.lr_scheduler == "cosine":
+        from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
+        n_decay_epochs = max(1, args.epochs - args.warmup_epochs)
+        cos = CosineAnnealingLR(optimizer, T_max=n_decay_epochs, eta_min=args.lr_min)
+        if args.warmup_epochs > 0:
+            start_factor = max(args.lr_min / args.lr, 1e-6)
+            warmup = LinearLR(optimizer, start_factor=start_factor, end_factor=1.0,
+                              total_iters=args.warmup_epochs)
+            scheduler = SequentialLR(optimizer, [warmup, cos], milestones=[args.warmup_epochs])
+        else:
+            scheduler = cos
+        print(f"scheduler: cosine  warmup={args.warmup_epochs}  lr_max={args.lr}  lr_min={args.lr_min}",
+              flush=True)
 
     n_params = sum(p.numel() for p in network.parameters())
     print(f"network: {args.n_blocks} blocks × {args.n_filters} ch = {n_params:,} params",
@@ -165,6 +192,10 @@ def main():
     # what an uninterrupted run would have produced.
     for _ in range(args.start_epoch):
         rng.permutation(1)
+        # Match: scheduler.step() advances LR; resumed runs need to skip
+        # past the already-trained epochs so the LR lands where it should.
+        if scheduler is not None:
+            scheduler.step()
 
     # Observability: per-epoch metrics JSON history + live training progress file.
     history_path = os.path.join(args.ckpt_dir, "train_history.json")
@@ -287,8 +318,14 @@ def main():
               f"top1={epoch_summary['top1_acc']:.3f} "
               f"topK={epoch_summary['topk_acc']:.3f} "
               f"H(tgt)={epoch_summary['tgt_entropy']:.2f} "
-              f"gnorm={epoch_summary['final_grad_norm']:.2f}",
+              f"gnorm={epoch_summary['final_grad_norm']:.2f} "
+              f"lr={epoch_summary['lr']:.2e}",
               flush=True)
+        # Advance the LR schedule. epoch_summary above captured the LR that
+        # was *used* during this epoch (pre-step); the next epoch reads the
+        # stepped value from optimizer.param_groups[0]["lr"].
+        if scheduler is not None:
+            scheduler.step()
         if (epoch + 1) % args.save_every == 0 or epoch == args.epochs - 1:
             ckpt = os.path.join(args.ckpt_dir, f"distilled_epoch{epoch:03d}.pt")
             # torch.compile wraps the model and prefixes state-dict keys

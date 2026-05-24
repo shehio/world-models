@@ -28,6 +28,9 @@ set -euo pipefail
 : "${HARD_TARGETS:=}"   # set to anything to enable --hard-targets
 : "${AMP:=1}"           # bf16 autocast — ~2x speedup on Ampere/Ada
 : "${COMPILE:=0}"       # torch.compile — needs gcc in the image (not bundled)
+: "${LR_SCHEDULER:=none}"   # 'none' or 'cosine'
+: "${WARMUP_EPOCHS:=0}"     # linear warmup epochs when LR_SCHEDULER=cosine
+: "${LR_MIN:=1e-5}"         # cosine schedule floor (and warmup start)
 
 WORK=/work
 DATA_DIR=$WORK/data
@@ -131,6 +134,11 @@ AMP_ARG=()
 if [ "$AMP" = "1" ]; then AMP_ARG=(--amp); fi
 COMPILE_ARG=()
 if [ "$COMPILE" = "1" ]; then COMPILE_ARG=(--compile); fi
+# LR schedule args. Default (LR_SCHEDULER=none, WARMUP_EPOCHS=0) preserves
+# the previous constant-LR behavior for any existing launchers.
+LR_SCHED_ARG=(--lr-scheduler "$LR_SCHEDULER")
+WARMUP_ARG=(--warmup-epochs "$WARMUP_EPOCHS")
+LR_MIN_ARG=(--lr-min "$LR_MIN")
 python scripts/train.py \
     --data "$DATA_DIR/data.npz" \
     --epochs "$EPOCHS" \
@@ -150,7 +158,10 @@ python scripts/train.py \
     "${MAX_POS_ARG[@]}" \
     "${IN_RAM_ARG[@]}" \
     "${AMP_ARG[@]}" \
-    "${COMPILE_ARG[@]}"
+    "${COMPILE_ARG[@]}" \
+    "${LR_SCHED_ARG[@]}" \
+    "${WARMUP_ARG[@]}" \
+    "${LR_MIN_ARG[@]}"
 
 echo "=== syncing checkpoints + history + metadata so they're durable before eval ==="
 aws s3 sync "$CKPT_DIR/" "$CKPT_S3_BASE/" --no-progress --exclude "*.tmp.*" --exclude ".eval_progress_*"
