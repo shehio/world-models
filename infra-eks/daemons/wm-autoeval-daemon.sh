@@ -34,7 +34,11 @@ INSTANCE_PROFILE=wm-chess-merge-instance-profile   # IAM is global
 # associative arrays so this works on macOS bash 3.2 (no `declare -A`).
 # Try us-east-1 first; if it fails (e.g. VcpuLimitExceeded), retry in
 # eu-central-1 before giving up.
-REGION_ORDER=(us-east-1 eu-central-1)
+# Each entry is "<region>:<market>" — fallback order. on-demand tried
+# before spot in each region so we get stability when capacity exists;
+# eu-central-1 spot is the safety net when both OD quotas are full
+# (e.g. when long-running deep-eval EC2s hold all OD G/VT vCPU).
+REGION_ORDER=(us-east-1:on-demand eu-central-1:on-demand eu-central-1:spot)
 
 region_config() {
     # echoes "<subnet-id> <ami-id>" for the given region
@@ -58,14 +62,22 @@ log() { echo "[$(date -u +%H:%M:%S)] $*" | tee -a "$LOG"; }
 # Try launching an eval EC2 in $region. On success: echo instance id.
 # On failure: log + leave caller to decide whether to retry elsewhere.
 try_launch_in_region() {
-    local region="$1"
+    local region_spec="$1"   # "<region>:<market>" e.g. eu-central-1:spot
     local ckpt_s3="$2"
     local result_key="$3"
     local ckpt_basename="$4"
+    local region="${region_spec%%:*}"
+    local market="${region_spec#*:}"
     local cfg
     cfg=$(region_config "$region")
     local subnet="${cfg%% *}"
     local ami="${cfg##* }"
+    local market_args=()
+    local tag_suffix=""
+    if [ "$market" = "spot" ]; then
+        market_args=(--instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}')
+        tag_suffix="-spot"
+    fi
 
     # Parse the architecture out of the ckpt path:
     # s3://.../checkpoints/net-<blocks>x<filters>/<run-id>/distilled_epochNNN.pt
@@ -138,15 +150,16 @@ EOF
         --iam-instance-profile Name=$INSTANCE_PROFILE \
         --block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=100,VolumeType=gp3,DeleteOnTermination=true}' \
         --instance-initiated-shutdown-behavior terminate \
+        "${market_args[@]}" \
         --user-data "$user_data" \
-        --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-eval-$ckpt_basename},{Key=role,Value=wm-chess-eval}]" \
+        --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-eval-${ckpt_basename}${tag_suffix}},{Key=role,Value=wm-chess-eval}]" \
         --query 'Instances[0].InstanceId' --output text 2>&1)
     local launch_rc=$?
     if [ $launch_rc -eq 0 ] && ! echo "$launch_out" | grep -q 'An error occurred'; then
         echo "$launch_out"
         return 0
     fi
-    log "  $region launch failed: $launch_out"
+    log "  $region_spec launch failed: $launch_out"
     return 1
 }
 
@@ -174,9 +187,9 @@ launch_eval_instance() {
 
     # Walk the region list; first success wins.
     local instance_id=""
-    for region in "${REGION_ORDER[@]}"; do
-        if instance_id=$(try_launch_in_region "$region" "$ckpt_s3" "$result_key" "$ckpt_basename"); then
-            log "  launched $instance_id in $region"
+    for region_spec in "${REGION_ORDER[@]}"; do
+        if instance_id=$(try_launch_in_region "$region_spec" "$ckpt_s3" "$result_key" "$ckpt_basename"); then
+            log "  launched $instance_id in $region_spec"
             return 0
         fi
     done
