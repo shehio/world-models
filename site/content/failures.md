@@ -1,6 +1,6 @@
 ---
 title: "Failure modes"
-subtitle: "nine real bugs we hit, with the fixes"
+subtitle: "every real bug we hit, with the fixes"
 ---
 
 Reading this catalog before a fresh training run is much faster than
@@ -143,6 +143,157 @@ Stockfish blunders into. High variance, no Elo calibration.
 current model strength. CI is now tightest where the model is
 well-matched.
 
+## 10 — d15 R1 (40×256) Plateaued at Constant LR=1e-3
+
+**Symptom.** R1's `train_history.json` showed loss / top-1 / top-K
+essentially frozen across epochs 7–13: loss moved 0.0013 across 6
+epochs, top-1 changed by 0.4 pp. sims=800 evals confirmed: ckpts
+ep 7–11 all sat in the 1,864–1,910 band — no upward trend after the
+ep 6 spike to 1,941.
+
+**Root cause.** Bigger net (50M params) + constant Adam LR=1e-3 +
+no decay → optimizer can't *settle* into a precise minimum, just
+oscillates around one. The d10 20×256 run with the same constant LR
+got further only because the smaller network's loss surface
+tolerates a noisier optimizer.
+
+**Fix.** Added `--lr-scheduler cosine` + `--warmup-epochs N` to
+`train.py`. R1 v2 launched 2026-05-24 with linear warmup
+(3 epochs, 1e-5 → 1e-3) then cosine decay to 1e-5 over the
+remaining 37 epochs. If R1 v2 ep 10–15 sims=800 lands clearly above
+R1 v1's 1,941 ceiling, cosine was the missing piece.
+
+## 11 — Docker `$ECR` Escaped in Heredoc Killed the First R1 v2 Launch
+
+**Symptom.** R1 v2's first instance produced no checkpoints. The
+host-launch log showed:
+```
+docker: invalid reference format.
+```
+
+**Root cause.** The launcher's user-data heredoc had
+`\$ECR/wm-chess-gpu:latest` in the `docker run` line. The backslash
+escaped the dollar, so the heredoc emitted a literal `$ECR/wm-chess-gpu:latest`
+into the EC2's bash script. `$ECR` wasn't defined in the EC2's
+environment (only in the launcher script's environment), so the
+image arg resolved to `/wm-chess-gpu:latest` — no registry prefix.
+
+**Fix.** Drop the backslash so the launcher-script heredoc interpolates
+`$ECR` at user-data generation time, giving the EC2 the full
+`594561963943.dkr.ecr.us-east-1.amazonaws.com/wm-chess-gpu:latest`.
+Two instances and ~$2 in wasted boot time to learn this.
+
+## 12 — Baked Docker Image Was Stale for h2h_mp.py
+
+**Symptom.** The d10-vs-d15 head-to-head EC2 immediately errored:
+```
+h2h_mp.py: error: unrecognized arguments: --n-blocks-a 20 --n-filters-a 256
+```
+
+**Root cause.** The `--n-blocks-a` / `--n-filters-b` flags landed in
+`h2h_mp.py` *after* the wm-chess-gpu image was last built. The image
+shipped the older argparser that didn't know the new flags.
+
+**Fix.** Have the launcher `curl` the latest `h2h_mp.py` from `main`
+at runtime *before* invoking it. Cleaner than rebuilding the image
+for a one-script change. Same pattern works for any script the image
+ships pre-baked but main has since modified — used again for the
+cosine-LR `train.py` patch.
+
+## 13 — Spot Eviction at ep 6 with No Optimizer Resume
+
+**Symptom.** R1 v1 was spot-evicted in us-east-1a around ep 6 with
+"no Spot capacity available." The watcher daemon re-launched and
+the entrypoint auto-resumed from the latest S3 ckpt — but the new
+process started training again at LR=1e-3 from scratch in
+optimizer-state terms, just with the ep 6 weights pre-loaded.
+
+**Root cause.** `train.py` saves model weights but not optimizer
+state. Adam's per-parameter momentum / variance estimates rebuild
+from zero, which biases the first few post-resume steps. With a
+*scheduled* LR this would also mean the schedule resets — handled
+in the cosine update via `scheduler.step()` matching `--start-epoch`.
+
+**Fix.** Pin `RUN_ID` in the launcher so a relaunch lands in the
+same S3 path and the auto-resume picks up the latest ckpt. The
+new spot watcher (`wm-d15-run1-watcher.sh`) re-fires the launcher
+on eviction, costing ~58 min for dataset reload but zero model
+weight loss per eviction.
+
+## 14 — Cancelled Spot Request Didn't Free Quota Immediately
+
+**Symptom.** After terminating R1 v1, every `RunInstances` call
+returned `MaxSpotInstanceCountExceeded` for ~5 minutes. AWS still
+counted the cancelled `sir-awgffx7m` (state `request-canceled-and-instance-running`)
+against the spot quota.
+
+**Root cause.** Spot request lifecycle is independent of the
+instance lifecycle. Even after the instance is terminated, the
+spot request needs to transition to `cancelled` before its vCPU
+count is released.
+
+**Fix.** `aws ec2 cancel-spot-instance-requests --spot-instance-request-ids <id>`
+explicitly. Then poll for state `cancelled` before retrying the
+launch. Adds ~30s but avoids the noisy quota errors.
+
+## 15 — eu-central-1c Lost g6e.8xlarge Spot Capacity Mid-Run
+
+**Symptom.** R1 v2 successfully launched in eu-central-1c spot,
+then the watcher's relaunch attempt 6h later (after the docker bug
+failure) returned `InsufficientInstanceCapacity` from the same AZ.
+AWS suggested 1a or 1b instead — but earlier we'd tried 1a (out)
+and 1b (out) before settling on 1c.
+
+**Root cause.** Spot capacity in g6e.8xlarge is *highly* AZ-local
+and time-of-day-volatile. The AZ that fulfilled at launch may not
+have capacity 6h later.
+
+**Fix.** When a launcher fails with `InsufficientInstanceCapacity`,
+try other AZs in the region before falling back regions. The
+deep-eval daemon also got a third tier (eu-central-1 spot) added
+to its `REGION_ORDER` for the same reason. A real fix would be
+spot-rover-style proactive placement scoring — already exists at
+`infra-eks/spot-rover/`, just not wired into the training launchers
+yet.
+
+## 16 — Autoeval Queue Stuck When Both OD Quotas Were Full
+
+**Symptom.** Run 2 ckpts ep 2/3/4 didn't get sims=800 evals for
+hours. The autoeval daemon kept logging `LAUNCH eval EC2 for ...`
+followed by `us-east-1 launch failed` and `eu-central-1 launch
+failed` every ~6 minutes, then deleting the claim marker.
+
+**Root cause.** Both regions' OD G/VT quotas (32 vCPU each) were
+saturated: us-east-1 by two long-running sims=4000 EC2s
+(2 × 16 vCPU), eu-central-1 by the R2 training instance
+(32 vCPU). Spot quotas were also full (R1 training in us-east-1
+spot). No slot anywhere.
+
+**Fix.** Added `eu-central-1:spot` as a third tier in
+`wm-autoeval-daemon.sh`'s `REGION_ORDER`. Spot quotas are
+*separate* from OD quotas, and eu-central-1 spot had 32 free vCPU
+because R2 was on OD. Patch shipped in commit `2e809e7`. Drained
+the queue overnight.
+
+## 17 — One Run 2 ckpt (ep 2) Never Got Evaluated
+
+**Symptom.** Run 2's `eval_results-distilled_epoch002.txt` is the
+only file missing from an otherwise contiguous ep0–ep12 sims=800
+sequence.
+
+**Root cause.** The eu-central-1 spot fallback wasn't yet deployed
+when ep 2 was first polled. The autoeval daemon claim-launched-
+failed-released the marker repeatedly during the quota crunch.
+Once the fallback shipped, the daemon polled ahead to ep 3/4 and
+later ckpts; ep 2 fell out of the "new ckpts" loop because no
+ckpt was newer than its claim marker.
+
+**Fix.** Manual re-fire if the data point matters. (For Run 2
+specifically: with 20+ other epochs evaluated, ep 2 isn't
+load-bearing for the trajectory.) Future improvement: have the
+daemon distinguish "permanently failed to claim" from "released
+on launch failure" and aggressively re-try the latter set.
+
 ## Takeaways for the Next Training Run
 
 1. **Size the volume for the dataset, not the ckpts.** 100 GB is fine
@@ -155,3 +306,19 @@ well-matched.
 5. **Don't add `nvidia.com/gpu:NoSchedule`** to single-purpose
    clusters.
 6. **Pick a calibrated sub-test opponent**, not `depth=1`.
+7. **Use cosine LR + warmup for nets >30M params**. Constant LR
+   converges 20×256 fine but plateaus 40×256 — see #10.
+8. **Pin `RUN_ID` + auto-resume + a watcher daemon** turns spot
+   eviction from "lose a day's training" into "lose 1 hour of
+   dataset reload." See #13.
+9. **Cancel spot requests explicitly** when terminating spot
+   instances. Cancel is *not* implicit on termination. See #14.
+10. **Multiple region:market tiers for any auto-launching daemon.**
+    OD quotas in 1 region fill up faster than expected when long
+    deep-eval EC2s pile in alongside training. See #16.
+11. **`curl` the latest script into the container at runtime** when
+    you can't wait for an image rebuild. Works for `train.py`,
+    `entrypoint-train.sh`, `h2h_mp.py`, anything else `COPY`-ed
+    into the image. See #12.
+12. **Don't escape `$` in launcher heredocs** unless you mean to
+    defer the variable to the EC2-side bash. See #11.
