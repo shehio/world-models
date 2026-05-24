@@ -44,3 +44,13 @@ site/public/
 site/resources/
 site/.hugo_build.lock
 
+
+# OS/editor cruft
+.DS_Store
+
+# Local backup files (don't accidentally commit ad-hoc backups)
+*.bak
+
+# KataGo analysis logs (generated locally during eval; not source)
+analysis_logs/
+experiments/*/analysis_logs/
