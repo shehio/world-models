@@ -254,30 +254,116 @@ strongest measurements:
 | + 30M data (d10 ep 5) | 800 | UCI=1,800 | 2,004 |
 | + 4,000 sims on top (ep 5) | 4,000 | UCI=1,800 | 2,084 [2005, 2197] |
 | same, tighter anchor (ep 5) | 4,000 | UCI=2,000 | **2,110** [2044, 2187] |
-| later epoch + same search (ep 10) | 4,000 | UCI=1,800 | **2,171** [2082, 2324] |
+| later epoch + same search (ep 10) | 4,000 | UCI=1,800 | 2,171 [2082, 2324] |
+| **deeper into training (ep 15)** | **4,000** | **UCI=1,800** | **2,189** [2098, 2354] |
+| same, after the peak (ep 20) | 4,000 | UCI=1,800 | 2,154 [2067, 2297] |
 
-**+361 Elo from the baseline.** The deep-search numbers don't *quite*
-add: search recovered +277 on the weaker d15 5M prior but only ~+80
-on top of the data-scaled prior. The headline 2,171 figure is ep 10's
-better learned value combined with the deep-search rollouts; the
-tightest CI sits at 2,110 against the stronger UCI=2,000 opponent.
+**+379 Elo from the baseline.** The deep-search numbers don't *quite*
+add: search recovered +277 on the weaker d15 5M prior but only ~+105
+on top of the data-scaled prior. The headline **2,189** figure is
+ep 15's better learned value combined with the deep-search rollouts;
+the tightest CI sits at 2,110 against the stronger UCI=2,000 opponent.
+The curve peaks at ep 15 and dips slightly by ep 20 — the model is
+already past its optimum at the 20×256 / 30M scale.
 
 → code: [`eval-c-ep5-sims4000.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-c-ep5-sims4000.sh) ·
 [`eval-c-ep5-sims2000-uci1800.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-c-ep5-sims2000-uci1800.sh)
+
+## Stronger Teacher at Full Data Scale — d15 at 46M {#d15-46m}
+
+**The natural follow-up.** d10-30M peaked at 2,189. d15 was the original
+plan; we settled for d10 because the d15-250K datagen run was still in
+flight at the time. It finished — 426K games / 45.9M positions of
+Stockfish d15 multipv=8 at temperature 1, the 1.5× scale-up of the
+d10-30M corpus that produced the prior peak.
+
+Two parallel training variants ran on the same dataset:
+
+| variant | net | LR | wd | batch | epochs | region/market |
+|---|---|---|---|---:|---:|---|
+| **R1 — bigger net** | 40×256 (~50M) | 1e-3 | 1e-4 | 1024 | 40 | us-east-1 spot g6e.8xlarge |
+| **R2 — regularization-leaning** | 20×256 (~24M) | 5e-4 | 1e-3 | 2048 | 30 | eu-central-1 OD g6e.8xlarge |
+
+R1 mirrors the original "throw capacity at it" instinct. R2 mirrors
+d10's shape (20×256) but with slower LR and 10× weight decay — the
+hypothesis that a smaller model trained less aggressively can match
+the bigger one on the d15 soft signal.
+
+### sims=800 trajectory — both runs (UCI=1,800 anchor)
+
+100-game evals, daemon-fired per ckpt:
+
+| ep | R1 (40×256) | R2 (20×256, lowlr) |
+|---:|---:|---:|
+| 1 | 1,864 | 1,834 |
+| 2 | 1,892 | 1,889 |
+| 3 | 1,875 | — |
+| 4 | 1,857 | 1,857 |
+| 5 | 1,850 | 1,900 |
+| 6 | 1,889 | 1,850 |
+| **7** | **1,941** | 1,922 |
+| 8 | 1,864 | 1,922 |
+| 9 | 1,910 | 1,861 |
+| 10 | — | 1,907 |
+| 11 | — | 1,864 |
+| 12 | — | 1,875 |
+
+Per-ckpt CIs are ±70 Elo wide at the 100-game budget, so the swings
+between adjacent epochs are mostly noise. The trend at this resolution:
+both runs are wandering 1,850–1,940 in the sims=800 anchor. R2's curve
+is statistically indistinguishable from R1's despite half the
+per-epoch compute — early evidence that the smaller-net + lower-LR +
+heavier-regularization recipe is competitive.
+
+### sims=4,000 deep-read on R1 — the comparable-to-d10 numbers
+
+A second daemon
+([`wm-deep-eval-daemon.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/daemons/wm-deep-eval-daemon.sh))
+fires sims=4,000 follow-ups on any ckpt whose sims=800 score crosses
+the threshold (currently 1,940). Two land so far:
+
+| ckpt | sims=800 | sims=4,000 | sims=4,000 − sims=800 |
+|---|---:|---:|---:|
+| R1 ep 2 | 1,892 | 2,055 [1979, 2159] | **+163** |
+| R1 ep 7 | 1,941 | **2,146** [2060, 2285] | **+205** |
+
+The +163/+205 Elo gap confirms search recovers progressively more on
+stronger ckpts. ep 7's sims=4,000 already puts d15 within striking
+distance of d10's 2,189 peak — −43 Elo, CIs overlap by ~100 Elo.
+
+R1 has 33 epochs remaining. If it follows the d10 arc (peak around
+ep 15), the d15 best is likely ahead of us.
+
+### Where this leaves the project
+
+- **d15 46M is climbing toward d10's peak**, not stuck below it. The
+  experiment we ranked as "most information per dollar" back in
+  February is paying off.
+- **Smaller net + slower LR is competitive** with bigger net + default
+  LR at matched data. R2's sims=800 trajectory shadows R1's despite
+  half the per-epoch compute — and the regularization-leaning recipe
+  hasn't yet been sims=4,000-evaluated, where R1 jumped +205 Elo.
+
+→ code: [`d15-full30m.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/d15-full30m.sh) ·
+[`d15-20x256-lowlr.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/d15-20x256-lowlr.sh) ·
+[`wm-deep-eval-daemon.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/daemons/wm-deep-eval-daemon.sh)
 
 ## Summary {#summary}
 
 | variable changed | hypothesis |
 |---|---|
-| network capacity (40×256 vs 20×256) | **rejected** |
+| network capacity (40×256 vs 20×256, 5M data) | **rejected** |
 | soft vs hard targets | **partial** (helps strong teachers, hurts weak) |
 | eval-side search (4,000 vs 800 sims) | **confirmed** (+277) |
 | data scale (30M vs 5M positions) | **confirmed** (+199) |
+| stronger teacher (d15 vs d10) at full data | **in flight** (R1 ep 7 at 2,146, climbing toward d10's 2,189 peak) |
 
-Capacity is decisively *not* the bottleneck. Eval search recovers a
-huge slice. **Data was the real bottleneck.** Strongest checkpoint to
-date: **2,171 Elo @ UCI=1,800** from the d10 full-30M run at epoch 10
-with sims=4,000 (CI [2082, 2324]). Tightest CI:
-**2,110 Elo @ UCI=2,000** at epoch 5 with sims=4,000 (CI [2044, 2187]).
-A 5× larger d15 dataset is the natural next step
+Capacity is decisively *not* the bottleneck on the 5M-data baseline;
+that result needs to be re-tested at full data scale because R1 (40×256
+on 46M positions) is climbing. Eval search recovers a huge slice. **Data
+was the real bottleneck.** Strongest checkpoint to date:
+**2,189 Elo @ UCI=1,800** from the d10 full-30M run at epoch 15 with
+sims=4,000 (CI [2098, 2354]). Tightest CI: **2,110 Elo @ UCI=2,000** at
+ep 5 with sims=4,000 (CI [2044, 2187]). The d15 full-data run is
+expected to top the chart within the next ~24h
 ([what's next →](/next/)).

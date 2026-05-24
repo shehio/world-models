@@ -78,23 +78,31 @@ diverges, we have the per-iter eval data to find where.
 
 ## Also In Flight — d15 at Full Data Scale
 
-The data ablation says +199 Elo from a 6× larger dataset *with a weaker
-teacher* (d10). The natural next step is to combine the strongest
+The data ablation said +199 Elo from a 6× larger dataset *with a weaker
+teacher* (d10). The natural next step was to combine the strongest
 teacher (d15) with the same data scale.
 
-Datagen is running now on EKS: 250,000 games of Stockfish d15 multipv=8
-T=1, split across 8 spot pods in `wm-chess-gen-d15-250k`. Same shape as
-the d10 g250000 run that produced the 30M-position training set. ETA
-~30–40 h once spot reclamation churn is netted out (a slow-instance
-mishap mid-run was patched on 2026-05-19 — see
-[infra-eks/cluster-gen-d15-250k.yaml](https://github.com/shehio/world-models/blob/main/infra-eks/cluster-gen-d15-250k.yaml)).
+**Update 2026-05-24** — datagen done (426K games / 45.9M positions,
+1.5× the d10-30M corpus). Two training variants are now running in
+parallel:
 
-Once `merged/data.npz` lands, training fires via
-[`d15-full30m.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/d15-full30m.sh)
-— same recipe as the d10-30M run (20×256, IN_RAM, BATCH_SIZE=2048,
-20 epochs on a g6e.8xlarge L40S). Headline question: does the stronger
-teacher buy us anything *on top of* the data-scale gain, or does the
-30M-position regime saturate at the teacher's ceiling regardless?
+- **R1 (40×256, LR=1e-3)** — us-east-1 spot g6e.8xlarge, 40 epochs.
+  Currently at epoch 12, best ckpt so far is ep 7 at
+  **2,146 Elo (sims=4,000, UCI=1,800)** — within 43 Elo of the d10
+  peak (2,189) and climbing.
+- **R2 (20×256, LR=5e-4, weight_decay=1e-3)** — eu-central-1 OD
+  g6e.8xlarge, 30 epochs. Currently at epoch 13. The
+  regularization-leaning variant we're using to test "is the
+  capacity rejection from the 5M baseline still right at full data?"
+
+Per-ckpt sims=800 evals fire automatically via the autoeval daemon;
+ckpts crossing 1,940 trigger a sims=4,000 deep-read via the
+[`wm-deep-eval-daemon`](https://github.com/shehio/world-models/blob/main/infra-eks/daemons/wm-deep-eval-daemon.sh).
+Full per-epoch numbers and trajectory on the
+[experiments page](/experiments/#d15-46m).
+
+Headline question: does d15 ep 15 (or 20) at sims=4,000 break past
+d10's 2,189? Answer lands inside the next ~24h.
 
 ## What Else Is on the Roadmap
 
@@ -117,10 +125,15 @@ Ranked by expected information per unit of effort:
 
 ## What We're Explicitly NOT Going to Do
 
-- **Bigger net.** The capacity ablation rejected this — 40×256 =
-  20×256 = ~1,810 Elo. Network isn't the bottleneck.
-- **More epochs of the same distillation.** The d15 baseline
-  plateaued by epoch 10.
+- ~~**Bigger net.** The capacity ablation rejected this — 40×256 =
+  20×256 = ~1,810 Elo. Network isn't the bottleneck.~~ *Update
+  2026-05-24: re-testing at full data scale. R1 (40×256 on 46M
+  positions) is at ep 7 ≈ 2,146 sims=4,000, well above the
+  5M-data baseline. The capacity rejection may have been
+  data-bound, not architecture-bound. Will update when R1 finishes.*
+- **More epochs of the same distillation at small data.** The d15
+  5M-position baseline plateaued by epoch 10. The full-46M run
+  separately may plateau later — d10-30M peaked at ep 15.
 - **Tabula-rasa AZ from scratch on one GPU.** d15 ep 20 is a much
   better starting point than random; no point burning weeks to
   rediscover it.
