@@ -348,6 +348,111 @@ ep 15), the d15 best is likely ahead of us.
 [`d15-20x256-lowlr.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/d15-20x256-lowlr.sh) ·
 [`wm-deep-eval-daemon.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/daemons/wm-deep-eval-daemon.sh)
 
+## Peak Elo Across Every Checkpoint We've Ever Run {#peak-elo}
+
+The full top-6 across the entire project, sorted by point estimate.
+All UCI=1,800 anchor, ~100 games each:
+
+| # | Run | Ckpt | sims | Elo | CI |
+|---|---|---|---:|---:|---|
+| 1 | d10 30M (20×256) | ep 15 | 4,000 | **2,189** | [2098, 2354] |
+| 2 | d10 30M (20×256) | ep 10 | 4,000 | 2,171 | [2082, 2324] |
+| 3 | d10 30M (20×256) | ep 20 | 4,000 | 2,154 | [2067, 2297] |
+| 4 | **d15 46M (40×256)** | **ep 7** | **4,000** | **2,146** | **[2060, 2285]** ← d15 best so far |
+| 5 | d10 30M (20×256) | ep 5 | 4,000 | 2,084 | [2005, 2197] |
+| 6 | d15 46M (40×256) | ep 2 | 4,000 | 2,055 | [1979, 2159] |
+
+## Why is d10 ahead of d15 — for now? {#d10-vs-d15}
+
+A 20×256 network trained on Stockfish *depth-10* labels currently leads
+a 40×256 network trained on Stockfish *depth-15* labels with **1.5× the
+data**. That is genuinely surprising — d15 has more capacity, a
+stronger teacher, *and* more positions. Three honest candidates for
+what's going on, in rough order of how likely each is:
+
+### 1. d15 hasn't peaked yet
+
+This is almost certainly the dominant factor. The d10 number (2,189)
+was its **ep 15 of 20 epochs**. The d15 number (2,146) is **ep 7 of
+40 epochs**. Most of d10's gain came after ep 5 (2,084 → 2,189 = +105
+between ep 5 and ep 15). d15 jumped +91 between ep 2 and ep 7 at
+sims=4,000 and is still on the way up.
+
+If d15 keeps adding ~+15 Elo per epoch at sims=4,000 (slower than its
+ep 2→7 rate to be conservative), it crosses d10's 2,189 around ep 12
+and could peak somewhere in ep 15–20. That run finishes in ~24h.
+
+### 2. Eval noise is bigger than the gap
+
+The 43-Elo gap (2,189 vs 2,146) sits inside a 95% CI that's
+±70-100 Elo wide on each measurement. The CIs overlap by ~190 Elo;
+the two means are not statistically distinguishable at 100 games.
+
+That's why the [head-to-head launcher](#head-to-head-launcher) below
+exists — putting d10 and d15 in direct play against each other replaces
+"both vs Stockfish, infer relative strength" with "score from N games
+between them," which has tighter CIs per dollar.
+
+### 3. The "stronger teacher" prior is only as useful as your training recipe
+
+The d10 result used **LR=1e-3 + no decay + 20×256 + batch 2048**. R1
+(the headline d15 run) uses the same LR and decay but with a
+**40×256 net** — 2× the parameters. Big-net + aggressive constant LR
+typically wants warmup + cosine decay; ours has neither (train.py
+doesn't currently support schedulers — that's a follow-up). With more
+capacity but a less-optimized optimizer, R1 may be oscillating instead
+of converging.
+
+This is the experimental question R2 (20×256, LR=5e-4, weight_decay=1e-3)
+is meant to settle. If R2's final sims=4,000 number lands at or above
+R1's, *the bottleneck was the hparams, not the teacher.* Initial
+signal at sims=800: R2 ep 7 = 1,922, R1 ep 7 = 1,941 — within noise
+despite R2 using half the compute per epoch.
+
+### 4. (Quieter) Soft-target dilution at stronger teacher
+
+At depth 15, Stockfish's policy distribution often spreads more
+probability across legitimate alternatives than at depth 10 (deeper
+search uncovers near-equivalent lines). With multipv=8 + T=1, the
+student learns to hedge across more candidates instead of committing
+to one. MCTS at inference *amplifies* a sharp prior more than a flat
+one, so hedging costs sims=4,000 Elo more than sims=800 Elo.
+
+We already saw a version of this in the 250K MPS run
+([Three honest hypotheses](https://github.com/shehio/world-models/blob/main/experiments/distill-soft/results.md#three-honest-hypotheses-for-the-underperformance)
+in results.md) — "top-K=87% / top-1=37%" was the hedging failure mode
+in miniature. It's plausible at full data scale too, especially if the
+40×256 net has the capacity to *memorize* the softer distribution.
+
+### What would falsify each
+
+| Hypothesis | What disproves it |
+|---|---|
+| d15 not done | d15 epoch 15+ sims=4,000 lands below 2,150 and plateaus |
+| eval noise | head-to-head shows clear gap one way or the other |
+| hparams | R2 final ≥ R1 final → it was hparams; R2 ≪ R1 → it wasn't |
+| soft-target dilution | R2 ≥ d10 too — would mean d15 teacher *works* at the right shape |
+
+## Head-to-head launcher — d10 best vs d15 best {#head-to-head-launcher}
+
+To remove the Stockfish anchor noise from the comparison, run the two
+networks directly against each other using MCTS at the same sim count
+on both sides:
+
+```
+bash infra-eks/launchers/h2h-d10-vs-d15.sh
+```
+
+Defaults to d10 ep 15 vs d15 ep 7 at sims=4,000 (the current best of
+each), 104 games, alternating colors. Result lands at
+`s3://wm-chess-library-594561963943/d15-mpv8-T1-g250000-20260519T0412Z/checkpoints/net-40x256/20260522T2229Z-full46M-40x256/h2h-<run-id>.txt`.
+Override `CKPT_B_S3=...` and `NB_B/NF_B` env vars to re-run against d15's
+actual peak when training completes.
+
+Underlying script: [`experiments/selfplay/scripts/h2h_mp.py`](https://github.com/shehio/world-models/blob/main/experiments/selfplay/scripts/h2h_mp.py)
+(extended with per-agent `--n-blocks-a/--n-blocks-b` so 20×256 and
+40×256 can play each other).
+
 ## Summary {#summary}
 
 | variable changed | hypothesis |
