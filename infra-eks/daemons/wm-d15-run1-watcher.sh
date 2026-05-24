@@ -11,7 +11,7 @@ set -u
 LOG=/tmp/wm-d15-run1-watcher.log
 INSTANCE_ID_FILE=/tmp/wm-d15-run1.id
 INTERVAL_SEC=${INTERVAL_SEC:-300}
-REGION=us-east-1
+REGION=${REGION:-us-east-1}    # override via env when the run lives elsewhere
 
 log() { echo "[$(date -u +%H:%M:%S)] $*" | tee -a "$LOG"; }
 

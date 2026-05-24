@@ -19,22 +19,22 @@
 set -euo pipefail
 
 ACCOUNT_ID=594561963943
-IMAGE_REGION=us-east-1
-LAUNCH_REGION=us-east-1
-AMI=ami-027c3ae8019fc0d3a               # DL Base GPU AL2023 us-east-1
-SUBNET=subnet-059b67fde3350d8b8          # us-east-1d (use1-az1) — fresh AZ after us-east-1a eviction
+IMAGE_REGION=us-east-1                   # ECR + S3 stay in us-east-1
+LAUNCH_REGION=eu-central-1               # us-east-1 spot quota was full; eu-central-1c had capacity
+AMI=ami-01e9d13d4c5e54237               # DL Base GPU AL2023 eu-central-1
+SUBNET=subnet-fbab48b7                   # eu-central-1c (had g6e.8xlarge spot when 1a/1b didn't)
 INSTANCE_TYPE=g6e.8xlarge                # 32 vCPU, 256 GB RAM, 1× L40S
 INSTANCE_PROFILE=wm-chess-merge-instance-profile
 ECR=$ACCOUNT_ID.dkr.ecr.$IMAGE_REGION.amazonaws.com
 
 S3_BUCKET=wm-chess-library-594561963943
 S3_PREFIX=d15-mpv8-T1-g250000-20260519T0412Z
-# Fresh RUN_ID for the cosine-LR retry. The original constant-LR run
-# (20260522T2229Z-full46M-40x256) plateaued by epoch 7: loss / top1 /
-# topK barely moved across epochs 7-13. Restarting from scratch with
-# linear warmup + cosine decay to test whether LR scheduling escapes
-# the plateau the bigger 40×256 net got stuck in.
-RUN_ID=$(date -u +%Y%m%dT%H%MZ)-full46M-40x256-cosine
+# Pinned RUN_ID for the cosine-LR run. The original constant-LR run
+# (20260522T2229Z-full46M-40x256) plateaued by epoch 7. This is the
+# fresh-restart variant with linear warmup + cosine decay testing
+# whether LR scheduling escapes that plateau. Pin so the entrypoint
+# auto-resumes from the latest S3 ckpt on eviction.
+RUN_ID=20260524T0955Z-full46M-40x256-cosine
 
 USER_DATA=$(cat <<EOF
 #!/bin/bash
