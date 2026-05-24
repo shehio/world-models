@@ -24,7 +24,8 @@ import torch.multiprocessing as mp
 
 def worker(args: tuple) -> dict:
     (worker_id, ckpt_a, ckpt_b, n_games, sims, batch_size,
-     n_blocks, n_filters, max_plies, n_history_a, n_history_b) = args
+     n_blocks_a, n_filters_a, n_blocks_b, n_filters_b,
+     max_plies, n_history_a, n_history_b, device_name) = args
 
     torch.set_num_threads(1)
 
@@ -33,20 +34,22 @@ def worker(args: tuple) -> dict:
     from wm_chess.config import Config
     from wm_chess.network import AlphaZeroNet
 
-    device = torch.device("cpu")
+    device = torch.device(device_name)
 
-    cfg_a = replace(Config(), n_res_blocks=n_blocks, n_filters=n_filters,
+    cfg_a = replace(Config(), n_res_blocks=n_blocks_a, n_filters=n_filters_a,
                     n_input_planes=(N_INPUT_PLANES_HISTORY if n_history_a > 1 else 19))
     net_a = AlphaZeroNet(cfg_a)
-    net_a.load_state_dict(torch.load(ckpt_a, map_location="cpu"))
+    net_a.load_state_dict(torch.load(ckpt_a, map_location=device))
+    net_a.to(device)
     net_a.eval()
     pol_a = network_policy(net_a, cfg_a, device, sims=sims, batch_size=batch_size,
                            n_history=n_history_a)
 
-    cfg_b = replace(Config(), n_res_blocks=n_blocks, n_filters=n_filters,
+    cfg_b = replace(Config(), n_res_blocks=n_blocks_b, n_filters=n_filters_b,
                     n_input_planes=(N_INPUT_PLANES_HISTORY if n_history_b > 1 else 19))
     net_b = AlphaZeroNet(cfg_b)
-    net_b.load_state_dict(torch.load(ckpt_b, map_location="cpu"))
+    net_b.load_state_dict(torch.load(ckpt_b, map_location=device))
+    net_b.to(device)
     net_b.eval()
     pol_b = network_policy(net_b, cfg_b, device, sims=sims, batch_size=batch_size,
                            n_history=n_history_b)
@@ -70,24 +73,42 @@ def main():
     p.add_argument("--games-per-worker", type=int, default=20)
     p.add_argument("--sims", type=int, default=80)
     p.add_argument("--batch-size", type=int, default=8)
+    # Default architecture (applied to both agents unless overridden).
     p.add_argument("--n-blocks", type=int, default=10)
     p.add_argument("--n-filters", type=int, default=128)
+    # Per-agent overrides — needed when comparing checkpoints from runs with
+    # different network shapes (e.g. d10 20×256 vs d15 40×256).
+    p.add_argument("--n-blocks-a", type=int, default=None,
+                   help="A's residual blocks (defaults to --n-blocks)")
+    p.add_argument("--n-filters-a", type=int, default=None,
+                   help="A's channel count (defaults to --n-filters)")
+    p.add_argument("--n-blocks-b", type=int, default=None,
+                   help="B's residual blocks (defaults to --n-blocks)")
+    p.add_argument("--n-filters-b", type=int, default=None,
+                   help="B's channel count (defaults to --n-filters)")
     p.add_argument("--n-history-a", type=int, default=1, help="A's input history depth (1=19-plane, 8=103-plane)")
     p.add_argument("--n-history-b", type=int, default=1, help="B's input history depth")
     p.add_argument("--max-plies", type=int, default=200)
+    p.add_argument("--device", default="cpu",
+                   help="torch device for both nets (cpu or cuda). At sims=4000 cuda is ~5x faster.")
     args = p.parse_args()
+
+    n_blocks_a = args.n_blocks_a if args.n_blocks_a is not None else args.n_blocks
+    n_filters_a = args.n_filters_a if args.n_filters_a is not None else args.n_filters
+    n_blocks_b = args.n_blocks_b if args.n_blocks_b is not None else args.n_blocks
+    n_filters_b = args.n_filters_b if args.n_filters_b is not None else args.n_filters
 
     mp.set_start_method("spawn", force=True)
 
-    print(f"A: {args.ckpt_a}", flush=True)
-    print(f"B: {args.ckpt_b}", flush=True)
-    print(f"sims: {args.sims}, batch K: {args.batch_size}", flush=True)
+    print(f"A: {args.ckpt_a}  ({n_blocks_a}×{n_filters_a})", flush=True)
+    print(f"B: {args.ckpt_b}  ({n_blocks_b}×{n_filters_b})", flush=True)
+    print(f"sims: {args.sims}, batch K: {args.batch_size}, device: {args.device}", flush=True)
     print(f"workers: {args.workers} × {args.games_per_worker} games = {args.workers * args.games_per_worker} total", flush=True)
 
     worker_args = [
         (i, args.ckpt_a, args.ckpt_b, args.games_per_worker, args.sims, args.batch_size,
-         args.n_blocks, args.n_filters, args.max_plies,
-         args.n_history_a, args.n_history_b)
+         n_blocks_a, n_filters_a, n_blocks_b, n_filters_b,
+         args.max_plies, args.n_history_a, args.n_history_b, args.device)
         for i in range(args.workers)
     ]
 
