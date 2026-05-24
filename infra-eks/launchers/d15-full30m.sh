@@ -29,9 +29,12 @@ ECR=$ACCOUNT_ID.dkr.ecr.$IMAGE_REGION.amazonaws.com
 
 S3_BUCKET=wm-chess-library-594561963943
 S3_PREFIX=d15-mpv8-T1-g250000-20260519T0412Z
-# Pinned RUN_ID so the entrypoint's auto-resume finds the existing ckpts
-# and continues into epoch 7 with the same ckpt path lineage.
-RUN_ID=20260522T2229Z-full46M-40x256
+# Fresh RUN_ID for the cosine-LR retry. The original constant-LR run
+# (20260522T2229Z-full46M-40x256) plateaued by epoch 7: loss / top1 /
+# topK barely moved across epochs 7-13. Restarting from scratch with
+# linear warmup + cosine decay to test whether LR scheduling escapes
+# the plateau the bigger 40×256 net got stuck in.
+RUN_ID=$(date -u +%Y%m%dT%H%MZ)-full46M-40x256-cosine
 
 USER_DATA=$(cat <<EOF
 #!/bin/bash
@@ -69,8 +72,20 @@ docker run --rm \\
     -e IN_RAM=1 \\
     -e AMP=1 \\
     -e COMPILE=0 \\
-    --entrypoint /entrypoint-train.sh \\
-    $ECR/wm-chess-gpu:latest
+    -e LR_SCHEDULER=cosine \\
+    -e WARMUP_EPOCHS=3 \\
+    -e LR_MIN=1e-5 \\
+    --entrypoint bash \\
+    \$ECR/wm-chess-gpu:latest -lc '
+        # The baked image was built before cosine-LR support landed
+        # (commit on 2026-05-24). Pull the latest entrypoint + train.py
+        # from main so this run gets the new schedule without waiting
+        # on a CodeBuild rebuild. Drop this once the image is rebuilt.
+        curl -sSL https://raw.githubusercontent.com/shehio/world-models/main/infra-eks/entrypoint-train.sh -o /entrypoint-train.sh
+        curl -sSL https://raw.githubusercontent.com/shehio/world-models/main/experiments/distill-soft/scripts/train.py -o /work/experiments/distill-soft/scripts/train.py
+        chmod +x /entrypoint-train.sh
+        exec /entrypoint-train.sh
+    '
 EOF
 )
 
