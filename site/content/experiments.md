@@ -304,16 +304,19 @@ the bigger one on the d15 soft signal.
 | **7** | **1,941** | 1,922 |
 | 8 | 1,864 | 1,922 |
 | 9 | 1,910 | 1,861 |
-| 10 | — | 1,907 |
-| 11 | — | 1,864 |
+| 10 | 1,882 | 1,907 |
+| 11 | 1,885 | 1,864 |
 | 12 | — | 1,875 |
+| **13** | — | **1,925** |
 
 Per-ckpt CIs are ±70 Elo wide at the 100-game budget, so the swings
 between adjacent epochs are mostly noise. The trend at this resolution:
-both runs are wandering 1,850–1,940 in the sims=800 anchor. R2's curve
-is statistically indistinguishable from R1's despite half the
-per-epoch compute — early evidence that the smaller-net + lower-LR +
-heavier-regularization recipe is competitive.
+both runs are wandering 1,850–1,940 in the sims=800 anchor. R2's
+curve is statistically indistinguishable from R1's despite half the
+per-epoch compute — R2 ep 13 = 1,925 is within 16 Elo of R1's best so
+far (ep 7 = 1,941) on the noisier sims=800 anchor. Early evidence
+that the smaller-net + lower-LR + heavier-regularization recipe is
+competitive.
 
 ### sims=4,000 deep-read on R1 — the comparable-to-d10 numbers
 

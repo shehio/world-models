@@ -81,6 +81,10 @@ docker run --rm \\
     --entrypoint bash \\
     \$ECR_IMAGE -lc '
         set -ex
+        # Pull the latest h2h_mp.py from main — the baked image was built
+        # before per-agent --n-blocks-a/-b were added (commit 1bfaf67).
+        curl -sSL https://raw.githubusercontent.com/shehio/world-models/main/experiments/selfplay/scripts/h2h_mp.py \
+             -o /work/experiments/selfplay/scripts/h2h_mp.py
         CKPT_A_LOCAL=/work-tmp/\$(basename \$CKPT_A_S3 .pt)-A.pt
         CKPT_B_LOCAL=/work-tmp/\$(basename \$CKPT_B_S3 .pt)-B.pt
         aws s3 cp \$CKPT_A_S3 \$CKPT_A_LOCAL --no-progress
