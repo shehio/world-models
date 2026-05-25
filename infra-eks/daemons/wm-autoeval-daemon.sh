@@ -199,15 +199,32 @@ launch_eval_instance() {
     aws s3 rm "$claim_key" 2>&1 | tail -1 | tee -a "$LOG"
 }
 
-log "=== started; poll every ${INTERVAL_SEC}s ==="
+# How often to eval selfplay iters. Distill epochs are evaluated every
+# epoch; selfplay iters land much more frequently (~80 min vs ~2h) so we
+# downsample. 2 = eval iter 0, 2, 4, ...; 4 = eval iter 0, 4, 8, ...
+SELFPLAY_EVAL_EVERY=${SELFPLAY_EVAL_EVERY:-2}
+
+log "=== started; poll every ${INTERVAL_SEC}s; selfplay eval cadence = every ${SELFPLAY_EVAL_EVERY} iters ==="
 
 while true; do
     for bucket in "${BUCKETS[@]}"; do
-        ckpts=$(aws s3 ls "s3://$bucket/" --recursive 2>/dev/null \
-                | awk '{print $NF}' \
+        # One scan, two filters. distill = all epochs; selfplay = downsampled.
+        all_pt=$(aws s3 ls "s3://$bucket/" --recursive 2>/dev/null | awk '{print $NF}')
+
+        distill_ckpts=$(echo "$all_pt" \
                 | grep -E 'checkpoints/net-[^/]+/[^/]+/distilled_epoch[0-9]+\.pt$' \
                 | sort -u)
-        for key in $ckpts; do
+
+        selfplay_ckpts=$(echo "$all_pt" \
+                | grep -E 'selfplay/net-[^/]+/[^/]+/net_iter[0-9]+\.pt$' \
+                | awk -F'net_iter' -v every="$SELFPLAY_EVAL_EVERY" '{
+                    iter_str = $2;
+                    sub(/\.pt$/, "", iter_str);
+                    if ((iter_str + 0) % every == 0) print $0;
+                  }' \
+                | sort -u)
+
+        for key in $distill_ckpts $selfplay_ckpts; do
             launch_eval_instance "s3://$bucket/$key"
         done
     done
