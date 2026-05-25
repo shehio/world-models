@@ -57,8 +57,10 @@ docker run --rm \\
         export DEBIAN_FRONTEND=noninteractive
         apt-get update && apt-get install -y --no-install-recommends pachi
         export PACHI_BIN=/usr/games/pachi
+        # Pachi pulls in ncurses; without a TTY it dies with
+        # "Error opening terminal: unknown". TERM=dumb sidesteps that.
+        export TERM=dumb
         ls -l \$PACHI_BIN
-        \$PACHI_BIN --version 2>&1 | head -3 || true
 
         cp /work-tmp/calibrate.py /work/experiments/distill-go/scripts/calibrate.py
         cd /work/experiments/distill-go

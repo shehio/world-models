@@ -80,9 +80,12 @@ class GTPEngine:
 
     @classmethod
     def pachi(cls, binary: str, playouts: int = 5000) -> "GTPEngine":
-        # `-t =N` = exactly N playouts (no time-based budget). Pachi
-        # auto-detects thread count. 5000 playouts ≈ KGS 1d strength on 9x9.
-        return cls([binary, "-t", f"={playouts}"])
+        # `-t =N` = exactly N playouts (no time-based budget). `-d 0` disables
+        # Pachi's curses-based debug display so it doesn't open a TTY (in
+        # containers ncurses fails with "Error opening terminal: unknown"
+        # unless TERM=dumb is also set in the env). 5000 playouts ≈ KGS 1d
+        # on 9x9.
+        return cls([binary, "-d", "0", "-t", f"={playouts}"])
 
     def _send(self, cmd: str) -> str:
         assert self._proc is not None and self._proc.stdin and self._proc.stdout
@@ -92,7 +95,7 @@ class GTPEngine:
         while True:
             line = self._proc.stdout.readline()
             if not line:
-                raise RuntimeError(f"gnugo closed stdout while waiting for '{cmd}'")
+                raise RuntimeError(f"GTP engine ({self.argv[0]}) closed stdout while waiting for '{cmd}'")
             if line.startswith("=") or line.startswith("?"):
                 body_lines.append(line[1:].strip())
                 term = self._proc.stdout.readline()
