@@ -44,17 +44,19 @@ from distill_go.board import BLACK, WHITE, GoBoard, flat_to_gtp, gtp_to_flat
 from distill_go.katago_data import KataGoAnalysisEngine
 
 
-class GnuGoEngine:
-    """Minimal GTP wrapper around `gnugo --mode gtp`."""
+class GTPEngine:
+    """Minimal GTP wrapper around any binary that speaks GTP on stdio.
 
-    def __init__(self, binary: str, level: int = 10) -> None:
-        self.binary = binary
-        self.level = level
+    Subclasses provide the argv list. Used for both GNU Go and Pachi.
+    """
+
+    def __init__(self, argv: list[str]) -> None:
+        self.argv = argv
         self._proc: subprocess.Popen | None = None
 
-    def __enter__(self) -> "GnuGoEngine":
+    def __enter__(self) -> "GTPEngine":
         self._proc = subprocess.Popen(
-            [self.binary, "--mode", "gtp", "--level", str(self.level)],
+            self.argv,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -71,6 +73,16 @@ class GnuGoEngine:
             except Exception:
                 self._proc.kill()
             self._proc = None
+
+    @classmethod
+    def gnugo(cls, binary: str, level: int = 10) -> "GTPEngine":
+        return cls([binary, "--mode", "gtp", "--level", str(level)])
+
+    @classmethod
+    def pachi(cls, binary: str, playouts: int = 5000) -> "GTPEngine":
+        # `-t =N` = exactly N playouts (no time-based budget). Pachi
+        # auto-detects thread count. 5000 playouts ≈ KGS 1d strength on 9x9.
+        return cls([binary, "-t", f"={playouts}"])
 
     def _send(self, cmd: str) -> str:
         assert self._proc is not None and self._proc.stdin and self._proc.stdout
@@ -120,7 +132,7 @@ def score_to_elo_diff(score: float, eps: float = 1e-9) -> float:
 
 def play_one_game(
     kata: KataGoAnalysisEngine,
-    gnugo: GnuGoEngine | None,
+    gtp_opp: GTPEngine | None,
     *,
     opponent: str,
     board_size: int,
@@ -133,9 +145,9 @@ def play_one_game(
     """One game test-KataGo vs opponent. test_color ∈ {BLACK, WHITE}."""
     board = GoBoard(size=board_size, komi=komi)
     history_gtp: list[tuple[str, str]] = []
-    if opponent == "gnugo":
-        assert gnugo is not None
-        gnugo.setup(board_size, komi)
+    if opponent in ("gnugo", "pachi"):
+        assert gtp_opp is not None
+        gtp_opp.setup(board_size, komi)
 
     t0 = time.time()
     passes = 0
@@ -149,14 +161,13 @@ def play_one_game(
                 history_gtp, board_size=board_size,
                 visits=test_visits, komi=komi, rules="tromp-taylor",
             )
-        else:
-            if opponent == "gnugo":
-                gtp_move = gnugo.genmove(to_move_color)
-            else:  # opponent == "katago"
-                gtp_move = kata.best_move(
-                    history_gtp, board_size=board_size,
-                    visits=opponent_visits, komi=komi, rules="tromp-taylor",
-                )
+        elif opponent == "katago":
+            gtp_move = kata.best_move(
+                history_gtp, board_size=board_size,
+                visits=opponent_visits, komi=komi, rules="tromp-taylor",
+            )
+        else:  # gnugo or pachi via GTP
+            gtp_move = gtp_opp.genmove(to_move_color)
         gtp_move = gtp_move.strip()
 
         try:
@@ -169,11 +180,11 @@ def play_one_game(
             flat_idx = board.pass_move
         canon_move = flat_to_gtp(flat_idx, board_size)
 
-        # gnugo is stateful — mirror the test side's move to it. KataGo
-        # (both sides if opponent=katago) is queried per-position with the
-        # full history, so it's stateless.
-        if opponent == "gnugo" and board.to_move == test_color:
-            gnugo.play(to_move_color, canon_move)
+        # GTP opponents (gnugo/pachi) are stateful — mirror the test side's
+        # move to them. KataGo (both sides if opponent=katago) is queried
+        # per-position with the full history, so it's stateless.
+        if opponent in ("gnugo", "pachi") and board.to_move == test_color:
+            gtp_opp.play(to_move_color, canon_move)
 
         history_gtp.append((to_move_color, canon_move))
         board.play(flat_idx)
@@ -201,14 +212,16 @@ def main() -> int:
     p.add_argument("--komi", type=float, default=7.5)
     p.add_argument("--katago-visits", type=int, default=200,
                    help="visits for the KataGo side under test")
-    p.add_argument("--opponent", choices=["gnugo", "katago"], default="gnugo")
+    p.add_argument("--opponent", choices=["gnugo", "pachi", "katago"], default="gnugo")
     p.add_argument("--opponent-visits", type=int, default=1,
                    help="visits for the opponent KataGo (only if --opponent katago)")
     p.add_argument("--gnugo-level", type=int, default=10,
                    help="gnugo --level (only if --opponent gnugo)")
+    p.add_argument("--pachi-playouts", type=int, default=5000,
+                   help="Pachi `-t =N` playouts per move (only if --opponent pachi)")
     p.add_argument("--anchor-elo", type=float, default=1800.0,
-                   help="Assumed absolute Elo of the opponent. For gnugo, default 1800 "
-                        "follows the AlphaGo paper (Silver et al. 2016).")
+                   help="Assumed absolute Elo of the opponent. Defaults: gnugo L10 ≈ 1800 "
+                        "(AlphaGo paper, Silver 2016); Pachi @ 5000 playouts ≈ 2100 (KGS 1d).")
     p.add_argument("--games", type=int, default=100)
     p.add_argument("--max-moves", type=int, default=200)
     p.add_argument("--seed", type=int, default=0)
@@ -218,11 +231,14 @@ def main() -> int:
     katago_model = os.environ["KATAGO_MODEL"]
     katago_config = os.environ.get("KATAGO_CONFIG")
     gnugo_bin = os.environ.get("GNUGO_BIN", "gnugo")
+    pachi_bin = os.environ.get("PACHI_BIN", "pachi")
 
     random.seed(args.seed)
     print(f"test:    KataGo @ {args.katago_visits}v", flush=True)
     if args.opponent == "gnugo":
         print(f"opponent: gnugo --level {args.gnugo_level} (anchor Elo = {args.anchor_elo:.0f})", flush=True)
+    elif args.opponent == "pachi":
+        print(f"opponent: pachi -t ={args.pachi_playouts} (anchor Elo = {args.anchor_elo:.0f})", flush=True)
     else:
         print(f"opponent: KataGo @ {args.opponent_visits}v (anchor Elo = {args.anchor_elo:.0f})", flush=True)
     print(f"games: {args.games}  board: {args.board_size}x{args.board_size}  komi: {args.komi}", flush=True)
@@ -230,16 +246,17 @@ def main() -> int:
 
     wins = 0
     t0 = time.time()
-    gnugo_ctx = (
-        GnuGoEngine(gnugo_bin, level=args.gnugo_level)
-        if args.opponent == "gnugo"
-        else _NullCtx()
-    )
-    with KataGoAnalysisEngine(katago_bin, katago_model, katago_config) as kata, gnugo_ctx as gnugo:
+    if args.opponent == "gnugo":
+        gtp_ctx = GTPEngine.gnugo(gnugo_bin, level=args.gnugo_level)
+    elif args.opponent == "pachi":
+        gtp_ctx = GTPEngine.pachi(pachi_bin, playouts=args.pachi_playouts)
+    else:
+        gtp_ctx = _NullCtx()
+    with KataGoAnalysisEngine(katago_bin, katago_model, katago_config) as kata, gtp_ctx as gtp_opp:
         for g in range(args.games):
             test_color = BLACK if g % 2 == 0 else WHITE
             res = play_one_game(
-                kata, gnugo if args.opponent == "gnugo" else None,
+                kata, gtp_opp if args.opponent in ("gnugo", "pachi") else None,
                 opponent=args.opponent,
                 board_size=args.board_size, komi=args.komi,
                 test_visits=args.katago_visits,
@@ -273,8 +290,12 @@ def main() -> int:
         f"95% CI=[{lo:.3f}, {hi:.3f}]",
         flush=True,
     )
-    opp_label = (f"gnugo L{args.gnugo_level}" if args.opponent == "gnugo"
-                 else f"KataGo@{args.opponent_visits}v")
+    if args.opponent == "gnugo":
+        opp_label = f"gnugo L{args.gnugo_level}"
+    elif args.opponent == "pachi":
+        opp_label = f"pachi @ {args.pachi_playouts} playouts"
+    else:
+        opp_label = f"KataGo@{args.opponent_visits}v"
     print(
         f"Elo diff (KataGo@{args.katago_visits}v − {opp_label}) "
         f"≈ {elo_diff:+.0f}  95% CI=[{elo_lo:+.0f}, {elo_hi:+.0f}]",
