@@ -23,9 +23,9 @@ set -euo pipefail
 
 ACCOUNT_ID=594561963943
 IMAGE_REGION=us-east-1
-LAUNCH_REGION=us-east-1
-AMI=ami-027c3ae8019fc0d3a               # DL Base GPU AL2023 us-east-1
-SUBNET=subnet-05af0889ba2b8947a          # us-east-1a (use1-az2) — best L40S spot score
+LAUNCH_REGION=ap-northeast-1
+AMI=ami-0c11e8f0937c0bf36              # ap-northeast-1 DLAMI
+SUBNET=subnet-597e8511             # ap-northeast-1a
 INSTANCE_TYPE=g6e.8xlarge                # 32 vCPU, 256 GB RAM, 1× L40S
 INSTANCE_PROFILE=wm-chess-merge-instance-profile
 ECR=$ACCOUNT_ID.dkr.ecr.$IMAGE_REGION.amazonaws.com
