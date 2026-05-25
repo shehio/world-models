@@ -267,7 +267,11 @@ while true; do
                   }' \
                 | sort -u)
 
-        for key in $distill_ckpts $selfplay_ckpts; do
+        # Selfplay first — the cosine training keeps producing new distill
+        # epochs, so without an explicit priority the few spot-quota slots
+        # per cycle get consumed by distill and selfplay ckpts perpetually
+        # starve. Selfplay Elo signal is the higher-priority deliverable.
+        for key in $selfplay_ckpts $distill_ckpts; do
             launch_eval_instance "s3://$bucket/$key"
         done
     done
