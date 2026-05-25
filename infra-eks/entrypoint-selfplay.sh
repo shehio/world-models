@@ -33,7 +33,11 @@ set -euo pipefail
 : "${GAMES_PER_WORKER:=2}"   # per iter, per worker. 24*2=48 games/iter.
 : "${BATCH_SIZE:=8}"         # batched MCTS leaf-eval batch size (inside MCTS)
 : "${TRAIN_STEPS:=200}"      # SGD steps per iter
-: "${LR:=1e-3}"
+: "${LR:=1e-5}"              # ~100× lower than distillation. The earlier
+                             # default of 1e-3 caused the first selfplay
+                             # attempt to regress — way too aggressive for
+                             # fine-tuning a pretrained 23.7M-param net on
+                             # MCTS-derived targets.
 : "${TIME_BUDGET:=43200}"    # 12 h
 : "${EVAL_EVERY:=4}"
 : "${EVAL_GAMES:=20}"
