@@ -31,9 +31,9 @@ set -euo pipefail
 ACCOUNT_ID=594561963943
 IMAGE_REGION=us-east-1
 LAUNCH_REGION=us-east-1
-AMI=ami-027c3ae8019fc0d3a               # DL Base GPU AL2023 us-east-1
-SUBNET=subnet-05af0889ba2b8947a          # us-east-1a (use1-az2)
-INSTANCE_TYPE=g6e.8xlarge                # 32 vCPU (= 32 selfplay workers) + 1× L40S (trainer) + 256 GB RAM
+AMI=ami-027c3ae8019fc0d3a                # DL Base GPU AL2023 us-east-1
+SUBNET=subnet-00be06b9c01d8b036         # us-east-1c
+INSTANCE_TYPE=g6e.4xlarge                # 16 vCPU, 128 GB RAM, 1× L40S — fits in remaining us-east-1 OD quota
 INSTANCE_PROFILE=wm-chess-merge-instance-profile
 ECR=$ACCOUNT_ID.dkr.ecr.$IMAGE_REGION.amazonaws.com
 
@@ -48,8 +48,8 @@ RUN_ID=$(date -u +%Y%m%dT%H%MZ)-selfplay-from-d10ep15
 N_BLOCKS=20
 N_FILTERS=256
 SIMS=800
-WORKERS=32                  # match g6e.8xlarge vCPU count
-GAMES_PER_WORKER=2
+WORKERS=16                  # match g6e.4xlarge vCPU count (half of g6e.8xlarge)
+GAMES_PER_WORKER=4    # 2x to keep games-per-iter unchanged
 TRAIN_STEPS=200
 LR=1e-5                     # fine-tune-grade; 100× lower than distillation
 TIME_BUDGET=86400            # 24h initial test
@@ -110,7 +110,6 @@ aws ec2 run-instances --region $LAUNCH_REGION \
     --iam-instance-profile Name=$INSTANCE_PROFILE \
     --block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=200,VolumeType=gp3,DeleteOnTermination=true}' \
     --instance-initiated-shutdown-behavior terminate \
-    --instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}' \
     --user-data "$USER_DATA" \
-    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-selfplay-from-d10ep15-spot},{Key=role,Value=wm-chess-selfplay}]" \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-selfplay-from-d10ep15-od},{Key=role,Value=wm-chess-selfplay}]" \
     --query 'Instances[0].[InstanceId,State.Name,InstanceLifecycle]' --output text
