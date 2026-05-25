@@ -1,9 +1,46 @@
-# 9×9 Go distillation — end-to-end demo result
+# 9×9 Go distillation results
+
+## Headline (2026-05-25 — 8×128 ResNet, 1.236M positions)
+
+The "full" training run finished 2026-05-22 (20 epochs on 32K KataGo
+self-play games, 1.236M positions, multipv=8 v400 teacher). Elo eval
+ran 2026-05-25 against KataGo at fixed visits:
+
+| ckpt | sims | opponent | win rate | Elo gap |
+|---|---:|---|---|---:|
+| ep 5 | 100 | KataGo @ v200 | 4/30 = 13% | **−325** [−500, −150] |
+| ep 11 | 100 | KataGo @ v200 | 14/30 = 47% | **−23** [−145, +99] |
+| **ep 15** | **100** | **KataGo @ v200** | **15/30 = 50%** | **0** [−122, +122] |
+| ep 19 | 100 | KataGo @ v50 | 10/30 = 33% | −120 [−249, +8] |
+| ep 19 | 800 | KataGo @ v200 | 15/30 = 50% | 0 [−122, +122] |
+
+**Training trajectory: +325 Elo from ep 5 to ep 15, then plateau.**
+The 8×128 net reached parity with KataGo at 200 visits in 15 epochs
+and stayed there for the remaining 5 epochs.
+
+**Sims sweep at ep 19**: sims=800 only added +23 Elo over sims=100
+(at the v200 anchor). Much smaller than the chess sims-amplification
+of +200+. Likely because (a) 9×9 has a smaller branching factor,
+(b) the agent's policy already matches the teacher's at the current
+strength.
+
+**vs the original spike below**: +27 Elo at the same anchor (v50),
++150 Elo at the harder v200 anchor. The 8×128 net on 1.236M
+positions is meaningfully stronger than the 4×64 spike on 5K
+positions. Most of the gain is the bigger network's capacity to
+fit the larger dataset.
+
+→ launcher: [`infra-eks/launchers/eval-go-9x9-8x128.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-go-9x9-8x128.sh)
+→ checkpoints: `s3://wm-chess-library-594561963943/go-9x9-mpv8-gpu-v400-20260521T1230Z/checkpoints/9x9-8x128-20260522T0625Z/`
+
+---
+
+# Spike (2026-05-20 — 4×64 ResNet, 5K positions)
 
 **Date:** 2026-05-20
 **Branch:** experiments/distill-go/
 
-## Headline
+## Spike headline
 
 Student wins **3 / 10** games against KataGo (`g170e-b20c256x2`) at 30
 visits each side.
