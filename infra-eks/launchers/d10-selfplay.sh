@@ -32,8 +32,8 @@ ACCOUNT_ID=594561963943
 IMAGE_REGION=us-east-1
 LAUNCH_REGION=us-east-1
 AMI=ami-027c3ae8019fc0d3a                # DL Base GPU AL2023 us-east-1
-SUBNET=subnet-00be06b9c01d8b036         # us-east-1c
-INSTANCE_TYPE=g6e.4xlarge                # 16 vCPU, 128 GB RAM, 1× L40S — fits in remaining us-east-1 OD quota
+SUBNET=subnet-00be06b9c01d8b036     # us-east-1c
+INSTANCE_TYPE=g6.4xlarge                # g6e.4xlarge out of capacity in every us-east-1 AZ
 INSTANCE_PROFILE=wm-chess-merge-instance-profile
 ECR=$ACCOUNT_ID.dkr.ecr.$IMAGE_REGION.amazonaws.com
 
