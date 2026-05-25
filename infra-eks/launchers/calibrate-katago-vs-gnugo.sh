@@ -66,7 +66,9 @@ docker run --rm \\
         set -ex
         export DEBIAN_FRONTEND=noninteractive
         apt-get update && apt-get install -y --no-install-recommends gnugo
-        export GNUGO_BIN=\$(which gnugo)
+        # gnugo lives in /usr/games on Ubuntu; not on PATH by default.
+        export GNUGO_BIN=/usr/games/gnugo
+        ls -l \$GNUGO_BIN
 
         cp /work-tmp/calibrate.py /work/experiments/distill-go/scripts/calibrate.py
 

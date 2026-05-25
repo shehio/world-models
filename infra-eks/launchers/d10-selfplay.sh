@@ -40,7 +40,10 @@ ECR=$ACCOUNT_ID.dkr.ecr.$IMAGE_REGION.amazonaws.com
 # Prior + output paths
 S3_BUCKET=wm-chess-library-594561963943
 S3_PREFIX=d10-mpv8-T1-g250000-20260513T0615Z
-INIT_FROM_S3=${INIT_FROM_S3:-s3://$S3_BUCKET/$S3_PREFIX/checkpoints/net-20x256/20260514T2332Z-full30M/distilled_epoch014.pt}
+# v3 resumes from v2's iter1 weights (negligible drift from the d10 ep15 seed
+# at LR=1e-5, ~64 selfplay games applied). Override INIT_FROM_S3 to relaunch
+# from the original seed instead.
+INIT_FROM_S3=${INIT_FROM_S3:-s3://$S3_BUCKET/$S3_PREFIX/selfplay/net-20x256/20260525T0948Z-selfplay-from-d10ep15/current.pt}
 RUN_ID=$(date -u +%Y%m%dT%H%MZ)-selfplay-from-d10ep15
 
 # Selfplay hparams (most are entrypoint-selfplay.sh defaults; called out
@@ -51,7 +54,11 @@ SIMS=800
 WORKERS=16                  # match g6e.4xlarge vCPU count (half of g6e.8xlarge)
 GAMES_PER_WORKER=2    # 2x to keep games-per-iter unchanged
 TRAIN_STEPS=200
-LR=1e-5                     # fine-tune-grade; 100× lower than distillation
+# LR journey: 1e-3 (v0, nuked the prior in 1 iter) → 1e-5 (v1/v2, too slow:
+# loss moved but Stockfish Elo signal would have taken many hours to surface)
+# → 1e-4 (v3, current). Middle ground between the broken 1e-3 and the over-
+# conservative 1e-5. Revert to 5e-5 if v3 also regresses.
+LR=1e-4
 TIME_BUDGET=86400            # 24h initial test
 EVAL_EVERY=1
 EVAL_GAMES=20
