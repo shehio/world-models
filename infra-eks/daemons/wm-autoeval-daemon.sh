@@ -30,26 +30,64 @@ ECR=$ACCOUNT_ID.dkr.ecr.$IMAGE_REGION.amazonaws.com
 INSTANCE_TYPE=g6.4xlarge   # 16 vCPU, 8 workers × 13 games ≈ 3x faster
 INSTANCE_PROFILE=wm-chess-merge-instance-profile   # IAM is global
 
-# Per-region settings — using a case in `region_config` instead of
+# Per-region/AZ settings — using a case in `region_config` instead of
 # associative arrays so this works on macOS bash 3.2 (no `declare -A`).
-# Try us-east-1 first; if it fails (e.g. VcpuLimitExceeded), retry in
-# eu-central-1 before giving up.
-# Each entry is "<region>:<market>" — fallback order. on-demand tried
-# before spot in each region so we get stability when capacity exists;
-# eu-central-1 spot is the safety net when both OD quotas are full
-# (e.g. when long-running deep-eval EC2s hold all OD G/VT vCPU).
-REGION_ORDER=(us-east-1:on-demand eu-central-1:on-demand eu-central-1:spot)
+#
+# Each entry is "<region>:<az>:<market>". The chain is tried in order;
+# first launch that succeeds wins. The pattern:
+#   1. OD in the cheapest/stable region first (when G/VT quota has room)
+#   2. Spot across multiple AZs to dodge g6.4xlarge capacity famines —
+#      the famine is usually localized to one or two AZs at a time.
+#
+# Empirical: us-east-1 OD G quota is 32 vCPU; one g6.4xlarge eval = 16,
+# plus running training boxes typically eat the rest. So OD is best-effort
+# and spot is the workhorse. Adding many spot AZs is cheap (each failed
+# launch is a fast API call) and gives us many shots at capacity.
+REGION_ORDER=(
+    # OD tier — first try, may fail on VcpuLimitExceeded.
+    us-east-1:1b:on-demand
+    eu-central-1:1a:on-demand
+    # Spot, eu-central-1 — capacity error message suggested 1b/1c.
+    eu-central-1:1b:spot
+    eu-central-1:1c:spot
+    eu-central-1:1a:spot
+    # Spot, us-east-1 — all 6 AZs.
+    us-east-1:1b:spot
+    us-east-1:1a:spot
+    us-east-1:1c:spot
+    us-east-1:1d:spot
+    us-east-1:1f:spot
+)
 
 region_config() {
-    # echoes "<subnet-id> <ami-id>" for the given region
-    case "$1" in
+    # Args: <region> <az>. Echoes "<subnet-id> <ami-id>" or empty on fail.
+    local region="$1"
+    local az="$2"
+    local ami subnet
+    case "$region" in
         us-east-1)
-            echo "subnet-042fb3c497e2631a7 ami-027c3ae8019fc0d3a" ;;
+            ami=ami-027c3ae8019fc0d3a
+            case "$az" in
+                1a) subnet=subnet-05af0889ba2b8947a ;;
+                1b) subnet=subnet-042fb3c497e2631a7 ;;
+                1c) subnet=subnet-00be06b9c01d8b036 ;;
+                1d) subnet=subnet-059b67fde3350d8b8 ;;
+                1e) subnet=subnet-06273e78bc829cb29 ;;
+                1f) subnet=subnet-04d064f932678aaa6 ;;
+                *)  echo ""; return ;;
+            esac ;;
         eu-central-1)
-            echo "subnet-0a4bed60 ami-01e9d13d4c5e54237" ;;
+            ami=ami-01e9d13d4c5e54237
+            case "$az" in
+                1a) subnet=subnet-0a4bed60 ;;
+                1b) subnet=subnet-fb7e6286 ;;
+                1c) subnet=subnet-fbab48b7 ;;
+                *)  echo ""; return ;;
+            esac ;;
         *)
-            echo "" ;;
+            echo ""; return ;;
     esac
+    echo "$subnet $ami"
 }
 
 # Buckets we watch (always us-east-1 — cross-region reads are fine).
@@ -62,14 +100,19 @@ log() { echo "[$(date -u +%H:%M:%S)] $*" | tee -a "$LOG"; }
 # Try launching an eval EC2 in $region. On success: echo instance id.
 # On failure: log + leave caller to decide whether to retry elsewhere.
 try_launch_in_region() {
-    local region_spec="$1"   # "<region>:<market>" e.g. eu-central-1:spot
+    local region_spec="$1"   # "<region>:<az>:<market>" e.g. eu-central-1:1b:spot
     local ckpt_s3="$2"
     local result_key="$3"
     local ckpt_basename="$4"
-    local region="${region_spec%%:*}"
-    local market="${region_spec#*:}"
+    # Parse "<region>:<az>:<market>" — read into three vars on colon.
+    local region az market
+    IFS=':' read -r region az market <<< "$region_spec"
     local cfg
-    cfg=$(region_config "$region")
+    cfg=$(region_config "$region" "$az")
+    if [ -z "$cfg" ]; then
+        log "  $region_spec unknown region/az combo"
+        return 1
+    fi
     local subnet="${cfg%% *}"
     local ami="${cfg##* }"
     local market_args=()
