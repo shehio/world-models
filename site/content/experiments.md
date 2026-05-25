@@ -318,24 +318,78 @@ far (ep 7 = 1,941) on the noisier sims=800 anchor. Early evidence
 that the smaller-net + lower-LR + heavier-regularization recipe is
 competitive.
 
-### sims=4,000 deep-read on R1 — the comparable-to-d10 numbers
+### sims=4,000 deep-read — the comparable-to-d10 numbers
 
 A second daemon
 ([`wm-deep-eval-daemon.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/daemons/wm-deep-eval-daemon.sh))
 fires sims=4,000 follow-ups on any ckpt whose sims=800 score crosses
-the threshold (currently 1,940). Two land so far:
+threshold (started at 1,940; dropped to 1,920 to catch R2 ckpts).
 
-| ckpt | sims=800 | sims=4,000 | sims=4,000 − sims=800 |
+| ckpt | sims=800 | sims=4,000 | Δ |
 |---|---:|---:|---:|
-| R1 ep 2 | 1,892 | 2,055 [1979, 2159] | **+163** |
-| R1 ep 7 | 1,941 | **2,146** [2060, 2285] | **+205** |
+| R1 ep 2 | 1,892 | 2,055 [1979, 2159] | +163 |
+| R1 ep 7 | 1,941 | **2,146** [2060, 2285] | **+205** ← R1 best |
+| R2 ep 6 | 1,922 | **2,123** [2041, 2252] | +201 |
+| R2 ep 7 | 1,922 | 2,109 [2028, 2232] | +187 |
+| R2 ep 12 | 1,925 | 2,029 [1956, 2126] | +104 |
 
-The +163/+205 Elo gap confirms search recovers progressively more on
-stronger ckpts. ep 7's sims=4,000 already puts d15 within striking
-distance of d10's 2,189 peak — −43 Elo, CIs overlap by ~100 Elo.
+The +160 to +200 Elo gap between sims=800 and sims=4,000 confirms
+search recovers real strength that sims=800 systematically
+underestimates. Surprise: R2 ep 12 (highest sims=800 result for R2)
+came in *lower* at sims=4,000 than ep 6/7 — the sims=800 spike was
+noise, not a real peak.
 
-R1 has 33 epochs remaining. If it follows the d10 arc (peak around
-ep 15), the d15 best is likely ahead of us.
+### R2 final outcome (30 epochs, finished 2026-05-25 01:45 UTC)
+
+R2 completed all 30 epochs cleanly. Per-ckpt sims=800 evals drained
+through ep 28 (ep 29's final is pending). The trajectory across
+epochs 13–28 stays in the 1,860–1,925 band — no upward drift after
+the early-epoch climb. R2 saturated around ep 6 in true-strength
+terms (sims=4,000 = 2,123), with later epochs trading noise without
+gain.
+
+### Head-to-head — d10 ep 15 vs R1 ep 7 at sims=4,000
+
+To check whether the +43 Elo Stockfish-anchored "gap" between
+d10's 2,189 and R1's 2,146 was real, we put the two networks in
+direct play with both using MCTS at sims=4,000. 104 games,
+alternating colors:
+
+| | result |
+|---|---|
+| d10 ep 15 wins | **0** |
+| draws | **104** |
+| R1 ep 7 wins | **0** |
+| Elo gap | **0** |
+| Score CI | [0.404, 0.596] |
+
+Every single game drew. The Stockfish-anchored "gap" was noise.
+**At sims=4,000, d10's top ckpt and R1's top ckpt are
+indistinguishable.** The d15 teacher didn't give us strength
+beyond d10's ceiling — but it also didn't underperform.
+
+→ code: [`h2h-d10-vs-d15.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/h2h-d10-vs-d15.sh) ·
+[`h2h_mp.py`](https://github.com/shehio/world-models/blob/main/experiments/selfplay/scripts/h2h_mp.py)
+
+### Verdict so far + what R1 v2 cosine is for
+
+**d15 (both R1 and R2) achieves parity with d10 but doesn't exceed
+it.** d10 peak = 2,189 sims=4,000; R1 best = 2,146; R2 best = 2,123.
+All three within ~70 Elo, CIs overlap heavily. The hypothesis "d15
+teacher should beat d10" is — at *constant* LR — not supported by
+the data.
+
+But R1's `train_history.json` revealed the bigger net (40×256) was
+*plateaued* at constant LR=1e-3 — loss frozen across ep 7–13. So the
+question becomes: was constant LR the bottleneck for 40×256 (and
+maybe also 20×256)?
+
+**R1 v2 (cosine LR + warmup)** is the answer-test for that question.
+Same 40×256 + same data + a real LR schedule (linear warmup 3
+epochs → cosine decay to 1e-5). Currently running on
+eu-central-1 OD as `i-0a6c44e043b2d241e` (after a first attempt
+hit an NVIDIA driver crash and had to be relaunched on a fresh
+host). First ckpt expected in ~3h; full run in ~85h.
 
 ### Where this leaves the project
 
