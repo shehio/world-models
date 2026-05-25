@@ -49,11 +49,11 @@ N_BLOCKS=20
 N_FILTERS=256
 SIMS=800
 WORKERS=16                  # match g6e.4xlarge vCPU count (half of g6e.8xlarge)
-GAMES_PER_WORKER=4    # 2x to keep games-per-iter unchanged
+GAMES_PER_WORKER=2    # 2x to keep games-per-iter unchanged
 TRAIN_STEPS=200
 LR=1e-5                     # fine-tune-grade; 100× lower than distillation
 TIME_BUDGET=86400            # 24h initial test
-EVAL_EVERY=4
+EVAL_EVERY=1
 EVAL_GAMES=20
 EVAL_SIMS=200
 
