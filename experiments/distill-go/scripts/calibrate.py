@@ -1,16 +1,31 @@
-"""Calibration match: KataGo@N vs GNU Go on 9x9 → derive KataGo's absolute Elo.
+"""Calibration match: KataGo@N vs an anchor opponent → derive KataGo's absolute Elo.
 
-Pins a known-strength external anchor (GNU Go, ~1800 Elo on the AlphaGo paper
-scale) and measures KataGo's Elo gap to it via head-to-head play. This lets
-us convert all our "student vs KataGo@N" deltas to absolute Elo.
+Two opponent kinds are supported, picked by --opponent:
 
-Usage (host):
-    KATAGO_BIN=$(which katago) \\
-    KATAGO_MODEL=/path/to/kata1-b18c384nbt-...bin.gz \\
-    KATAGO_CONFIG=/path/to/katago-analysis.cfg \\
-    GNUGO_BIN=$(which gnugo) \\
-    uv run --project experiments/distill-go python experiments/distill-go/scripts/calibrate.py \\
-        --katago-visits 200 --gnugo-level 10 --games 100 --board-size 9
+  gnugo
+      External GTP binary (`gnugo --mode gtp`). Anchor Elo = a literature
+      value (default 1800, AlphaGo paper scale).
+
+  katago
+      A weaker KataGo (same engine, lower --opponent-visits). Useful for
+      *chained* calibration when GNU Go is too weak to give an informative
+      head-to-head — e.g., KataGo@v200 swept GNU Go 100/0, so we re-anchor
+      via the chain  v200 ↔ v1 ↔ GNU Go.
+
+Reports KataGo (test side)'s implied absolute Elo using the anchor.
+
+Usage examples:
+
+    # Match A: KataGo@v1 (pure policy) vs GNU Go on 9x9.
+    uv run python experiments/distill-go/scripts/calibrate.py \\
+        --katago-visits 1 --opponent gnugo --gnugo-level 10 \\
+        --anchor-elo 1800 --games 100
+
+    # Match B: KataGo@v200 vs KataGo@v1 on 9x9. Set --anchor-elo to
+    # match A's *measured* KataGo@v1 absolute Elo.
+    uv run python experiments/distill-go/scripts/calibrate.py \\
+        --katago-visits 200 --opponent katago --opponent-visits 1 \\
+        --anchor-elo <from-match-A> --games 100
 """
 from __future__ import annotations
 
@@ -61,7 +76,6 @@ class GnuGoEngine:
         assert self._proc is not None and self._proc.stdin and self._proc.stdout
         self._proc.stdin.write(cmd + "\n")
         self._proc.stdin.flush()
-        # GTP reply: '= <body>\n\n' or '? <err>\n\n'
         body_lines: list[str] = []
         while True:
             line = self._proc.stdout.readline()
@@ -69,7 +83,6 @@ class GnuGoEngine:
                 raise RuntimeError(f"gnugo closed stdout while waiting for '{cmd}'")
             if line.startswith("=") or line.startswith("?"):
                 body_lines.append(line[1:].strip())
-                # consume the blank terminator
                 term = self._proc.stdout.readline()
                 if term.strip() != "":
                     body_lines.append(term.strip())
@@ -107,18 +120,22 @@ def score_to_elo_diff(score: float, eps: float = 1e-9) -> float:
 
 def play_one_game(
     kata: KataGoAnalysisEngine,
-    gnugo: GnuGoEngine,
+    gnugo: GnuGoEngine | None,
+    *,
+    opponent: str,
     board_size: int,
     komi: float,
-    katago_visits: int,
-    katago_color: int,
+    test_visits: int,
+    opponent_visits: int,
+    test_color: int,
     max_moves: int = 200,
 ) -> dict:
-    """One game KataGo vs GNU Go. katago_color ∈ {BLACK, WHITE}."""
+    """One game test-KataGo vs opponent. test_color ∈ {BLACK, WHITE}."""
     board = GoBoard(size=board_size, komi=komi)
     history_gtp: list[tuple[str, str]] = []
-    gnugo.setup(board_size, komi)
-    color_to_gtp = {BLACK: "B", WHITE: "W"}
+    if opponent == "gnugo":
+        assert gnugo is not None
+        gnugo.setup(board_size, komi)
 
     t0 = time.time()
     passes = 0
@@ -127,34 +144,36 @@ def play_one_game(
         if board.is_game_over:
             break
         to_move_color = "B" if board.to_move == BLACK else "W"
-        if board.to_move == katago_color:
+        if board.to_move == test_color:
             gtp_move = kata.best_move(
                 history_gtp, board_size=board_size,
-                visits=katago_visits, komi=komi, rules="tromp-taylor",
+                visits=test_visits, komi=komi, rules="tromp-taylor",
             )
         else:
-            gtp_move = gnugo.genmove(to_move_color)
+            if opponent == "gnugo":
+                gtp_move = gnugo.genmove(to_move_color)
+            else:  # opponent == "katago"
+                gtp_move = kata.best_move(
+                    history_gtp, board_size=board_size,
+                    visits=opponent_visits, komi=komi, rules="tromp-taylor",
+                )
         gtp_move = gtp_move.strip()
 
-        # Normalize KataGo/GNU Go output to local flat index.
         try:
             flat_idx = gtp_to_flat(gtp_move, board_size)
         except Exception:
             flat_idx = board.pass_move
 
-        # Legality guard — illegal moves become passes.
         legal_mask = board.legal_mask()
         if flat_idx >= len(legal_mask) or legal_mask[flat_idx] == 0:
             flat_idx = board.pass_move
-        # Canonicalize so 'resign'/illegal both surface as 'pass' to gnugo.
         canon_move = flat_to_gtp(flat_idx, board_size)
 
-        # Mirror to the opponent that didn't generate this move.
-        if board.to_move == katago_color:
-            # KataGo moved; tell gnugo.
+        # gnugo is stateful — mirror the test side's move to it. KataGo
+        # (both sides if opponent=katago) is queried per-position with the
+        # full history, so it's stateless.
+        if opponent == "gnugo" and board.to_move == test_color:
             gnugo.play(to_move_color, canon_move)
-        # if gnugo moved, nothing to tell KataGo — its analysis engine is
-        # stateless and takes the full history each query.
 
         history_gtp.append((to_move_color, canon_move))
         board.play(flat_idx)
@@ -164,14 +183,14 @@ def play_one_game(
 
     b_pts, w_pts = board.tromp_taylor_score()
     winner = BLACK if b_pts > w_pts else WHITE
-    katago_won = (winner == katago_color)
+    test_won = (winner == test_color)
     return {
-        "katago_color": "B" if katago_color == BLACK else "W",
+        "test_color": "B" if test_color == BLACK else "W",
         "ply": ply,
         "black_score": b_pts,
         "white_score": w_pts,
         "winner": "B" if winner == BLACK else "W",
-        "katago_won": bool(katago_won),
+        "test_won": bool(test_won),
         "elapsed_s": time.time() - t0,
     }
 
@@ -180,11 +199,16 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--board-size", type=int, default=9)
     p.add_argument("--komi", type=float, default=7.5)
-    p.add_argument("--katago-visits", type=int, default=200)
-    p.add_argument("--gnugo-level", type=int, default=10)
-    p.add_argument("--gnugo-anchor-elo", type=float, default=1800.0,
-                   help="Assumed Elo for GNU Go at the given level. Default 1800 "
-                        "follows the AlphaGo paper (Silver et al. 2016) calibration scale.")
+    p.add_argument("--katago-visits", type=int, default=200,
+                   help="visits for the KataGo side under test")
+    p.add_argument("--opponent", choices=["gnugo", "katago"], default="gnugo")
+    p.add_argument("--opponent-visits", type=int, default=1,
+                   help="visits for the opponent KataGo (only if --opponent katago)")
+    p.add_argument("--gnugo-level", type=int, default=10,
+                   help="gnugo --level (only if --opponent gnugo)")
+    p.add_argument("--anchor-elo", type=float, default=1800.0,
+                   help="Assumed absolute Elo of the opponent. For gnugo, default 1800 "
+                        "follows the AlphaGo paper (Silver et al. 2016).")
     p.add_argument("--games", type=int, default=100)
     p.add_argument("--max-moves", type=int, default=200)
     p.add_argument("--seed", type=int, default=0)
@@ -196,30 +220,38 @@ def main() -> int:
     gnugo_bin = os.environ.get("GNUGO_BIN", "gnugo")
 
     random.seed(args.seed)
-    print(f"katago: {katago_bin} @ {args.katago_visits}v", flush=True)
-    print(f"opponent: gnugo --level {args.gnugo_level} (anchor Elo = {args.gnugo_anchor_elo:.0f})", flush=True)
+    print(f"test:    KataGo @ {args.katago_visits}v", flush=True)
+    if args.opponent == "gnugo":
+        print(f"opponent: gnugo --level {args.gnugo_level} (anchor Elo = {args.anchor_elo:.0f})", flush=True)
+    else:
+        print(f"opponent: KataGo @ {args.opponent_visits}v (anchor Elo = {args.anchor_elo:.0f})", flush=True)
     print(f"games: {args.games}  board: {args.board_size}x{args.board_size}  komi: {args.komi}", flush=True)
-    print(f"max_moves: {args.max_moves}", flush=True)
     print("", flush=True)
 
     wins = 0
     t0 = time.time()
-    with KataGoAnalysisEngine(katago_bin, katago_model, katago_config) as kata, \
-         GnuGoEngine(gnugo_bin, level=args.gnugo_level) as gnugo:
+    gnugo_ctx = (
+        GnuGoEngine(gnugo_bin, level=args.gnugo_level)
+        if args.opponent == "gnugo"
+        else _NullCtx()
+    )
+    with KataGoAnalysisEngine(katago_bin, katago_model, katago_config) as kata, gnugo_ctx as gnugo:
         for g in range(args.games):
-            katago_color = BLACK if g % 2 == 0 else WHITE
+            test_color = BLACK if g % 2 == 0 else WHITE
             res = play_one_game(
-                kata, gnugo,
+                kata, gnugo if args.opponent == "gnugo" else None,
+                opponent=args.opponent,
                 board_size=args.board_size, komi=args.komi,
-                katago_visits=args.katago_visits,
-                katago_color=katago_color,
+                test_visits=args.katago_visits,
+                opponent_visits=args.opponent_visits,
+                test_color=test_color,
                 max_moves=args.max_moves,
             )
-            wins += int(res["katago_won"])
+            wins += int(res["test_won"])
             print(
-                f"game {g+1:>3}/{args.games}  katago={res['katago_color']}  "
+                f"game {g+1:>3}/{args.games}  test={res['test_color']}  "
                 f"ply={res['ply']:>3}  B={res['black_score']:>5.1f} W={res['white_score']:>5.1f}  "
-                f"winner={res['winner']}  katago_won={res['katago_won']}  "
+                f"winner={res['winner']}  test_won={res['test_won']}  "
                 f"({res['elapsed_s']:.1f}s)",
                 flush=True,
             )
@@ -230,33 +262,39 @@ def main() -> int:
     elo_diff = score_to_elo_diff(score)
     elo_lo = score_to_elo_diff(lo)
     elo_hi = score_to_elo_diff(hi)
-    katago_abs = args.gnugo_anchor_elo + elo_diff
-    abs_lo = args.gnugo_anchor_elo + elo_lo
-    abs_hi = args.gnugo_anchor_elo + elo_hi
+    test_abs = args.anchor_elo + elo_diff
+    abs_lo = args.anchor_elo + elo_lo
+    abs_hi = args.anchor_elo + elo_hi
     elapsed = time.time() - t0
 
     print("=" * 64, flush=True)
     print(
-        f"KataGo wins {wins}/{n}  score={score:.3f}  "
+        f"KataGo@{args.katago_visits}v wins {wins}/{n}  score={score:.3f}  "
         f"95% CI=[{lo:.3f}, {hi:.3f}]",
         flush=True,
     )
+    opp_label = (f"gnugo L{args.gnugo_level}" if args.opponent == "gnugo"
+                 else f"KataGo@{args.opponent_visits}v")
     print(
-        f"Elo diff (KataGo@{args.katago_visits}v − GNUGo L{args.gnugo_level}) "
+        f"Elo diff (KataGo@{args.katago_visits}v − {opp_label}) "
         f"≈ {elo_diff:+.0f}  95% CI=[{elo_lo:+.0f}, {elo_hi:+.0f}]",
         flush=True,
     )
-    print(
-        f"GNU Go anchor Elo = {args.gnugo_anchor_elo:.0f}",
-        flush=True,
-    )
+    print(f"Anchor Elo ({opp_label}) = {args.anchor_elo:.0f}", flush=True)
     print(
         f"Implied KataGo@{args.katago_visits}v absolute Elo "
-        f"≈ {katago_abs:.0f}  95% CI=[{abs_lo:.0f}, {abs_hi:.0f}]",
+        f"≈ {test_abs:.0f}  95% CI=[{abs_lo:.0f}, {abs_hi:.0f}]",
         flush=True,
     )
     print(f"total eval time: {elapsed:.1f}s", flush=True)
     return 0
+
+
+class _NullCtx:
+    def __enter__(self):
+        return None
+    def __exit__(self, *_exc):
+        return False
 
 
 if __name__ == "__main__":
