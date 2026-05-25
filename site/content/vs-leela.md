@@ -85,6 +85,59 @@ per move with parallel branch evaluation across GPU cores. Our
 "deep-search" eval uses 4,000 sims on a single GPU — meaningful, but
 not in the same regime.
 
+## Why Stockfish as Teacher, Not Leela?
+
+Leela is itself an AlphaZero-style network. Distilling from Leela
+would mean "make a smaller copy of Leela's network." That's a
+legitimate problem (model compression), but a *different* problem
+from the one this project is testing. The interesting question here
+is: **can the classical alpha-beta family of evaluation be transferred
+into the AlphaZero family of architecture?** Distilling from a
+classical engine (Stockfish) makes that question well-posed.
+
+Five concrete practical reasons too:
+
+1. **Speed at fixed quality.** Stockfish 17 at depth-15 multipv=8
+   labels a position in ~30–80ms on a c7a vCPU. Leela needs a GPU
+   inference per node — at the equivalent strength (~thousands of
+   sims/move) that's tens of milliseconds per position *per GPU*,
+   plus GPU cost. Generating 30-46M labels with Leela would have
+   been an order of magnitude more expensive.
+
+2. **MultiPV is native to Stockfish.** Stockfish's `MultiPV N`
+   option returns the top-N moves with their centipawn scores per
+   position. That's exactly the input our soft-target distillation
+   loss wants. Leela's natural output is MCTS visit counts, which
+   is a different distribution shape (we'd be approximating the same
+   distribution from the wrong-shape source).
+
+3. **CPU-bound, parallelizable, spot-cheap.** Stockfish labelling is
+   embarrassingly parallel across positions. Our datagen pods are
+   c7a/c7i spot instances on EKS — cheap, abundant, doesn't compete
+   with our training GPUs for capacity. Leela-as-labeller would put
+   the entire pipeline on GPU.
+
+4. **Deterministic targets.** Stockfish at fixed depth + multipv is
+   essentially deterministic — re-running on the same position gives
+   the same scores. Leela's MCTS visit counts have small run-to-run
+   variation that would add noise to the training signal.
+
+5. **The interesting bug-finding asymmetry.** When the student
+   (AlphaZero-architecture ResNet) underperforms the teacher
+   (classical Stockfish), the gap is *informative* — it tells us
+   whether MCTS-at-inference can recover what the network missed.
+   If we'd distilled from Leela, "student underperforms teacher"
+   would have no clean explanation: same family, same search
+   regime, just a smaller copy. The classical-to-NN transfer
+   forces the interesting questions about *how* search and
+   evaluation interact.
+
+The version pin (Stockfish 17, released 2024) was incidental — it's
+the version `apt install stockfish` ships on Amazon Linux 2023 as of
+the datagen runs. Stockfish's strength saturates well above d15 at
+modern versions, so the version itself isn't load-bearing for the
+results.
+
 ## What this Project Is Actually Testing
 
 How close can you get to a strong chess net with **distillation alone**
