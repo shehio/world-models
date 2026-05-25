@@ -163,6 +163,14 @@ tolerates a noisier optimizer.
 remaining 37 epochs. If R1 v2 ep 10–15 sims=800 lands clearly above
 R1 v1's 1,941 ceiling, cosine was the missing piece.
 
+**Damage.** Original R1 ran 32h (boot + ep 0–11) on `i-0baf68ab2fa93e155`
+(g6e.8xlarge spot, us-east-1a) before eviction, then 13h resume on
+`i-058bea691f419c69c` (us-east-1d) before manual kill. ~45h × ~$1.74/h
+spot = **~$78 in compute, with ep 6's 2,146 sims=4000 as the keep-able
+output**. The "discovery via observability" pattern paid for itself —
+without per-epoch `train_history.json` syncs we'd have thrown the
+whole run at it longer.
+
 ## 11 — Docker `$ECR` Escaped in Heredoc Killed the First R1 v2 Launch
 
 **Symptom.** R1 v2's first instance produced no checkpoints. The
@@ -181,7 +189,12 @@ image arg resolved to `/wm-chess-gpu:latest` — no registry prefix.
 **Fix.** Drop the backslash so the launcher-script heredoc interpolates
 `$ECR` at user-data generation time, giving the EC2 the full
 `594561963943.dkr.ecr.us-east-1.amazonaws.com/wm-chess-gpu:latest`.
-Two instances and ~$2 in wasted boot time to learn this.
+
+**Damage.** Two failed boots: `i-08bc4347aaa36e74a` (eu-central-1c
+g6e.8xlarge spot, manual launch) and `i-0874256bc9a24d7b1`
+(eu-central-1c g6e.8xlarge spot, watcher relaunch). Each ran ~2 min
+before the cleanup trap fired and self-terminated. **~$0.20 in EC2
+time + ~30 min of debugging.**
 
 ## 12 — Baked Docker Image Was Stale for h2h_mp.py
 
@@ -199,6 +212,12 @@ at runtime *before* invoking it. Cleaner than rebuilding the image
 for a one-script change. Same pattern works for any script the image
 ships pre-baked but main has since modified — used again for the
 cosine-LR `train.py` patch.
+
+**Damage.** First h2h instance `i-096d1209fdb836a99` (g6.4xlarge OD
+us-east-1) ran ~2 min then failed cleanly. Re-fired the launcher with
+the curl trampoline as `i-05a66aaaf5c27cffb` (g6.4xlarge OD us-east-1),
+which produced the actual 0/104/0 result in 6h 24min.
+**~$0.20 wasted + 6h delay on the headline H2H number.**
 
 ## 13 — Spot Eviction at ep 6 with No Optimizer Resume
 
@@ -220,6 +239,11 @@ new spot watcher (`wm-d15-run1-watcher.sh`) re-fires the launcher
 on eviction, costing ~58 min for dataset reload but zero model
 weight loss per eviction.
 
+**Damage.** Original R1 (`i-0baf68ab2fa93e155`) evicted after ep 6.
+Watcher fired the resume as `i-058bea691f419c69c` (us-east-1d spot)
+which trained ep 7–11 before manual kill. **~1h dataset reload =
+~$1.74**, the post-resume training itself was productive.
+
 ## 14 — Cancelled Spot Request Didn't Free Quota Immediately
 
 **Symptom.** After terminating R1 v1, every `RunInstances` call
@@ -235,6 +259,11 @@ count is released.
 **Fix.** `aws ec2 cancel-spot-instance-requests --spot-instance-request-ids <id>`
 explicitly. Then poll for state `cancelled` before retrying the
 launch. Adds ~30s but avoids the noisy quota errors.
+
+**Damage.** Orphaned request `sir-awgffx7m` (after `i-058bea691f419c69c`
+terminated) blocked R1 v2 cosine launch for ~10 min. **No $ cost,
+but a wasted 10-minute debug cycle and three "MaxSpotInstanceCountExceeded"
+errors that looked like a quota problem before we realized.**
 
 ## 15 — eu-central-1c Lost g6e.8xlarge Spot Capacity Mid-Run
 
@@ -256,6 +285,17 @@ spot-rover-style proactive placement scoring — already exists at
 `infra-eks/spot-rover/`, just not wired into the training launchers
 yet.
 
+**Damage.** R1 v2 cosine cycled through five g6e.8xlarge spot
+instances chasing capacity: `i-08bc4347aaa36e74a` and
+`i-0874256bc9a24d7b1` (eu-central-1c, both died on the docker bug
+above), `i-05726d09d2b5fcaed` (us-east-1d, evicted ~27 min into
+dataset load), `i-03610018666046c42` and `i-0eb7640cf94250fe8`
+(us-east-1d watcher relaunches, also evicted before ep 0),
+`i-0556fbe333082ead0` (us-east-1b, evicted within an hour). **0
+ckpts produced across all attempts. ~$15 in spot wastage** before
+giving up and switching to OD as `i-0a4c27118ff4e62ba`
+(eu-central-1 OD) the next morning.
+
 ## 16 — Autoeval Queue Stuck When Both OD Quotas Were Full
 
 **Symptom.** Run 2 ckpts ep 2/3/4 didn't get sims=800 evals for
@@ -275,6 +315,12 @@ spot). No slot anywhere.
 because R2 was on OD. Patch shipped in commit `2e809e7`. Drained
 the queue overnight.
 
+**Damage.** ~2h of stuck-queue while the patch was being written
+and shipped. R2 ep 2/3/4 evals delayed but eventually drained;
+**no $ cost** beyond the daemon's S3 list calls. The lesson
+was-cheap, the patch was-cheap, the consequence-was-cheap — a
+nice cluster of "just plumbing" wins.
+
 ## 17 — One Run 2 ckpt (ep 2) Never Got Evaluated
 
 **Symptom.** Run 2's `eval_results-distilled_epoch002.txt` is the
@@ -293,6 +339,31 @@ specifically: with 20+ other epochs evaluated, ep 2 isn't
 load-bearing for the trajectory.) Future improvement: have the
 daemon distinguish "permanently failed to claim" from "released
 on launch failure" and aggressively re-try the latter set.
+
+**Damage.** One missing data point in the R2 ep 0–29 sims=800
+trajectory. No $ cost — the daemon's S3 calls are negligible. The
+hole is visible in the R2 trajectory table on the
+[experiments page](/experiments/#d15-46m).
+
+## Session-Total Damage
+
+Adding up #10 through #17 from the 2026-05-22 → 2026-05-25 d15
+campaign:
+
+| Bucket | Burn |
+|---|---|
+| Spot wastage chasing capacity (#15) | ~$15 |
+| Failed boots from docker bug (#11, #12) | ~$0.40 |
+| Dataset reload after eviction (#13) | ~$1.74 |
+| Original R1 constant-LR run (#10) | ~$78 (kept ep 6 = 2,146 sims=4000) |
+| **Total** | **~$95** |
+
+Plus ~6h of headline-result delay (#12) and ~10 min of misdiagnosed
+quota errors (#14). The eventually-productive output: 50+ R2 ckpts,
+3 sims=4000 d15 measurements (R1 ep 1, R1 ep 7, R2 ep 6/7/12),
+1 H2H measurement, the cosine LR train.py patch, and an autoeval
+daemon with proper three-region fallback. **~$95 is cheap for an
+overhaul this thorough.**
 
 ## Takeaways for the Next Training Run
 

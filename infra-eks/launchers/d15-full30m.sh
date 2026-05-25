@@ -20,9 +20,9 @@ set -euo pipefail
 
 ACCOUNT_ID=594561963943
 IMAGE_REGION=us-east-1                   # ECR + S3 stay in us-east-1
-LAUNCH_REGION=us-east-1                  # spot quota free again; eu-central-1c sold out
-AMI=ami-027c3ae8019fc0d3a                # DL Base GPU AL2023 us-east-1
-SUBNET=subnet-042fb3c497e2631a7          # us-east-1b (use1-az4) — us-east-1d sold out by 22:51 UTC 5/24
+LAUNCH_REGION=eu-central-1               # OD: us-east-1 spot completely sold out for g6e.8xlarge after 4 evictions
+AMI=ami-01e9d13d4c5e54237                # DL Base GPU AL2023 eu-central-1
+SUBNET=subnet-0a4bed60                   # eu-central-1a default — R2 just freed the 32 vCPU OD slot
 INSTANCE_TYPE=g6e.8xlarge                # 32 vCPU, 256 GB RAM, 1× L40S
 INSTANCE_PROFILE=wm-chess-merge-instance-profile
 ECR=$ACCOUNT_ID.dkr.ecr.$IMAGE_REGION.amazonaws.com
@@ -96,7 +96,6 @@ aws ec2 run-instances --region $LAUNCH_REGION \
     --iam-instance-profile Name=$INSTANCE_PROFILE \
     --block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=300,VolumeType=gp3,DeleteOnTermination=true}' \
     --instance-initiated-shutdown-behavior terminate \
-    --instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}' \
     --user-data "$USER_DATA" \
-    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-d15-full46M-40x256-spot},{Key=role,Value=wm-chess-train}]" \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-d15-full46M-40x256-cosine-od},{Key=role,Value=wm-chess-train}]" \
     --query 'Instances[0].[InstanceId,State.Name,InstanceLifecycle]' --output text
