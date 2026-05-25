@@ -40,10 +40,10 @@ ECR=$ACCOUNT_ID.dkr.ecr.$IMAGE_REGION.amazonaws.com
 # Prior + output paths
 S3_BUCKET=wm-chess-library-594561963943
 S3_PREFIX=d10-mpv8-T1-g250000-20260513T0615Z
-# v3 resumes from v2's iter1 weights (negligible drift from the d10 ep15 seed
-# at LR=1e-5, ~64 selfplay games applied). Override INIT_FROM_S3 to relaunch
-# from the original seed instead.
-INIT_FROM_S3=${INIT_FROM_S3:-s3://$S3_BUCKET/$S3_PREFIX/selfplay/net-20x256/20260525T0948Z-selfplay-from-d10ep15/current.pt}
+# v4: clean restart from the d10 ep15 seed. v3's LR=1e-4 catastrophically
+# forgot Stockfish-style play (sims=800 vs UCI1800 dropped from 1996 seed
+# → 1643 in one iter, even though train loss + vs-random looked fine).
+INIT_FROM_S3=${INIT_FROM_S3:-s3://$S3_BUCKET/$S3_PREFIX/checkpoints/net-20x256/20260514T2332Z-full30M/distilled_epoch014.pt}
 RUN_ID=$(date -u +%Y%m%dT%H%MZ)-selfplay-from-d10ep15
 
 # Selfplay hparams (most are entrypoint-selfplay.sh defaults; called out
@@ -54,11 +54,16 @@ SIMS=800
 WORKERS=16                  # match g6e.4xlarge vCPU count (half of g6e.8xlarge)
 GAMES_PER_WORKER=2    # 2x to keep games-per-iter unchanged
 TRAIN_STEPS=200
-# LR journey: 1e-3 (v0, nuked the prior in 1 iter) → 1e-5 (v1/v2, too slow:
-# loss moved but Stockfish Elo signal would have taken many hours to surface)
-# → 1e-4 (v3, current). Middle ground between the broken 1e-3 and the over-
-# conservative 1e-5. Revert to 5e-5 if v3 also regresses.
-LR=1e-4
+# LR journey:
+#   v0 LR=1e-3: nuked the prior in 1 iter
+#   v1/v2 LR=1e-5: preserved seed (sims=800 = 1885 after 1 iter, slight dip
+#                  from 1996 raw seed but within noise)
+#   v3 LR=1e-4: catastrophic forgetting — sims=800 = 1643 after 1 iter,
+#               -353 from seed (train loss dropped, vs-random stayed 100%,
+#               but vs-Stockfish strength collapsed)
+#   v4 LR=1e-5: revert to the proven preserving rate. Slower per-iter
+#               progress, but at least won't go backwards.
+LR=1e-5
 TIME_BUDGET=86400            # 24h initial test
 EVAL_EVERY=1
 EVAL_GAMES=20
