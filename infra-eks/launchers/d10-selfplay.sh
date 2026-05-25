@@ -122,6 +122,7 @@ aws ec2 run-instances --region $LAUNCH_REGION \
     --iam-instance-profile Name=$INSTANCE_PROFILE \
     --block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=200,VolumeType=gp3,DeleteOnTermination=true}' \
     --instance-initiated-shutdown-behavior terminate \
+    --instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}' \
     --user-data "$USER_DATA" \
-    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-selfplay-from-d10ep15-od},{Key=role,Value=wm-chess-selfplay}]" \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-selfplay-from-d10ep15-spot},{Key=role,Value=wm-chess-selfplay}]" \
     --query 'Instances[0].[InstanceId,State.Name,InstanceLifecycle]' --output text
