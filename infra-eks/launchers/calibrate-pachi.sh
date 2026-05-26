@@ -96,6 +96,7 @@ aws ec2 run-instances --region $LAUNCH_REGION \
     --iam-instance-profile Name=$INSTANCE_PROFILE \
     --block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=80,VolumeType=gp3,DeleteOnTermination=true}' \
     --instance-initiated-shutdown-behavior terminate \
+    --instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}' \
     --user-data "$USER_DATA" \
     --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-go-calibrate-pachi-${STAMP}-od},{Key=role,Value=wm-go-calibration}]" \
     --query 'Instances[0].[InstanceId,State.Name,InstanceLifecycle]' --output text
