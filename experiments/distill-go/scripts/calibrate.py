@@ -292,7 +292,14 @@ def main() -> int:
         # Smoke-test the GTP opponent: send `name` and `version` before any
         # real game. If the engine is hung at startup we fail fast here
         # instead of after 3h of wallclock.
-        if args.opponent in ("gnugo", "pachi"):
+        #
+        # GnuGo 3.8 prints a startup banner to stdout that confuses the
+        # smoke loop (we observed `name` hanging 60s on 2026-05-26 against
+        # a fresh container), and the actual setup()/genmove() commands
+        # work fine — the prior chain calibration ran 100 games without
+        # a smoke test. So we only smoke pachi, which is the case we
+        # actually need to fail-fast for.
+        if args.opponent == "pachi":
             print(f"smoke: opponent name = {gtp_opp._send('name')!r}", flush=True)
             print(f"smoke: opponent version = {gtp_opp._send('version')!r}", flush=True)
 
