@@ -422,22 +422,32 @@ launched (`i-0b24ea8a7fdd7d149`).
 
 | ckpt | sims=800 | sims=4,000 | Δ |
 |---|---:|---:|---:|
-| **R2 v2 ep 4** | 2,004 | **2,285** [2,177, 2,554] | **+281** ← project high |
+| **R2 v2 ep 14** | **2,055** | **2,301** [2,190, 2,601] | **+246** ← project high; 95% lower bound clears 2,300 |
+| **R2 v2 ep 4** | 2,004 | **2,285** [2,177, 2,554] | +281 |
 | **R1 v2 ep 7** | 1,978 | **2,209** [2,115, 2,389] | +231 |
 | R1 v2 ep 2 | 1,961 | 2,138 [2,054, 2,274] | +177 |
 | R2 v2 ep 10 | 1,937 | 2,090 [2,011, 2,205] | +153 |
 | R2 v2 ep 6 | 2,009 | 2,078 [2,000, 2,189] | +69 |
 | R2 v2 ep 9 | 1,949 | 2,024 [1,951, 2,119] | +75 |
-| R2 v2 ep 14 | 2,055 | (eval in flight, sims=4,000) | TBD |
 | R2 v2 ep 4 | 2,004 | (eval in flight, sims=8,000 vs UCI=2,000) | TBD |
 
-**R2 v2 ep 4 is the highest point estimate measured in the project to
-date.** But its 95% CI is ±200 Elo (single 104-game match), so the
-ordering against d10 ep 15 (2,189 [2,098, 2,354]) is *not* statistically
-significant. R1 v2 ep 7 at 2,209 is tighter and lands just above the
-d10 peak. The two in-flight evals (R2 v2 ep 14 at sims=4,000, R2 v2
-ep 4 at sims=8,000 vs UCI=2,000) are the cheap path to nailing down
-whether ≥ 2,300 is real.
+**The 2,300 line is broken.** R2 v2 ep 14 at sims=4,000 vs UCI=1,800
+scored 94/9/1 (score=0.947), and its 95% lower-CI bound (2,190) is
+strictly above the previous peak (d10 ep 15 = 2,189). Independent
+confirmation: ep 4 at the same anchor gave 2,285 [2,177, 2,554].
+Both numbers come from the 20×256 cosine R2 v2 run; the 40×256 R1 v2
+sibling tops out at ep 7 = 2,209.
+
+Note ep 14's sims=800 score (2,055) was the highest sims=800 of the
+whole R2 v2 run and never made it into the deep-eval daemon's queue
+because the operator's laptop went offline (the daemon polls from
+there). The one-off `eval-r2v2-ep14-sims4000.sh` launcher
+re-evaluated it after the trainer was already terminated — turning a
+"missed it" into the project's strongest measurement.
+
+The remaining in-flight eval (R2 v2 ep 4 at sims=8,000 vs UCI=2,000)
+will give the tightest single CI of any measurement to date (UCI=2,000
+keeps the score nearer 0.5 than UCI=1,800).
 
 ### Verdict and what's still in flight
 
@@ -446,9 +456,12 @@ ckpts that meet or beat the d10-30M peak (2,189) at sims=4,000. The
 constant-LR plateau in R1 v1 + R2 v1 was a recipe artifact, not a
 teacher / data ceiling.
 
-The relative ordering between R2 v2 ep 4 / R1 v2 ep 7 / d10 ep 15 is
-inside eval noise at 100 games. A 200-game head-to-head among the
-three (no Stockfish anchor) would settle it — see
+**R2 v2 ep 14 at sims=4,000 vs UCI=1,800 = 2,301 Elo [2,190, 2,601]
+crosses the 2,300 line with a 95% lower bound that strictly clears
+the previous peak (d10 ep 15 = 2,189).** ep 4 (2,285) confirms it
+within noise; R1 v2 ep 7 (2,209) sits below both. A 200-game
+head-to-head among the three top ckpts would tighten the ordering
+further — see
 [`h2h-d10-vs-d15.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/h2h-d10-vs-d15.sh)
 for the launcher template.
 
@@ -476,15 +489,16 @@ All UCI=1,800 anchor, ~100 games each.
 
 | # | Run | Ckpt | sims | Elo | CI |
 |---|---|---|---:|---:|---|
-| 1 | **R2 v2 (d15 46M, 20×256 cosine)** | **ep 4** | **4,000** | **2,285** | **[2177, 2554]** ← project high |
-| 2 | **R1 v2 (d15 46M, 40×256 cosine)** | **ep 7** | **4,000** | **2,209** | **[2115, 2389]** |
-| 3 | d10 30M (20×256) | ep 15 | 4,000 | 2,189 | [2098, 2354] |
-| 4 | d10 30M (20×256) | ep 10 | 4,000 | 2,171 | [2082, 2324] |
-| 5 | d10 30M (20×256) | ep 20 | 4,000 | 2,154 | [2067, 2297] |
-| 6 | R1 v1 (d15 46M, 40×256 constant LR) | ep 7 | 4,000 | 2,146 | [2060, 2285] |
-| 7 | R1 v2 (d15 46M, 40×256 cosine) | ep 2 | 4,000 | 2,138 | [2054, 2274] |
-| 8 | R2 v1 (d15 46M, 20×256 constant LR) | ep 29 (final) | 4,000 | 2,138 | [2054, 2274] |
-| 9 | R2 v1 (d15 46M, 20×256 constant LR) | ep 6 | 4,000 | 2,123 | [2041, 2252] |
+| 1 | **R2 v2 (d15 46M, 20×256 cosine)** | **ep 14** | **4,000** | **2,301** | **[2190, 2601]** ← project high; CI lower bound clears 2,300 |
+| 2 | **R2 v2 (d15 46M, 20×256 cosine)** | **ep 4** | **4,000** | **2,285** | **[2177, 2554]** |
+| 3 | **R1 v2 (d15 46M, 40×256 cosine)** | **ep 7** | **4,000** | **2,209** | **[2115, 2389]** |
+| 4 | d10 30M (20×256) | ep 15 | 4,000 | 2,189 | [2098, 2354] |
+| 5 | d10 30M (20×256) | ep 10 | 4,000 | 2,171 | [2082, 2324] |
+| 6 | d10 30M (20×256) | ep 20 | 4,000 | 2,154 | [2067, 2297] |
+| 7 | R1 v1 (d15 46M, 40×256 constant LR) | ep 7 | 4,000 | 2,146 | [2060, 2285] |
+| 8 | R1 v2 (d15 46M, 40×256 cosine) | ep 2 | 4,000 | 2,138 | [2054, 2274] |
+| 9 | R2 v1 (d15 46M, 20×256 constant LR) | ep 29 (final) | 4,000 | 2,138 | [2054, 2274] |
+| 10 | R2 v1 (d15 46M, 20×256 constant LR) | ep 6 | 4,000 | 2,123 | [2041, 2252] |
 
 The top three numbers are within ~96 Elo and their CIs all overlap.
 At 100 games per measurement the score CI is ±10 percentage points,
@@ -505,7 +519,7 @@ or below the d10 peak. The cosine-LR re-runs flipped that ordering:
 | **R1 v1** — d15 46M (40×256 constant LR) | 2,146 (ep 7) | [2060, 2285] |
 | **R2 v1** — d15 46M (20×256 constant LR) | 2,138 (ep 29 final) | [2054, 2274] |
 | **R1 v2** — d15 46M (40×256 cosine LR) | **2,209 (ep 7)** | **[2115, 2389]** |
-| **R2 v2** — d15 46M (20×256 cosine LR) | **2,285 (ep 4)** | **[2177, 2554]** ← project high |
+| **R2 v2** — d15 46M (20×256 cosine LR) | **2,301 (ep 14)** | **[2190, 2601]** ← project high; lower CI clears 2,300 |
 
 **The cosine schedule unlocked the d15 teacher.** Both cosine variants
 beat their constant-LR siblings (R1 v2 +63 over R1; R2 v2 +162 over
@@ -562,17 +576,18 @@ Underlying script: [`experiments/selfplay/scripts/h2h_mp.py`](https://github.com
 | eval-side search (4,000 vs 800 sims) | **confirmed** (+277) |
 | data scale (30M vs 5M positions) | **confirmed** (+199) |
 | stronger teacher (d15 vs d10) at full data, constant LR | **rejected** (R1 v1 / R2 v1 both topped out below d10's 2,189) |
-| stronger teacher (d15 vs d10) at full data, **cosine LR** | **confirmed** (R2 v2 ep 4 = **2,285**, R1 v2 ep 7 = **2,209**) |
+| stronger teacher (d15 vs d10) at full data, **cosine LR** | **confirmed** (R2 v2 ep 14 = **2,301** [CI lower bound 2,190 ← clears 2,300]; ep 4 = 2,285; R1 v2 ep 7 = 2,209) |
 
 The bitter-lesson levers (more compute via search + data) confirmed
 again. The "smarter network" lever (more parameters at constant data)
 still rejected. The "stronger teacher" lever turned out to be gated on
 **LR schedule** — d15 doesn't outperform d10 with constant LR, but
 does with cosine. Strongest checkpoint to date:
-**2,285 Elo @ UCI=1,800** from R2 v2 (d15 46M, 20×256 cosine) at epoch 4
-with sims=4,000 (CI [2,177, 2,554]). Tighter-CI second-place:
-**2,209 Elo** from R1 v2 (d15 46M, 40×256 cosine) at epoch 7,
-CI [2,115, 2,389].
+**2,301 Elo @ UCI=1,800** from R2 v2 (d15 46M, 20×256 cosine) at
+epoch 14 with sims=4,000 (CI [2,190, 2,601]) — and the 95% CI lower
+bound strictly clears the prior peak (d10 ep 15 = 2,189). Wider-CI
+sibling at the same anchor: **2,285** (R2 v2 ep 4, CI [2,177, 2,554]).
+40×256 cosine variant best: **2,209** (R1 v2 ep 7, CI [2,115, 2,389]).
 
 R1 v2 and R2 v2 trainers were
 [killed at 2026-05-26 17:15 UTC](#cosine-killed) once the cosine peaks

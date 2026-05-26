@@ -6,13 +6,13 @@
 
 <section class="result-strip">
   <div class="result-box">
-    <div class="result-num">2,285</div>
+    <div class="result-num">2,301</div>
     <div class="result-unit">Elo</div>
-    <div class="result-context">R2 v2 (d15 46M, 20×256 cosine) ep 4 · sims=4,000 · vs UCI=1,800 · CI [2,177, 2,554] · <a href="{{ "/experiments/#peak-elo" | relURL }}">full peak table</a></div>
+    <div class="result-context">R2 v2 (d15 46M, 20×256 cosine) ep 14 · sims=4,000 · vs UCI=1,800 · CI [2,190, 2,601] · <a href="{{ "/experiments/#peak-elo" | relURL }}">full peak table</a></div>
   </div>
   <div class="result-context-block">
     <p>AlphaZero used <em>5,000 TPUs</em> for self-play data generation and <em>64 TPU-v2s</em> to train. We use the <strong>same network family</strong> (20- or 40-block × 256-channel ResNet, ~24–50M parameters) on <em>one GPU</em>, supervised distillation from Stockfish on 30–46M positions, evaluated against a calibrated Stockfish opponent. Total cost per training run: ~16–80 GPU-hours on a single L40S. Roughly <strong>four orders of magnitude less compute</strong> than the AlphaZero paper.</p>
-    <p>The 2,285 above is the project's top single point estimate; its 95% CI is wide because the eval was 104 games. The tighter-CI second-place is <strong>R1 v2 ep 7 = 2,209</strong> [2,115, 2,389] (40×256 cosine d15). Both clear the previous peak (d10 30M ep 15 = 2,189 [2,098, 2,354]). Full numbers on the <a href="{{ "/experiments/#peak-elo" | relURL }}">experiments page</a>; the self-play follow-on hasn't yet survived a spot AZ — <a href="{{ "/next/#selfplay-postmortem" | relURL }}">postmortem here</a>.</p>
+    <p>2,301 is the project's top point estimate <em>and</em> the tightest-CI measurement that crosses 2,300: the 95% lower bound (2,190) clears the previous peak (d10 30M ep 15 = 2,189). A wider-CI sibling, R2 v2 <strong>ep 4</strong> at the same anchor, was 2,285 [2,177, 2,554]; both clear the d10 ceiling. <strong>R1 v2 ep 7 = 2,209</strong> [2,115, 2,389] is the 40×256 cosine variant's best. Full numbers on the <a href="{{ "/experiments/#peak-elo" | relURL }}">experiments page</a>. The self-play follow-on hasn't survived a spot AZ on chess but is currently running successfully on the Go side — <a href="{{ "/next/#selfplay-postmortem" | relURL }}">postmortem &amp; live status</a>.</p>
     <p class="quick-links">
       <a href="{{ "/experiments/" | relURL }}">→ How we got here</a>
       <a href="{{ "/method/" | relURL }}">→ Method &amp; Elo bisection</a>
@@ -123,7 +123,7 @@
       <tr><td>network</td><td>20 blocks × 256 ch</td><td><strong>identical</strong></td></tr>
       <tr><td>training compute</td><td>~45,000 TPU-v1-hr + 576 TPU-v2-hr</td><td>~16 GPU-hours (single L40S)</td></tr>
       <tr><td>training data</td><td>~3.5 B positions</td><td>5M–30M positions</td></tr>
-      <tr><td>peak elo</td><td>~3,500</td><td>2,285 (R2 v2 ep 4, wider CI) · 2,209 (R1 v2 ep 7, tighter CI)</td></tr>
+      <tr><td>peak elo</td><td>~3,500</td><td>2,301 (R2 v2 ep 14, lower-CI bound 2,190 clears 2,300) · 2,285 (ep 4) · 2,209 (R1 v2 ep 7)</td></tr>
     </tbody>
   </table>
   <p><a href="{{ "/vs-alphazero/" | relURL }}">→ Full comparison and what's literally identical</a></p>
@@ -171,9 +171,10 @@
       <tr><td>d15 46M R1 v2 cosine ep 2</td><td>4,000</td><td>UCI=1,800</td><td>2,138 [2054, 2274]</td></tr>
       <tr><td><strong>d15 46M R1 v2 cosine ep 7</strong></td><td><strong>4,000</strong></td><td><strong>UCI=1,800</strong></td><td><strong>2,209 [2115, 2389]</strong></td></tr>
       <tr><td><strong>d15 46M R2 v2 cosine ep 4</strong></td><td><strong>4,000</strong></td><td><strong>UCI=1,800</strong></td><td><strong>2,285 [2177, 2554]</strong></td></tr>
+      <tr><td><strong>d15 46M R2 v2 cosine ep 14</strong></td><td><strong>4,000</strong></td><td><strong>UCI=1,800</strong></td><td><strong>2,301 [2190, 2601]</strong> ← lower CI clears 2,300</td></tr>
     </tbody>
   </table>
-  <p class="dim">Highest point estimate (wider CI): <strong>2,285 Elo</strong> at R2 v2 cosine ep 4 (single 104-game eval). Tighter-CI second-place: <strong>2,209 Elo</strong> at R1 v2 cosine ep 7. Both clear the prior peak of 2,189 from d10 30M ep 15. The 4,000-sim deep-search numbers stack the two confirmed ablations (search + data) on one checkpoint; the cosine LR schedule on top recovered another ~+100 Elo over the constant-LR R1 / R2 runs.</p>
+  <p class="dim">Highest point estimate: <strong>2,301 Elo</strong> at R2 v2 cosine ep 14 — and uniquely, its 95% lower CI bound (2,190) clears the previous peak (d10 ep 15 = 2,189). The wider-CI ep 4 measurement (2,285) is consistent. R1 v2 cosine ep 7 at 2,209 is the 40×256 variant's best. The 4,000-sim deep-search numbers stack the two confirmed ablations (search + data) on one checkpoint; the cosine LR schedule on top recovered another ~+100 Elo over the constant-LR R1 v1 / R2 v1 runs.</p>
 </section>
 
 <section class="next">

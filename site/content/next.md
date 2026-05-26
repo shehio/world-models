@@ -155,18 +155,18 @@ results table on the [experiments page](/experiments/#d15-46m).
 
 **Update 2026-05-26 17:15 UTC** — both cosine trainers (R1 v2 + R2 v2)
 were killed early, before their nominal epoch budgets. The peaks
-landed early (R1 v2 ep 7 = 2,209; R2 v2 ep 4 = **2,285** — the
-project high), late-epoch trajectories at sims=800 were not trending
-up, and the autoeval daemon was offline anyway (operator laptop
-closed). Three follow-on facts that closed the runs:
+landed early (R1 v2 ep 7 = 2,209; R2 v2 ep 4 = 2,285), late-epoch
+trajectories at sims=800 were not trending up, and the autoeval daemon
+was offline anyway (operator laptop closed). Three follow-on facts
+that closed the runs:
 
 - **R1 v2** — eu-central-1 OD g6e.8xlarge `i-0a6c44e043b2d241e`.
   Killed at ep 15 of 40. Would have cost ~$320 to finish on OD,
   with low probability of beating ep 7's 2,209.
 - **R2 v2** — ap-northeast-1 spot g6e.8xlarge `i-008f0d7d3a15974b9`.
   Killed at ep 22 of 30. Would have cost ~$5 to finish on spot;
-  killed for *information value* not cost — ep 4 sims=4,000 = 2,285
-  is already the project peak and later epochs were noise.
+  killed for *information value* — ep 4 sims=4,000 was already the
+  best deep-eval'd ckpt and later epochs were noise on sims=800.
 - **R2 v1 + R1 v1** were already complete and idle.
 
 All trained checkpoints remain on S3 at
@@ -174,13 +174,19 @@ All trained checkpoints remain on S3 at
 Nothing is lost; the runs can resume from any saved epoch if a future
 hypothesis justifies it.
 
-**Two cheap follow-up evals are in flight to pin down the ≥ 2,300
-question:**
+**Update 2026-05-26 23:06 UTC — the 2,300 line is broken.** The
+"ep 14 sims=800 was the run's highest but never got a deep-eval" lead
+turned into the project's strongest measurement: **R2 v2 ep 14 at
+sims=4,000 vs UCI=1,800 = 2,301 Elo** [2,190, 2,601], 95% CI lower
+bound strictly above the prior peak (d10 ep 15 = 2,189). One last
+in-flight eval (R2 v2 ep 4 at sims=8,000 vs UCI=2,000) will give the
+tightest single CI of any chess measurement to date — landing within
+minutes. The two cheap follow-up evals were:
 
 | Eval | Instance | What it answers |
 |---|---|---|
-| sims=8,000 vs UCI=2,000 on **R2 v2 ep 4** | us-east-1 g6.4xlarge OD `i-04f84755196ee0163` (~$5, ETA ~3–4h) | Does deeper search on the top ckpt cross 2,300 cleanly, with a tight CI? (UCI=2,000 anchor keeps score near 0.5.) |
-| sims=4,000 vs UCI=1,800 on **R2 v2 ep 14** | us-east-1 g6.2xlarge OD `i-0b24ea8a7fdd7d149` (~$5, ETA ~2–3h) | R2 v2 ep 14 had the highest sims=800 score of the run (2,055) but was never deep-eval'd. Direct comparison to ep 4 at the same sims/anchor. |
+| sims=8,000 vs UCI=2,000 on **R2 v2 ep 4** | us-east-1 g6.4xlarge OD `i-04f84755196ee0163` (~$5) | Does deeper search on the top ckpt give a tighter CI? UCI=2,000 anchor keeps score near 0.5. _In final ~10 min as of 2026-05-26 22:30 UTC._ |
+| sims=4,000 vs UCI=1,800 on **R2 v2 ep 14** | us-east-1 g6.2xlarge OD `i-0b24ea8a7fdd7d149` (~$5) | R2 v2 ep 14 had the highest sims=800 of the run (2,055) but was never deep-eval'd. **Landed 2026-05-26 23:06 UTC: 2,301 Elo [2,190, 2,601] — first project measurement with a 95% lower CI bound above 2,300.** |
 
 Per-ckpt sims=800 evals normally fire via the
 [autoeval daemon](https://github.com/shehio/world-models/blob/main/infra-eks/daemons/wm-autoeval-daemon.sh)

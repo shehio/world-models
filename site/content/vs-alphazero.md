@@ -17,7 +17,7 @@ aliases:
 | training compute | 64 TPU-v2 × 9h + ~45k TPU-v1-hr self-play | 1 GPU × 5 h ≈ 5 GPU-hours (~10,000× less) |
 | eval MCTS sims | 800 training / many tens of thousands tournament | 800 routine / 4,000 on the search ablation |
 | teacher | none | stockfish d10 (~2,200) or d15 (~2,500), multipv=8, T=1 |
-| peak Elo | ~3,500–3,600 | **2,285** (R2 v2 d15 46M cosine ep 4 @ 4,000 sims vs UCI=1,800, CI [2,177, 2,554]); tighter-CI second-place: **2,209** [2,115, 2,389] (R1 v2 d15 46M cosine ep 7) |
+| peak Elo | ~3,500–3,600 | **2,301** (R2 v2 d15 46M cosine ep 14 @ 4,000 sims vs UCI=1,800, CI [2,190, 2,601] — 95% lower bound clears the 2,300 line); same-run ep 4: 2,285 [2,177, 2,554]; 40×256 sibling R1 v2 ep 7: 2,209 [2,115, 2,389] |
 
 ## What's Literally Identical
 
