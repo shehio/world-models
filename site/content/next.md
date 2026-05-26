@@ -145,30 +145,50 @@ which is not a meaningful improvement target. At high sims, MCTS
 produces a sharply better policy than the prior. So spend the
 expensive sims on the positions whose targets you'll actually use.
 
-## Also In Flight — d15 at Full Data Scale, Cosine LR
+## d15-46M Trainers — Killed Early, Followed By Focused Evals {#d15-trainers-killed}
 
 The data ablation said +199 Elo from a 6× larger dataset *with a weaker
 teacher* (d10). The natural next step was to combine the strongest
-teacher (d15) with the same data scale.
+teacher (d15) with the same data scale, which became the d15 46M
+2×2 ablation: R1/R2 (network capacity) × v1/v2 (LR schedule). Full
+results table on the [experiments page](/experiments/#d15-46m).
 
-**Update 2026-05-26** — the constant-LR runs (R1 + R2) both topped out
-at or below the d10 peak. Cosine-LR follow-ons (R1 v2 + R2 v2) now
-take both d15 variants **past** d10's 2,189:
+**Update 2026-05-26 17:15 UTC** — both cosine trainers (R1 v2 + R2 v2)
+were killed early, before their nominal epoch budgets. The peaks
+landed early (R1 v2 ep 7 = 2,209; R2 v2 ep 4 = **2,285** — the
+project high), late-epoch trajectories at sims=800 were not trending
+up, and the autoeval daemon was offline anyway (operator laptop
+closed). Three follow-on facts that closed the runs:
 
-- **R1 v2 (40×256, cosine 1e-3 → 1e-5, 3-ep warmup)** — eu-central-1
-  OD g6e.8xlarge `i-0a6c44e043b2d241e`. At epoch 15 of 40; ep 7 at
-  sims=4,000 = **2,209 Elo** [2115, 2389].
-- **R2 v2 (20×256, cosine 5e-4 → 1e-5, 3-ep warmup)** — ap-northeast-1
-  (Tokyo) spot g6e.8xlarge `i-008f0d7d3a15974b9` (Tokyo because
-  us-east-1 spot was saturated). At epoch 22 of 30; ep 4 at sims=4,000
-  = **2,285 Elo** [2177, 2554] — new project high (but the widest CI
-  in the table).
+- **R1 v2** — eu-central-1 OD g6e.8xlarge `i-0a6c44e043b2d241e`.
+  Killed at ep 15 of 40. Would have cost ~$320 to finish on OD,
+  with low probability of beating ep 7's 2,209.
+- **R2 v2** — ap-northeast-1 spot g6e.8xlarge `i-008f0d7d3a15974b9`.
+  Killed at ep 22 of 30. Would have cost ~$5 to finish on spot;
+  killed for *information value* not cost — ep 4 sims=4,000 = 2,285
+  is already the project peak and later epochs were noise.
+- **R2 v1 + R1 v1** were already complete and idle.
 
-Per-ckpt sims=800 evals fire via the autoeval daemon when it's
-running; ckpts crossing 1,940 trigger a sims=4,000 deep-read via the
+All trained checkpoints remain on S3 at
+`s3://wm-chess-library-594561963943/d15-mpv8-T1-g250000-20260519T0412Z/checkpoints/`.
+Nothing is lost; the runs can resume from any saved epoch if a future
+hypothesis justifies it.
+
+**Two cheap follow-up evals are in flight to pin down the ≥ 2,300
+question:**
+
+| Eval | Instance | What it answers |
+|---|---|---|
+| sims=8,000 vs UCI=2,000 on **R2 v2 ep 4** | us-east-1 g6.4xlarge OD `i-04f84755196ee0163` (~$5, ETA ~3–4h) | Does deeper search on the top ckpt cross 2,300 cleanly, with a tight CI? (UCI=2,000 anchor keeps score near 0.5.) |
+| sims=4,000 vs UCI=1,800 on **R2 v2 ep 14** | us-east-1 g6.2xlarge OD `i-0b24ea8a7fdd7d149` (~$5, ETA ~2–3h) | R2 v2 ep 14 had the highest sims=800 score of the run (2,055) but was never deep-eval'd. Direct comparison to ep 4 at the same sims/anchor. |
+
+Per-ckpt sims=800 evals normally fire via the
+[autoeval daemon](https://github.com/shehio/world-models/blob/main/infra-eks/daemons/wm-autoeval-daemon.sh)
+when the operator laptop is on; ckpts crossing 1,940 trigger a
+sims=4,000 deep-read via the
 [`wm-deep-eval-daemon`](https://github.com/shehio/world-models/blob/main/infra-eks/daemons/wm-deep-eval-daemon.sh).
-Per-epoch numbers and trajectory on the
-[experiments page](/experiments/#d15-46m).
+With the laptop currently offline, the two evals above were launched
+as one-shot scripts.
 
 ## The 2,500 Ceiling — What's in the Way and Why
 

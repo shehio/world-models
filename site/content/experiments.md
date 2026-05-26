@@ -277,23 +277,60 @@ flight at the time. It finished — 426K games / 45.9M positions of
 Stockfish d15 multipv=8 at temperature 1, the 1.5× scale-up of the
 d10-30M corpus that produced the prior peak.
 
-Two parallel training variants ran on the same dataset:
+### The 2×2 — R1/R2 × v1/v2 {#r1-r2-v1-v2-matrix}
 
-| variant | net | LR | wd | batch | epochs | region/market |
-|---|---|---|---|---:|---:|---|
-| **R1 — bigger net** | 40×256 (~50M) | 1e-3 | 1e-4 | 1024 | 40 | us-east-1 spot g6e.8xlarge |
-| **R2 — regularization-leaning** | 20×256 (~24M) | 5e-4 | 1e-3 | 2048 | 30 | eu-central-1 OD g6e.8xlarge |
+The d15-46M training rolled out as a 2×2 ablation on the same dataset.
+The two axes are *network capacity* and *LR schedule*:
 
-R1 mirrors the original "throw capacity at it" instinct. R2 mirrors
-d10's shape (20×256) but with slower LR and 10× weight decay — the
-hypothesis that a smaller model trained less aggressively can match
-the bigger one on the d15 soft signal.
+|  | **v1 — constant LR** | **v2 — cosine LR + 3-ep warmup → 1e-5** |
+|---|---|---|
+| **R1 = bigger net** (40×256, ~50M params, batch 1024) | **R1 v1** — LR=1e-3 flat, wd=1e-4. us-east-1 spot g6e.8xlarge. Done. **Peak: 2,146 @ ep 7 sims=4,000** (CI [2,060, 2,285]). | **R1 v2** — cosine 1e-3 → 1e-5. eu-central-1 OD g6e.8xlarge `i-0a6c44e043b2d241e`. **Killed 2026-05-26 17:15 UTC at ep 15/40**. Peak: **2,209 @ ep 7 sims=4,000** (CI [2,115, 2,389]). |
+| **R2 = smaller net + heavier reg** (20×256, ~24M params, batch 2048, weight_decay=1e-3) | **R2 v1** — LR=5e-4 flat. eu-central-1 OD g6e.8xlarge. Done at ep 29. **Peak: 2,138 @ ep 29 sims=4,000** (CI [2,054, 2,274]). | **R2 v2** — cosine 5e-4 → 1e-5. ap-northeast-1 spot g6e.8xlarge `i-008f0d7d3a15974b9`. **Killed 2026-05-26 17:15 UTC at ep 22/30**. Peak: **2,285 @ ep 4 sims=4,000** (CI [2,177, 2,554]) ← project high. |
 
-### sims=800 trajectory — both runs (UCI=1,800 anchor)
+The two axes test two different "is *this* the bottleneck?" hypotheses:
+
+- **R1 vs R2** — *is the d15 ceiling a capacity issue?* R1 doubles
+  depth; R2 keeps the smaller depth but adds 10× weight decay + halved
+  LR. Both v1 runs landed in the same 2,120–2,150 sims=4,000 band, so
+  the answer is **no** — at constant LR, capacity wasn't binding.
+- **v1 vs v2** — *was the constant-LR plateau actually a LR-schedule
+  issue?* Cosine + warmup beat constant in both arms (R1 v2 +63 over
+  R1 v1; R2 v2 +147 over R2 v1), so the answer is **yes** — constant LR
+  was oscillating instead of converging, and the schedule recovered
+  most of the d15-over-d10 advantage we expected on day one.
+
+### Why R1 v2 and R2 v2 were killed early {#cosine-killed}
+
+Both cosine runs were killed at 2026-05-26 17:15 UTC, before their
+nominal end (R1 v2 had 25 of 40 epochs left; R2 v2 had 8 of 30 left).
+R2 v2 was on spot at ~$0.66/h (~$5 left to finish); R1 v2 was OD
+g6e.8xlarge at ~$2.69/h, which would have been ~$320 over the
+remaining 5 days. Three reasons it made sense to stop:
+
+1. **The peak landed early.** R2 v2's 2,285 is at ep 4 of 30; R1 v2's
+   2,209 is at ep 7 of 40. Subsequent epochs at sims=800 were
+   bouncing 1,860–2,055 with no clear upward trend in either run —
+   late-epoch cosine convergence is unlikely to add another +100 Elo.
+2. **The autoeval daemon is offline** (operator laptop closed since
+   2026-05-26 ~10:50 UTC). Even if late epochs *had* improved, we
+   wouldn't measure them. Training without measurement is a waste.
+3. **The cheap follow-ups give better information per dollar.** A
+   sims=8,000 eval on R2 v2 ep 4 (~$5, in flight as
+   `i-04f84755196ee0163`) and a sims=4,000 eval on R2 v2 ep 14 — the
+   highest sims=800 ckpt of the run that the daemon never deep-eval'd —
+   (~$5, in flight as `i-0b24ea8a7fdd7d149`) tighten our knowledge of
+   the *existing* peak far more than ten more training epochs would.
+
+Everything trained is still on S3
+(`s3://wm-chess-library-594561963943/d15-mpv8-T1-g250000-20260519T0412Z/checkpoints/`);
+nothing was lost by killing the trainers. If a follow-up justifies more
+epochs, we resume from the last saved ckpt.
+
+### sims=800 trajectory — v1 (constant LR) (UCI=1,800 anchor)
 
 100-game evals, daemon-fired per ckpt:
 
-| ep | R1 (40×256) | R2 (20×256, lowlr) |
+| ep | R1 v1 (40×256) | R2 v1 (20×256, lowlr) |
 |---:|---:|---:|
 | 1 | 1,864 | 1,834 |
 | 2 | 1,892 | 1,889 |
@@ -308,50 +345,42 @@ the bigger one on the d15 soft signal.
 | 11 | 1,885 | 1,864 |
 | 12 | — | 1,875 |
 | **13** | — | **1,925** |
+| 26–28 | — | 1,896–1,903 |
+| **29** (final) | — | **1,965** |
 
 Per-ckpt CIs are ±70 Elo wide at the 100-game budget, so the swings
 between adjacent epochs are mostly noise. The trend at this resolution:
-both runs are wandering 1,850–1,940 in the sims=800 anchor. R2's
-curve is statistically indistinguishable from R1's despite half the
-per-epoch compute — R2 ep 13 = 1,925 is within 16 Elo of R1's best so
-far (ep 7 = 1,941) on the noisier sims=800 anchor. Early evidence
-that the smaller-net + lower-LR + heavier-regularization recipe is
-competitive.
+both v1 runs wandered 1,850–1,950 in the sims=800 anchor with no
+upward drift past epoch ~7. R2 v1's curve is statistically
+indistinguishable from R1 v1's despite half the per-epoch compute.
 
-### sims=4,000 deep-read — the comparable-to-d10 numbers
+### sims=4,000 deep-read — v1 (constant LR)
 
 A second daemon
 ([`wm-deep-eval-daemon.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/daemons/wm-deep-eval-daemon.sh))
 fires sims=4,000 follow-ups on any ckpt whose sims=800 score crosses
-threshold (started at 1,940; dropped to 1,920 to catch R2 ckpts).
+threshold (started at 1,940; dropped to 1,920 to catch R2 v1 ckpts).
 
 | ckpt | sims=800 | sims=4,000 | Δ |
 |---|---:|---:|---:|
-| R1 ep 2 | 1,892 | 2,055 [1979, 2159] | +163 |
-| R1 ep 7 | 1,941 | **2,146** [2060, 2285] | **+205** ← R1 best |
-| R2 ep 6 | 1,922 | **2,123** [2041, 2252] | +201 |
-| R2 ep 7 | 1,922 | 2,109 [2028, 2232] | +187 |
-| R2 ep 12 | 1,925 | 2,029 [1956, 2126] | +104 |
+| R1 v1 ep 2 | 1,892 | 2,055 [1979, 2159] | +163 |
+| **R1 v1 ep 7** | 1,941 | **2,146** [2060, 2285] | **+205** ← R1 v1 best |
+| **R2 v1 ep 6** | 1,922 | **2,123** [2041, 2252] | +201 ← R2 v1 best |
+| R2 v1 ep 7 | 1,922 | 2,109 [2028, 2232] | +187 |
+| R2 v1 ep 12 | 1,925 | 2,029 [1956, 2126] | +104 |
+| R2 v1 ep 29 (final) | 1,965 | 2,138 [2054, 2274] | +173 |
 
 The +160 to +200 Elo gap between sims=800 and sims=4,000 confirms
 search recovers real strength that sims=800 systematically
-underestimates. Surprise: R2 ep 12 (highest sims=800 result for R2)
-came in *lower* at sims=4,000 than ep 6/7 — the sims=800 spike was
-noise, not a real peak.
+underestimates. Surprise: R2 v1 ep 12 (highest sims=800 score of the
+mid-run) came in *lower* at sims=4,000 than ep 6/7 — the sims=800
+spike was noise, not a real peak. Both v1 runs topped out in the
+2,120–2,150 sims=4,000 band, at or just below the d10 30M peak (2,189).
 
-### R2 final outcome (30 epochs, finished 2026-05-25 01:45 UTC)
-
-R2 completed all 30 epochs cleanly. Per-ckpt sims=800 evals drained
-through ep 28 (ep 29's final is pending). The trajectory across
-epochs 13–28 stays in the 1,860–1,925 band — no upward drift after
-the early-epoch climb. R2 saturated around ep 6 in true-strength
-terms (sims=4,000 = 2,123), with later epochs trading noise without
-gain.
-
-### Head-to-head — d10 ep 15 vs R1 ep 7 at sims=4,000
+### Head-to-head — d10 ep 15 vs R1 v1 ep 7 at sims=4,000
 
 To check whether the +43 Elo Stockfish-anchored "gap" between
-d10's 2,189 and R1's 2,146 was real, we put the two networks in
+d10's 2,189 and R1 v1's 2,146 was real, we put the two networks in
 direct play with both using MCTS at sims=4,000. 104 games,
 alternating colors:
 
@@ -359,60 +388,73 @@ alternating colors:
 |---|---|
 | d10 ep 15 wins | **0** |
 | draws | **104** |
-| R1 ep 7 wins | **0** |
+| R1 v1 ep 7 wins | **0** |
 | Elo gap | **0** |
 | Score CI | [0.404, 0.596] |
 
 Every single game drew. The Stockfish-anchored "gap" was noise.
-**At sims=4,000, d10's top ckpt and R1's top ckpt are
-indistinguishable.** The d15 teacher didn't give us strength
-beyond d10's ceiling — but it also didn't underperform.
+**At sims=4,000, d10's top ckpt and R1 v1's top ckpt are
+indistinguishable.** The d15 teacher at constant LR didn't give us
+strength beyond d10's ceiling — but it also didn't underperform.
 
 → code: [`h2h-d10-vs-d15.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/h2h-d10-vs-d15.sh) ·
 [`h2h_mp.py`](https://github.com/shehio/world-models/blob/main/experiments/selfplay/scripts/h2h_mp.py)
 
-### Cosine-LR follow-on — R1 v2 and R2 v2
+### sims=800 trajectory — v2 (cosine LR) (UCI=1,800 anchor)
 
-Two follow-on variants test whether the constant-LR plateau was the
-binding bottleneck. Both run with linear warmup (3 epochs) → cosine
-decay to 1e-5 on the same 45.9M-position d15 corpus:
+| ep | R1 v2 (40×256 cosine) | R2 v2 (20×256 cosine) |
+|---:|---:|---:|
+| 0 | (early) | 1,631 |
+| 2 | 1,961 | (skipped) |
+| 4 | (skipped) | 2,004 |
+| 5 | 1,925 | 1,903 |
+| 6 | 1,978 | 2,009 |
+| 7 | 1,978 | (skipped) |
+| 8 | 1,953 | 1,875 |
+| 9 | **2,044** | 1,949 |
+| 10 | 1,986 | 1,937 |
+| 11 | 1,945 | 1,937 |
+| 12 | **2,044** | 1,933 |
+| 13 | (daemon offline) | 2,004 |
+| **14** | — | **2,055** ← highest R2 v2 sims=800; sims=4,000 eval in flight |
+| 15 | — | 2,029 |
+| 16 | — | 1,995 |
+| 17 | — | 2,004 |
+| 18–22 | — | (daemon offline) |
 
-| Variant | Net | Region / market | Started | Target epochs |
-|---|---|---|---|---:|
-| **R1 v2** (cosine 40×256) | 40×256 (~50M) | `eu-central-1` OD g6e.8xlarge `i-0a6c44e043b2d241e` | 2026-05-25 04:00 | 40 |
-| **R2 v2** (cosine 20×256) | 20×256 (~24M) | `ap-northeast-1` spot g6e.8xlarge `i-008f0d7d3a15974b9` | 2026-05-25 09:35 | 30 |
+R1 v2 hit 2,044 at ep 9 and ep 12 — its top sims=800 marks before the
+daemon went offline at ep 13. R2 v2's trajectory peaked at ep 14
+(2,055), which never got a sims=4,000 follow-up because the daemon
+was already down by then — that ckpt now has a one-off sims=4,000 eval
+launched (`i-0b24ea8a7fdd7d149`).
 
-R2 v2 moved to ap-northeast-1 (Tokyo) on spot — us-east-1's G OD quota
-was saturated by deep-eval boxes, and Tokyo's spot market had headroom
-the home regions didn't.
-
-### sims=4,000 deep-reads — R1 v2 and R2 v2 vs the d10 peak
-
-The autoeval daemon's sims=4,000 follow-up fires on any ckpt whose
-sims=800 score crosses threshold. Current results, sorted by point
-estimate:
+### sims=4,000 deep-reads — v2 (cosine LR)
 
 | ckpt | sims=800 | sims=4,000 | Δ |
 |---|---:|---:|---:|
-| **R2 v2 ep 4** | (skipped — daemon offline) | **2,285** [2177, 2554] | — ← project high |
-| **R1 v2 ep 7** | 1,978 | **2,209** [2115, 2389] | +231 |
-| R1 v2 ep 2 | 1,961 | 2,138 [2054, 2274] | +177 |
-| R2 v2 ep 10 | 1,937 | 2,090 [2011, 2205] | +153 |
-| R2 v2 ep 6 | 1,922 | 2,078 [2000, 2189] | +156 |
-| R2 v2 ep 9 | 1,861 | 2,024 [1951, 2119] | +163 |
+| **R2 v2 ep 4** | 2,004 | **2,285** [2,177, 2,554] | **+281** ← project high |
+| **R1 v2 ep 7** | 1,978 | **2,209** [2,115, 2,389] | +231 |
+| R1 v2 ep 2 | 1,961 | 2,138 [2,054, 2,274] | +177 |
+| R2 v2 ep 10 | 1,937 | 2,090 [2,011, 2,205] | +153 |
+| R2 v2 ep 6 | 2,009 | 2,078 [2,000, 2,189] | +69 |
+| R2 v2 ep 9 | 1,949 | 2,024 [1,951, 2,119] | +75 |
+| R2 v2 ep 14 | 2,055 | (eval in flight, sims=4,000) | TBD |
+| R2 v2 ep 4 | 2,004 | (eval in flight, sims=8,000 vs UCI=2,000) | TBD |
 
 **R2 v2 ep 4 is the highest point estimate measured in the project to
 date.** But its 95% CI is ±200 Elo (single 104-game match), so the
-ordering against d10 ep 15 (2,189 [2098, 2354]) is *not* statistically
+ordering against d10 ep 15 (2,189 [2,098, 2,354]) is *not* statistically
 significant. R1 v2 ep 7 at 2,209 is tighter and lands just above the
-d10 peak.
+d10 peak. The two in-flight evals (R2 v2 ep 14 at sims=4,000, R2 v2
+ep 4 at sims=8,000 vs UCI=2,000) are the cheap path to nailing down
+whether ≥ 2,300 is real.
 
-### Verdict so far
+### Verdict and what's still in flight
 
 **The cosine LR schedule is working** — both R1 v2 and R2 v2 produce
 ckpts that meet or beat the d10-30M peak (2,189) at sims=4,000. The
-constant-LR plateau in R1 + R2 was a recipe artifact, not a teacher /
-data ceiling.
+constant-LR plateau in R1 v1 + R2 v1 was a recipe artifact, not a
+teacher / data ceiling.
 
 The relative ordering between R2 v2 ep 4 / R1 v2 ep 7 / d10 ep 15 is
 inside eval noise at 100 games. A 200-game head-to-head among the
@@ -420,13 +462,21 @@ three (no Stockfish anchor) would settle it — see
 [`h2h-d10-vs-d15.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/h2h-d10-vs-d15.sh)
 for the launcher template.
 
-Open caveat: **the autoeval daemon runs on the operator's laptop**.
-As of 2026-05-26 16:00 UTC the laptop is offline, so R1 v2 ckpts ≥ ep 13
-and R2 v2 ckpts ≥ ep 18 are still unevaluated. Training continues; eval
-catches up when the daemon comes back.
+**In flight as of 2026-05-26 17:30 UTC** — two cheap follow-up evals
+designed to confirm whether the project has actually crossed 2,300 Elo:
+
+| Eval | Instance | Purpose |
+|---|---|---|
+| sims=8,000 vs UCI=2,000 on R2 v2 ep 4 | us-east-1 g6.4xlarge OD `i-04f84755196ee0163` | Tests the "+100-200 Elo from deeper search on a distilled prior" hypothesis on the project's top ckpt. UCI=2,000 anchor keeps the score near 0.5 → tightest Elo CI. |
+| sims=4,000 vs UCI=1,800 on R2 v2 ep 14 | us-east-1 g6.2xlarge OD `i-0b24ea8a7fdd7d149` | R2 v2 ep 14 was the highest sims=800 ckpt of the run (2,055) but the deep-eval daemon went offline before it could fire. Direct comparison to ep 4 at the same sims/anchor. |
+
+R1 v2 and R2 v2 trainers were killed at 17:15 UTC — see
+[#cosine-killed](#cosine-killed) above for the rationale.
 
 → code: [`d15-full30m.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/d15-full30m.sh) ·
 [`d15-20x256-lowlr.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/d15-20x256-lowlr.sh) ·
+[`eval-r2v2-ep4-sims8000-uci2000.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-r2v2-ep4-sims8000-uci2000.sh) ·
+[`eval-r2v2-ep14-sims4000.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-r2v2-ep14-sims4000.sh) ·
 [`wm-deep-eval-daemon.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/daemons/wm-deep-eval-daemon.sh)
 
 ## Peak Elo Across Every Checkpoint We've Ever Run {#peak-elo}
@@ -441,9 +491,10 @@ All UCI=1,800 anchor, ~100 games each.
 | 3 | d10 30M (20×256) | ep 15 | 4,000 | 2,189 | [2098, 2354] |
 | 4 | d10 30M (20×256) | ep 10 | 4,000 | 2,171 | [2082, 2324] |
 | 5 | d10 30M (20×256) | ep 20 | 4,000 | 2,154 | [2067, 2297] |
-| 6 | d15 46M (40×256 constant LR — R1) | ep 7 | 4,000 | 2,146 | [2060, 2285] |
+| 6 | R1 v1 (d15 46M, 40×256 constant LR) | ep 7 | 4,000 | 2,146 | [2060, 2285] |
 | 7 | R1 v2 (d15 46M, 40×256 cosine) | ep 2 | 4,000 | 2,138 | [2054, 2274] |
-| 8 | d15 46M (20×256 constant LR — R2) | ep 6 | 4,000 | 2,123 | [2041, 2252] |
+| 8 | R2 v1 (d15 46M, 20×256 constant LR) | ep 29 (final) | 4,000 | 2,138 | [2054, 2274] |
+| 9 | R2 v1 (d15 46M, 20×256 constant LR) | ep 6 | 4,000 | 2,123 | [2041, 2252] |
 
 The top three numbers are within ~96 Elo and their CIs all overlap.
 At 100 games per measurement the score CI is ±10 percentage points,
@@ -455,16 +506,16 @@ Stockfish-anchored numbers can.
 ## Did the stronger teacher (d15) finally beat d10? {#d10-vs-d15}
 
 The earlier write-up of this section asked "*why is d10 ahead of d15?*"
-because R1 (constant LR) and R2 (constant LR) both topped out at or
-below the d10 peak. The cosine-LR re-runs flipped that ordering:
+because R1 v1 (constant LR) and R2 v1 (constant LR) both topped out at
+or below the d10 peak. The cosine-LR re-runs flipped that ordering:
 
 | | best sims=4,000 Elo @ UCI=1,800 | CI |
 |---|---:|---|
 | d10 30M (20×256, LR=1e-3 constant) | 2,189 (ep 15) | [2098, 2354] |
-| d15 46M constant LR — R1 (40×256) | 2,146 (ep 7) | [2060, 2285] |
-| d15 46M constant LR — R2 (20×256) | 2,123 (ep 6) | [2041, 2252] |
-| **d15 46M cosine LR — R1 v2** (40×256) | **2,209 (ep 7)** | **[2115, 2389]** |
-| **d15 46M cosine LR — R2 v2** (20×256) | **2,285 (ep 4)** | **[2177, 2554]** |
+| **R1 v1** — d15 46M (40×256 constant LR) | 2,146 (ep 7) | [2060, 2285] |
+| **R2 v1** — d15 46M (20×256 constant LR) | 2,138 (ep 29 final) | [2054, 2274] |
+| **R1 v2** — d15 46M (40×256 cosine LR) | **2,209 (ep 7)** | **[2115, 2389]** |
+| **R2 v2** — d15 46M (20×256 cosine LR) | **2,285 (ep 4)** | **[2177, 2554]** ← project high |
 
 **The cosine schedule unlocked the d15 teacher.** Both cosine variants
 beat their constant-LR siblings (R1 v2 +63 over R1; R2 v2 +162 over
@@ -520,7 +571,7 @@ Underlying script: [`experiments/selfplay/scripts/h2h_mp.py`](https://github.com
 | soft vs hard targets | **partial** (helps strong teachers, hurts weak) |
 | eval-side search (4,000 vs 800 sims) | **confirmed** (+277) |
 | data scale (30M vs 5M positions) | **confirmed** (+199) |
-| stronger teacher (d15 vs d10) at full data, constant LR | **rejected** (R1 / R2 both topped out below d10's 2,189) |
+| stronger teacher (d15 vs d10) at full data, constant LR | **rejected** (R1 v1 / R2 v1 both topped out below d10's 2,189) |
 | stronger teacher (d15 vs d10) at full data, **cosine LR** | **confirmed** (R2 v2 ep 4 = **2,285**, R1 v2 ep 7 = **2,209**) |
 
 The bitter-lesson levers (more compute via search + data) confirmed
@@ -532,6 +583,13 @@ does with cosine. Strongest checkpoint to date:
 with sims=4,000 (CI [2,177, 2,554]). Tighter-CI second-place:
 **2,209 Elo** from R1 v2 (d15 46M, 40×256 cosine) at epoch 7,
 CI [2,115, 2,389].
+
+R1 v2 and R2 v2 trainers were
+[killed at 2026-05-26 17:15 UTC](#cosine-killed) once the cosine peaks
+were in hand — late-epoch cosine convergence wasn't worth the OD G burn
+rate, especially with the autoeval daemon offline. Two cheap follow-up
+evals (sims=8,000 on R2 v2 ep 4 and sims=4,000 on R2 v2 ep 14) are in
+flight to confirm whether the project has crossed 2,300 Elo.
 
 Self-play RL on top of the strongest distilled prior has been
 [attempted six times](/next/#selfplay-postmortem) on spot and
