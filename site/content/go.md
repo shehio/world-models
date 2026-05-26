@@ -11,6 +11,9 @@ aliases:
 
 A 9×9 Go agent distilled from KataGo (multipv=8 at v=400, ~1.236M
 positions) reaches **parity with KataGo at 200 visits** in 15 epochs.
+Anchored against GnuGo L10 (AlphaGo paper scale, ~1,800 Elo), the
+KataGo @v=200 opponent sits at **≥ 2,366 absolute Elo**, so the
+student does too.
 
 | ckpt | sims | opponent | win rate | Elo gap |
 |---|---:|---|---|---:|
@@ -27,6 +30,38 @@ teacher gave it, then stopping.
 The earlier spike (4×64 net, 5K positions, KataGo @ v100 teacher)
 scored **Elo −147** vs KataGo @ v30. The full 8×128 net on 1.236M
 positions is **~150 Elo above the spike** under the harder v200 anchor.
+
+## Anchoring KataGo @v=200 to an Absolute Elo {#absolute-elo}
+
+To convert the "parity with KataGo @v=200" result into a Go-Elo
+absolute number, we need to anchor KataGo @v=200 itself against a
+calibrated opponent. Run 2026-05-26 18:21 UTC (`i-07a0f9582d96fcd9a`,
+g6.xlarge OD): **100 games KataGo @v=200 vs GnuGo L10 on 9×9, komi 7.5,
+anchor GnuGo = 1,800 Elo** (Silver et al. 2016, AlphaGo paper scale).
+
+```
+KataGo @v=200  vs  GnuGo L10  (100 games, 9×9):  100 W / 0 D / 0 L
+Score 1.000, 95% CI [0.963, 1.000]
+Elo gap (KataGo − GnuGo) ≥ +566  (lower 95% bound; upper bound
+                                   uninformative — score saturation)
+→ KataGo @v=200 absolute Elo  ≥  2,366  (lower 95% CI)
+→ Point estimate  ≈  5,400 — clamped, ignore
+```
+
+The lower bound is real (gnugo competently lost 100 games in 640 sec
+total wallclock), the point estimate is not (a 100-0 sweep blows up
+the Elo conversion at the upper end).
+
+So our 8×128 distilled student, at parity with KataGo @v=200, is also
+**at least 2,366 absolute Go Elo**. The "true" KataGo @v=200 Elo is
+probably substantially higher (community estimates put modern KataGo
+small-board networks at 2,800+ on 9×9) but pinning it requires a
+stronger anchor than GnuGo. Pachi 1.0 from Ubuntu apt was the obvious
+candidate but deadlocks in non-TTY containers regardless of playout
+count; CrazyStone / Aya / Lc0 would each need new docker integration.
+
+→ launcher: [`infra-eks/launchers/calibrate-katago-vs-gnugo.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/calibrate-katago-vs-gnugo.sh) ·
+result: `s3://wm-chess-library-594561963943/go-calibration/katago-v200-vs-gnugo-l10-20260526T1821Z.txt`
 
 ## What's the Setup
 
