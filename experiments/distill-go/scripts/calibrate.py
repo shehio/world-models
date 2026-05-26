@@ -33,6 +33,7 @@ import argparse
 import math
 import os
 import random
+import select
 import subprocess
 import sys
 import time
@@ -50,16 +51,28 @@ class GTPEngine:
     Subclasses provide the argv list. Used for both GNU Go and Pachi.
     """
 
-    def __init__(self, argv: list[str]) -> None:
+    # Per-command timeout in seconds. Defends against engines that hang
+    # without writing — Pachi 1.0 (Ubuntu 22.04 apt) was observed to do
+    # this in headless containers, eating 3h of wallclock before being
+    # killed manually.
+    READ_TIMEOUT_S = 60.0
+
+    def __init__(self, argv: list[str], stderr_log: str | None = None) -> None:
         self.argv = argv
+        self.stderr_log = stderr_log
         self._proc: subprocess.Popen | None = None
 
     def __enter__(self) -> "GTPEngine":
+        # stdbuf forces line buffering so we don't deadlock on
+        # block-buffered stdout in non-TTY containers.
+        argv = ["stdbuf", "-oL", "-eL"] + list(self.argv)
+        stderr = (open(self.stderr_log, "w") if self.stderr_log
+                  else subprocess.DEVNULL)
         self._proc = subprocess.Popen(
-            self.argv,
+            argv,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=stderr,
             text=True,
             bufsize=1,
         )
@@ -75,17 +88,35 @@ class GTPEngine:
             self._proc = None
 
     @classmethod
-    def gnugo(cls, binary: str, level: int = 10) -> "GTPEngine":
-        return cls([binary, "--mode", "gtp", "--level", str(level)])
+    def gnugo(cls, binary: str, level: int = 10, stderr_log: str | None = None) -> "GTPEngine":
+        return cls([binary, "--mode", "gtp", "--level", str(level)],
+                   stderr_log=stderr_log)
 
     @classmethod
-    def pachi(cls, binary: str, playouts: int = 5000) -> "GTPEngine":
+    def pachi(cls, binary: str, playouts: int = 5000, stderr_log: str | None = None) -> "GTPEngine":
         # `-t =N` = exactly N playouts (no time-based budget). `-d 0` disables
         # Pachi's curses-based debug display so it doesn't open a TTY (in
         # containers ncurses fails with "Error opening terminal: unknown"
-        # unless TERM=dumb is also set in the env). 5000 playouts ≈ KGS 1d
-        # on 9x9.
-        return cls([binary, "-d", "0", "-t", f"={playouts}"])
+        # unless TERM=dumb is also set in the env). Default 5000 ≈ KGS 1d
+        # on 9x9; bring down to 1000 for fast smoke tests.
+        return cls([binary, "-d", "0", "-t", f"={playouts}"],
+                   stderr_log=stderr_log)
+
+    def _readline_timeout(self, timeout_s: float) -> str:
+        """readline() with a deadline. Returns "" on EOF, raises on timeout."""
+        assert self._proc is not None and self._proc.stdout
+        fd = self._proc.stdout.fileno()
+        deadline = time.time() + timeout_s
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                raise RuntimeError(
+                    f"GTP engine ({self.argv[-1]}) read timeout after {timeout_s}s "
+                    f"(check stderr log: {self.stderr_log})"
+                )
+            r, _, _ = select.select([fd], [], [], remaining)
+            if r:
+                return self._proc.stdout.readline()
 
     def _send(self, cmd: str) -> str:
         assert self._proc is not None and self._proc.stdin and self._proc.stdout
@@ -93,12 +124,12 @@ class GTPEngine:
         self._proc.stdin.flush()
         body_lines: list[str] = []
         while True:
-            line = self._proc.stdout.readline()
+            line = self._readline_timeout(self.READ_TIMEOUT_S)
             if not line:
-                raise RuntimeError(f"GTP engine ({self.argv[0]}) closed stdout while waiting for '{cmd}'")
+                raise RuntimeError(f"GTP engine ({self.argv[-1]}) closed stdout while waiting for '{cmd}'")
             if line.startswith("=") or line.startswith("?"):
                 body_lines.append(line[1:].strip())
-                term = self._proc.stdout.readline()
+                term = self._readline_timeout(self.READ_TIMEOUT_S)
                 if term.strip() != "":
                     body_lines.append(term.strip())
                 break
@@ -250,12 +281,21 @@ def main() -> int:
     wins = 0
     t0 = time.time()
     if args.opponent == "gnugo":
-        gtp_ctx = GTPEngine.gnugo(gnugo_bin, level=args.gnugo_level)
+        gtp_ctx = GTPEngine.gnugo(gnugo_bin, level=args.gnugo_level,
+                                   stderr_log="/tmp/gtp_opp.stderr.log")
     elif args.opponent == "pachi":
-        gtp_ctx = GTPEngine.pachi(pachi_bin, playouts=args.pachi_playouts)
+        gtp_ctx = GTPEngine.pachi(pachi_bin, playouts=args.pachi_playouts,
+                                   stderr_log="/tmp/gtp_opp.stderr.log")
     else:
         gtp_ctx = _NullCtx()
     with KataGoAnalysisEngine(katago_bin, katago_model, katago_config) as kata, gtp_ctx as gtp_opp:
+        # Smoke-test the GTP opponent: send `name` and `version` before any
+        # real game. If the engine is hung at startup we fail fast here
+        # instead of after 3h of wallclock.
+        if args.opponent in ("gnugo", "pachi"):
+            print(f"smoke: opponent name = {gtp_opp._send('name')!r}", flush=True)
+            print(f"smoke: opponent version = {gtp_opp._send('version')!r}", flush=True)
+
         for g in range(args.games):
             test_color = BLACK if g % 2 == 0 else WHITE
             res = play_one_game(

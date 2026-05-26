@@ -17,10 +17,14 @@ INSTANCE_PROFILE=wm-chess-merge-instance-profile
 ECR=$ACCOUNT_ID.dkr.ecr.$IMAGE_REGION.amazonaws.com
 
 S3_BUCKET=wm-chess-library-594561963943
-GAMES=${GAMES:-100}
+# First attempt at 100/5000p hung silently for 3h 49m — Pachi 1.0 (Ubuntu
+# 22.04 apt) deadlocks in non-TTY containers despite `-d 0 + TERM=dumb`.
+# Defaults are now smaller for a smoke-test pass; ramp up once we confirm
+# Pachi+KataGo actually exchange GTP packets at all.
+GAMES=${GAMES:-10}
 KATAGO_VISITS=${KATAGO_VISITS:-200}
-PACHI_PLAYOUTS=${PACHI_PLAYOUTS:-5000}
-PACHI_ANCHOR_ELO=${PACHI_ANCHOR_ELO:-2100}
+PACHI_PLAYOUTS=${PACHI_PLAYOUTS:-1000}
+PACHI_ANCHOR_ELO=${PACHI_ANCHOR_ELO:-1900}  # 1000 playouts is weaker than 5000
 
 STAMP=$(date -u +%Y%m%dT%H%MZ)
 RESULT_KEY=s3://$S3_BUCKET/go-calibration/pachi-katago-v${KATAGO_VISITS}-vs-pachi-${PACHI_PLAYOUTS}p-${STAMP}.txt
@@ -55,12 +59,15 @@ docker run --rm \\
     \$ECR_IMAGE -lc '
         set -ex
         export DEBIAN_FRONTEND=noninteractive
-        apt-get update && apt-get install -y --no-install-recommends pachi
+        # coreutils gives us stdbuf to force line-buffered Pachi stdout
+        apt-get update && apt-get install -y --no-install-recommends pachi coreutils
         export PACHI_BIN=/usr/games/pachi
         # Pachi pulls in ncurses; without a TTY it dies with
         # "Error opening terminal: unknown". TERM=dumb sidesteps that.
         export TERM=dumb
         ls -l \$PACHI_BIN
+        echo "=== pachi smoke (echo name | pachi -d 0) ==="
+        echo -e "name\nquit" | timeout 10 \$PACHI_BIN -d 0 2>&1 || echo "(pachi smoke timeout/error)"
 
         cp /work-tmp/calibrate.py /work/experiments/distill-go/scripts/calibrate.py
         cd /work/experiments/distill-go
@@ -74,7 +81,10 @@ docker run --rm \\
             --opponent pachi --pachi-playouts $PACHI_PLAYOUTS \\
             --anchor-elo $PACHI_ANCHOR_ELO \\
             --games $GAMES 2>&1 | tee -a \$OUT
+        # Capture Pachi stderr so we can post-mortem any hang
+        [ -f /tmp/gtp_opp.stderr.log ] && cp /tmp/gtp_opp.stderr.log /work-tmp/pachi.stderr.log || true
         aws s3 cp \$OUT $RESULT_KEY --no-progress
+        [ -f /work-tmp/pachi.stderr.log ] && aws s3 cp /work-tmp/pachi.stderr.log ${RESULT_KEY%.txt}.pachi-stderr.log --no-progress || true
     '
 EOF
 )
