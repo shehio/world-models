@@ -129,9 +129,13 @@ class GTPEngine:
                 raise RuntimeError(f"GTP engine ({self.argv[-1]}) closed stdout while waiting for '{cmd}'")
             if line.startswith("=") or line.startswith("?"):
                 body_lines.append(line[1:].strip())
-                term = self._readline_timeout(self.READ_TIMEOUT_S)
-                if term.strip() != "":
-                    body_lines.append(term.strip())
+                # GTP responses are formally terminated by a blank line,
+                # but waiting on that blank line deadlocks against
+                # subprocess pipe buffering (gnugo 3.8 was observed to
+                # write the blank in a separate flush that select()
+                # detected but readline() blocked on). Trust the `=`
+                # body line — the next command's response will start
+                # with `=` / `?` and we filter banners out below.
                 break
             if line.strip():
                 body_lines.append(line.strip())
