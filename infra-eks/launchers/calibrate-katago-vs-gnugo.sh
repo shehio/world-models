@@ -10,6 +10,13 @@
 # startup, since the baked image doesn't yet include it (see [[feedback-curl-trampoline]]).
 #
 # Override knobs via env: GAMES, KATAGO_VISITS, GNUGO_LEVEL, GNUGO_ANCHOR_ELO.
+#
+# 2026-05-26 fixes (after multiple failed Pachi attempts proved Pachi 1.0
+# from apt deadlocks in non-TTY containers, regardless of playout count):
+#  - switched off spot (spot reclaim during user-data was killing docker daemon)
+#  - added docker-daemon readiness wait
+#  - fixed arg name: --gnugo-anchor-elo (does not exist) → --anchor-elo, plus
+#    explicit --opponent gnugo
 
 set -euo pipefail
 
@@ -48,6 +55,10 @@ cleanup() {
 trap cleanup EXIT
 
 systemctl enable --now docker
+# Wait for docker daemon to actually accept connections.
+for i in \$(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 2; done
+docker info >/dev/null
+
 aws ecr get-login-password --region $IMAGE_REGION | docker login --username AWS --password-stdin $ECR
 docker pull \$ECR_IMAGE
 
@@ -80,9 +91,10 @@ docker run --rm \\
         echo "" | tee -a \$OUT
         uv run python scripts/calibrate.py \\
             --board-size 9 --komi 7.5 \\
+            --opponent gnugo \\
             --katago-visits $KATAGO_VISITS \\
             --gnugo-level $GNUGO_LEVEL \\
-            --gnugo-anchor-elo $GNUGO_ANCHOR_ELO \\
+            --anchor-elo $GNUGO_ANCHOR_ELO \\
             --games $GAMES 2>&1 | tee -a \$OUT
         aws s3 cp \$OUT \$RESULT_KEY --no-progress
     '
@@ -96,9 +108,8 @@ aws ec2 run-instances --region $LAUNCH_REGION \
     --iam-instance-profile Name=$INSTANCE_PROFILE \
     --block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=80,VolumeType=gp3,DeleteOnTermination=true}' \
     --instance-initiated-shutdown-behavior terminate \
-    --instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}' \
     --user-data "$USER_DATA" \
-    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-go-calibrate-katago-v${KATAGO_VISITS}-vs-gnugo-l${GNUGO_LEVEL}-spot},{Key=role,Value=wm-go-calibration}]" \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-go-calibrate-katago-v${KATAGO_VISITS}-vs-gnugo-l${GNUGO_LEVEL}-od},{Key=role,Value=wm-go-calibration}]" \
     --query 'Instances[0].[InstanceId,State.Name,InstanceLifecycle]' --output text
 
 echo ""
