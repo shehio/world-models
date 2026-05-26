@@ -6,12 +6,13 @@
 
 <section class="result-strip">
   <div class="result-box">
-    <div class="result-num">2,189</div>
+    <div class="result-num">2,285</div>
     <div class="result-unit">Elo</div>
-    <div class="result-context">d10 30M ep15 · sims=4,000 · vs UCI=1,800 · CI [2098, 2354]</div>
+    <div class="result-context">R2 v2 (d15 46M, 20×256 cosine) ep 4 · sims=4,000 · vs UCI=1,800 · CI [2,177, 2,554] · <a href="{{ "/experiments/#peak-elo" | relURL }}">full peak table</a></div>
   </div>
   <div class="result-context-block">
-    <p>AlphaZero used <em>5,000 TPUs</em> for self-play data generation and <em>64 TPU-v2s</em> to train. We use the <strong>same network</strong> (a 20-block × 256-channel ResNet, ~24M parameters) on <em>one GPU</em>, supervised distillation from Stockfish on 30M positions, evaluated against a calibrated Stockfish opponent. Total cost: ~16 GPU-hours on a single L40S. Roughly <strong>four orders of magnitude less compute</strong> than the AlphaZero paper.</p>
+    <p>AlphaZero used <em>5,000 TPUs</em> for self-play data generation and <em>64 TPU-v2s</em> to train. We use the <strong>same network family</strong> (20- or 40-block × 256-channel ResNet, ~24–50M parameters) on <em>one GPU</em>, supervised distillation from Stockfish on 30–46M positions, evaluated against a calibrated Stockfish opponent. Total cost per training run: ~16–80 GPU-hours on a single L40S. Roughly <strong>four orders of magnitude less compute</strong> than the AlphaZero paper.</p>
+    <p>The 2,285 above is the project's top single point estimate; its 95% CI is wide because the eval was 104 games. The tighter-CI second-place is <strong>R1 v2 ep 7 = 2,209</strong> [2,115, 2,389] (40×256 cosine d15). Both clear the previous peak (d10 30M ep 15 = 2,189 [2,098, 2,354]). Full numbers on the <a href="{{ "/experiments/#peak-elo" | relURL }}">experiments page</a>; the self-play follow-on hasn't yet survived a spot AZ — <a href="{{ "/next/#selfplay-postmortem" | relURL }}">postmortem here</a>.</p>
     <p class="quick-links">
       <a href="{{ "/experiments/" | relURL }}">→ How we got here</a>
       <a href="{{ "/method/" | relURL }}">→ Method &amp; Elo bisection</a>
@@ -162,20 +163,23 @@
       <tr><td>d10 30M ep 5</td><td>4,000</td><td>UCI=1,800</td><td>2,084 [2005, 2197]</td></tr>
       <tr><td>d10 30M ep 5</td><td>4,000</td><td>UCI=2,000</td><td>2,110 [2044, 2187]</td></tr>
       <tr><td>d10 30M ep 10</td><td>4,000</td><td>UCI=1,800</td><td>2,171 [2082, 2324]</td></tr>
-      <tr><td><strong>d10 30M ep 15</strong></td><td><strong>4,000</strong></td><td><strong>UCI=1,800</strong></td><td><strong>2,189 [2098, 2354]</strong></td></tr>
+      <tr><td>d10 30M ep 15</td><td>4,000</td><td>UCI=1,800</td><td>2,189 [2098, 2354]</td></tr>
       <tr><td>d10 30M ep 20</td><td>4,000</td><td>UCI=1,800</td><td>2,154 [2067, 2297]</td></tr>
-      <tr><td>d15 46M R1 ep 2 (<em>in flight</em>)</td><td>4,000</td><td>UCI=1,800</td><td>2,055 [1979, 2159]</td></tr>
-      <tr><td>d15 46M R1 ep 7 (<em>in flight</em>)</td><td>4,000</td><td>UCI=1,800</td><td><strong>2,146 [2060, 2285]</strong></td></tr>
+      <tr><td>d15 46M R1 const-LR ep 7</td><td>4,000</td><td>UCI=1,800</td><td>2,146 [2060, 2285]</td></tr>
+      <tr><td>d15 46M R1 v2 cosine ep 2 (<em>in flight</em>)</td><td>4,000</td><td>UCI=1,800</td><td>2,138 [2054, 2274]</td></tr>
+      <tr><td><strong>d15 46M R1 v2 cosine ep 7</strong> (<em>in flight</em>)</td><td><strong>4,000</strong></td><td><strong>UCI=1,800</strong></td><td><strong>2,209 [2115, 2389]</strong></td></tr>
+      <tr><td><strong>d15 46M R2 v2 cosine ep 4</strong> (<em>in flight</em>)</td><td><strong>4,000</strong></td><td><strong>UCI=1,800</strong></td><td><strong>2,285 [2177, 2554]</strong></td></tr>
     </tbody>
   </table>
-  <p class="dim">Highest point estimate: <strong>2,189 Elo</strong> at d10-30M ep 15 + sims=4,000. Tightest CI: <strong>2,110 Elo</strong> at ep 5 vs the UCI=2,000 anchor where score (0.65) sits closer to 0.5. The 4,000-sim deep-search numbers stack the two confirmed ablations (search + data) on one checkpoint. The d15 46M run (R1) is currently climbing toward this peak: ep 2 → ep 7 already gained +91 Elo at sims=4,000.</p>
+  <p class="dim">Highest point estimate (wider CI): <strong>2,285 Elo</strong> at R2 v2 cosine ep 4 (single 104-game eval). Tighter-CI second-place: <strong>2,209 Elo</strong> at R1 v2 cosine ep 7. Both clear the prior peak of 2,189 from d10 30M ep 15. The 4,000-sim deep-search numbers stack the two confirmed ablations (search + data) on one checkpoint; the cosine LR schedule on top recovered another ~+100 Elo over the constant-LR R1 / R2 runs.</p>
 </section>
 
 <section class="next">
   <h2>What's Next</h2>
   <p>The largest remaining gap to AlphaZero is that AZ has <em>no teacher</em> — its targets come from its own MCTS visit counts, not from Stockfish. The Lc0 recipe — <strong>distill first, RL second</strong> — runs an AlphaZero-style self-play loop on top of the distilled prior.</p>
-  <p class="dim">In flight right now: d15 at full data scale (46M positions, 1.5× the d10-30M corpus). Two parallel hparam variants are training (R1 = 40×256, R2 = 20×256 + low LR). Per-ckpt sims=800 evals fire automatically; promising ckpts trigger sims=4,000 follow-ups. R1 ep 7 already at 2,146 — within striking distance of the d10 peak.</p>
-  <p><a href="{{ "/next/" | relURL }}">→ d15 full-data run status</a></p>
+  <p class="dim">Self-play has been attempted six times on spot since 2026-05-25; every run was evicted before iteration 1 finished (iters take ~90 min, AZ eviction windows are shorter). The algorithm is fixed (LR=1e-5, no catastrophic forgetting); the binding constraint is moving the trainer off spot. <a href="{{ "/next/#selfplay-postmortem" | relURL }}">→ Self-play postmortem</a></p>
+  <p>Also in flight: <strong>R1 v2</strong> (40×256 cosine, eu-central-1 OD, ep 15 of 40) and <strong>R2 v2</strong> (20×256 cosine, ap-northeast-1 spot, ep 22 of 30). Both have already produced top-2 ckpts in the deep-search table above.</p>
+  <p><a href="{{ "/next/" | relURL }}">→ Full status &amp; roadmap</a></p>
 </section>
 
 <section class="links">

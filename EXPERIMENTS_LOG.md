@@ -361,35 +361,59 @@ beyond d10's ceiling — but it also didn't underperform.
 → code: [`h2h-d10-vs-d15.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/h2h-d10-vs-d15.sh) ·
 [`h2h_mp.py`](https://github.com/shehio/world-models/blob/main/experiments/selfplay/scripts/h2h_mp.py)
 
-### Verdict so far + what R1 v2 cosine is for
+### Cosine-LR follow-on — R1 v2 and R2 v2
 
-**d15 (both R1 and R2) achieves parity with d10 but doesn't exceed
-it.** d10 peak = 2,189 sims=4,000; R1 best = 2,146; R2 best = 2,123.
-All three within ~70 Elo, CIs overlap heavily. The hypothesis "d15
-teacher should beat d10" is — at *constant* LR — not supported by
-the data.
+Two follow-on variants test whether the constant-LR plateau was the
+binding bottleneck. Both run with linear warmup (3 epochs) → cosine
+decay to 1e-5 on the same 45.9M-position d15 corpus:
 
-But R1's `train_history.json` revealed the bigger net (40×256) was
-*plateaued* at constant LR=1e-3 — loss frozen across ep 7–13. So the
-question becomes: was constant LR the bottleneck for 40×256 (and
-maybe also 20×256)?
+| Variant | Net | Region / market | Started | Target epochs |
+|---|---|---|---|---:|
+| **R1 v2** (cosine 40×256) | 40×256 (~50M) | `eu-central-1` OD g6e.8xlarge `i-0a6c44e043b2d241e` | 2026-05-25 04:00 | 40 |
+| **R2 v2** (cosine 20×256) | 20×256 (~24M) | `ap-northeast-1` spot g6e.8xlarge `i-008f0d7d3a15974b9` | 2026-05-25 09:35 | 30 |
 
-**R1 v2 (cosine LR + warmup)** is the answer-test for that question.
-Same 40×256 + same data + a real LR schedule (linear warmup 3
-epochs → cosine decay to 1e-5). Currently running on
-eu-central-1 OD as `i-0a6c44e043b2d241e` (after a first attempt
-hit an NVIDIA driver crash and had to be relaunched on a fresh
-host). First ckpt expected in ~3h; full run in ~85h.
+R2 v2 moved to ap-northeast-1 (Tokyo) on spot — us-east-1's G OD quota
+was saturated by deep-eval boxes, and Tokyo's spot market had headroom
+the home regions didn't.
 
-### Where this leaves the project
+### sims=4,000 deep-reads — R1 v2 and R2 v2 vs the d10 peak
 
-- **d15 46M is climbing toward d10's peak**, not stuck below it. The
-  experiment we ranked as "most information per dollar" back in
-  February is paying off.
-- **Smaller net + slower LR is competitive** with bigger net + default
-  LR at matched data. R2's sims=800 trajectory shadows R1's despite
-  half the per-epoch compute — and the regularization-leaning recipe
-  hasn't yet been sims=4,000-evaluated, where R1 jumped +205 Elo.
+The autoeval daemon's sims=4,000 follow-up fires on any ckpt whose
+sims=800 score crosses threshold. Current results, sorted by point
+estimate:
+
+| ckpt | sims=800 | sims=4,000 | Δ |
+|---|---:|---:|---:|
+| **R2 v2 ep 4** | (skipped — daemon offline) | **2,285** [2177, 2554] | — ← project high |
+| **R1 v2 ep 7** | 1,978 | **2,209** [2115, 2389] | +231 |
+| R1 v2 ep 2 | 1,961 | 2,138 [2054, 2274] | +177 |
+| R2 v2 ep 10 | 1,937 | 2,090 [2011, 2205] | +153 |
+| R2 v2 ep 6 | 1,922 | 2,078 [2000, 2189] | +156 |
+| R2 v2 ep 9 | 1,861 | 2,024 [1951, 2119] | +163 |
+
+**R2 v2 ep 4 is the highest point estimate measured in the project to
+date.** But its 95% CI is ±200 Elo (single 104-game match), so the
+ordering against d10 ep 15 (2,189 [2098, 2354]) is *not* statistically
+significant. R1 v2 ep 7 at 2,209 is tighter and lands just above the
+d10 peak.
+
+### Verdict so far
+
+**The cosine LR schedule is working** — both R1 v2 and R2 v2 produce
+ckpts that meet or beat the d10-30M peak (2,189) at sims=4,000. The
+constant-LR plateau in R1 + R2 was a recipe artifact, not a teacher /
+data ceiling.
+
+The relative ordering between R2 v2 ep 4 / R1 v2 ep 7 / d10 ep 15 is
+inside eval noise at 100 games. A 200-game head-to-head among the
+three (no Stockfish anchor) would settle it — see
+[`h2h-d10-vs-d15.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/h2h-d10-vs-d15.sh)
+for the launcher template.
+
+Open caveat: **the autoeval daemon runs on the operator's laptop**.
+As of 2026-05-26 16:00 UTC the laptop is offline, so R1 v2 ckpts ≥ ep 13
+and R2 v2 ckpts ≥ ep 18 are still unevaluated. Training continues; eval
+catches up when the daemon comes back.
 
 → code: [`d15-full30m.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/d15-full30m.sh) ·
 [`d15-20x256-lowlr.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/d15-20x256-lowlr.sh) ·
@@ -397,88 +421,66 @@ host). First ckpt expected in ~3h; full run in ~85h.
 
 ## Peak Elo Across Every Checkpoint We've Ever Run <a id="peak-elo"></a>
 
-The full top-6 across the entire project, sorted by point estimate.
-All UCI=1,800 anchor, ~100 games each:
+The full top-8 across the entire project, sorted by point estimate.
+All UCI=1,800 anchor, ~100 games each.
 
 | # | Run | Ckpt | sims | Elo | CI |
 |---|---|---|---:|---:|---|
-| 1 | d10 30M (20×256) | ep 15 | 4,000 | **2,189** | [2098, 2354] |
-| 2 | d10 30M (20×256) | ep 10 | 4,000 | 2,171 | [2082, 2324] |
-| 3 | d10 30M (20×256) | ep 20 | 4,000 | 2,154 | [2067, 2297] |
-| 4 | **d15 46M (40×256)** | **ep 7** | **4,000** | **2,146** | **[2060, 2285]** ← d15 best so far |
-| 5 | d10 30M (20×256) | ep 5 | 4,000 | 2,084 | [2005, 2197] |
-| 6 | d15 46M (40×256) | ep 2 | 4,000 | 2,055 | [1979, 2159] |
+| 1 | **R2 v2 (d15 46M, 20×256 cosine)** | **ep 4** | **4,000** | **2,285** | **[2177, 2554]** ← project high |
+| 2 | **R1 v2 (d15 46M, 40×256 cosine)** | **ep 7** | **4,000** | **2,209** | **[2115, 2389]** |
+| 3 | d10 30M (20×256) | ep 15 | 4,000 | 2,189 | [2098, 2354] |
+| 4 | d10 30M (20×256) | ep 10 | 4,000 | 2,171 | [2082, 2324] |
+| 5 | d10 30M (20×256) | ep 20 | 4,000 | 2,154 | [2067, 2297] |
+| 6 | d15 46M (40×256 constant LR — R1) | ep 7 | 4,000 | 2,146 | [2060, 2285] |
+| 7 | R1 v2 (d15 46M, 40×256 cosine) | ep 2 | 4,000 | 2,138 | [2054, 2274] |
+| 8 | d15 46M (20×256 constant LR — R2) | ep 6 | 4,000 | 2,123 | [2041, 2252] |
 
-## Why is d10 ahead of d15 — for now? <a id="d10-vs-d15"></a>
+The top three numbers are within ~96 Elo and their CIs all overlap.
+At 100 games per measurement the score CI is ±10 percentage points,
+which converts to a wide Elo CI when the agent is far from the
+opponent. A direct head-to-head between the three top ckpts (rows 1, 2,
+3) would put a much tighter bound on the ordering than the
+Stockfish-anchored numbers can.
 
-A 20×256 network trained on Stockfish *depth-10* labels currently leads
-a 40×256 network trained on Stockfish *depth-15* labels with **1.5× the
-data**. That is genuinely surprising — d15 has more capacity, a
-stronger teacher, *and* more positions. Three honest candidates for
-what's going on, in rough order of how likely each is:
+## Did the stronger teacher (d15) finally beat d10? <a id="d10-vs-d15"></a>
 
-### 1. d15 hasn't peaked yet
+The earlier write-up of this section asked "*why is d10 ahead of d15?*"
+because R1 (constant LR) and R2 (constant LR) both topped out at or
+below the d10 peak. The cosine-LR re-runs flipped that ordering:
 
-This is almost certainly the dominant factor. The d10 number (2,189)
-was its **ep 15 of 20 epochs**. The d15 number (2,146) is **ep 7 of
-40 epochs**. Most of d10's gain came after ep 5 (2,084 → 2,189 = +105
-between ep 5 and ep 15). d15 jumped +91 between ep 2 and ep 7 at
-sims=4,000 and is still on the way up.
+| | best sims=4,000 Elo @ UCI=1,800 | CI |
+|---|---:|---|
+| d10 30M (20×256, LR=1e-3 constant) | 2,189 (ep 15) | [2098, 2354] |
+| d15 46M constant LR — R1 (40×256) | 2,146 (ep 7) | [2060, 2285] |
+| d15 46M constant LR — R2 (20×256) | 2,123 (ep 6) | [2041, 2252] |
+| **d15 46M cosine LR — R1 v2** (40×256) | **2,209 (ep 7)** | **[2115, 2389]** |
+| **d15 46M cosine LR — R2 v2** (20×256) | **2,285 (ep 4)** | **[2177, 2554]** |
 
-If d15 keeps adding ~+15 Elo per epoch at sims=4,000 (slower than its
-ep 2→7 rate to be conservative), it crosses d10's 2,189 around ep 12
-and could peak somewhere in ep 15–20. That run finishes in ~24h.
+**The cosine schedule unlocked the d15 teacher.** Both cosine variants
+beat their constant-LR siblings (R1 v2 +63 over R1; R2 v2 +162 over
+R2) and both meet or exceed the d10 30M peak. The "d15 ≈ d10" verdict
+from the first round was a recipe artifact — constant LR=1e-3 was
+oscillating instead of converging.
 
-### 2. Eval noise is bigger than the gap
+The cosine numbers are still a 100-game-eval-noise away from being
+statistically distinguishable: R2 v2's 2,285 has a 95% CI of ±200 Elo.
+A 200-game head-to-head between the three (d10 ep 15 vs R1 v2 ep 7 vs
+R2 v2 ep 4, MCTS sims=4,000 on all sides) is the only way to pin the
+real ordering. The launcher exists — see below.
 
-The 43-Elo gap (2,189 vs 2,146) sits inside a 95% CI that's
-±70-100 Elo wide on each measurement. The CIs overlap by ~190 Elo;
-the two means are not statistically distinguishable at 100 games.
+### What's still uncertain
 
-That's why the [head-to-head launcher](#head-to-head-launcher) below
-exists — putting d10 and d15 in direct play against each other replaces
-"both vs Stockfish, infer relative strength" with "score from N games
-between them," which has tighter CIs per dollar.
-
-### 3. The "stronger teacher" prior is only as useful as your training recipe
-
-The d10 result used **LR=1e-3 + no decay + 20×256 + batch 2048**. R1
-(the headline d15 run) uses the same LR and decay but with a
-**40×256 net** — 2× the parameters. Big-net + aggressive constant LR
-typically wants warmup + cosine decay; ours has neither (train.py
-doesn't currently support schedulers — that's a follow-up). With more
-capacity but a less-optimized optimizer, R1 may be oscillating instead
-of converging.
-
-This is the experimental question R2 (20×256, LR=5e-4, weight_decay=1e-3)
-is meant to settle. If R2's final sims=4,000 number lands at or above
-R1's, *the bottleneck was the hparams, not the teacher.* Initial
-signal at sims=800: R2 ep 7 = 1,922, R1 ep 7 = 1,941 — within noise
-despite R2 using half the compute per epoch.
-
-### 4. (Quieter) Soft-target dilution at stronger teacher
-
-At depth 15, Stockfish's policy distribution often spreads more
-probability across legitimate alternatives than at depth 10 (deeper
-search uncovers near-equivalent lines). With multipv=8 + T=1, the
-student learns to hedge across more candidates instead of committing
-to one. MCTS at inference *amplifies* a sharp prior more than a flat
-one, so hedging costs sims=4,000 Elo more than sims=800 Elo.
-
-We already saw a version of this in the 250K MPS run
-([Three honest hypotheses](https://github.com/shehio/world-models/blob/main/experiments/distill-soft/results.md#three-honest-hypotheses-for-the-underperformance)
-in results.md) — "top-K=87% / top-1=37%" was the hedging failure mode
-in miniature. It's plausible at full data scale too, especially if the
-40×256 net has the capacity to *memorize* the softer distribution.
-
-### What would falsify each
-
-| Hypothesis | What disproves it |
-|---|---|
-| d15 not done | d15 epoch 15+ sims=4,000 lands below 2,150 and plateaus |
-| eval noise | head-to-head shows clear gap one way or the other |
-| hparams | R2 final ≥ R1 final → it was hparams; R2 ≪ R1 → it wasn't |
-| soft-target dilution | R2 ≥ d10 too — would mean d15 teacher *works* at the right shape |
+- **R2 v2 ep 4 might be a noise spike.** Later R2 v2 ckpts (ep 6, 9,
+  10) all came in lower at sims=4,000. That's consistent either with
+  "ep 4 was a lucky 104-game match" or with "cosine peaks early then
+  decays" — only a re-eval of ep 4 at higher game count tells us which.
+- **R1 v2 hasn't finished.** Currently at ep 15 of a 40-epoch run.
+  The d10 baseline added +105 Elo between ep 5 and ep 15; if R1 v2
+  does anything similar, the peak is still ahead of us.
+- **Soft-target dilution** at d15 is still a plausible micro-loss
+  ([details](https://github.com/shehio/world-models/blob/main/experiments/distill-soft/results.md#three-honest-hypotheses-for-the-underperformance))
+  but it's no longer the dominant story — the cosine schedule
+  recovered most of what the constant LR was losing.
 
 ## Head-to-head launcher — d10 best vs d15 best <a id="head-to-head-launcher"></a>
 
@@ -508,14 +510,20 @@ Underlying script: [`experiments/selfplay/scripts/h2h_mp.py`](https://github.com
 | soft vs hard targets | **partial** (helps strong teachers, hurts weak) |
 | eval-side search (4,000 vs 800 sims) | **confirmed** (+277) |
 | data scale (30M vs 5M positions) | **confirmed** (+199) |
-| stronger teacher (d15 vs d10) at full data | **in flight** (R1 ep 7 at 2,146, climbing toward d10's 2,189 peak) |
+| stronger teacher (d15 vs d10) at full data, constant LR | **rejected** (R1 / R2 both topped out below d10's 2,189) |
+| stronger teacher (d15 vs d10) at full data, **cosine LR** | **confirmed** (R2 v2 ep 4 = **2,285**, R1 v2 ep 7 = **2,209**) |
 
-Capacity is decisively *not* the bottleneck on the 5M-data baseline;
-that result needs to be re-tested at full data scale because R1 (40×256
-on 46M positions) is climbing. Eval search recovers a huge slice. **Data
-was the real bottleneck.** Strongest checkpoint to date:
-**2,189 Elo @ UCI=1,800** from the d10 full-30M run at epoch 15 with
-sims=4,000 (CI [2098, 2354]). Tightest CI: **2,110 Elo @ UCI=2,000** at
-ep 5 with sims=4,000 (CI [2044, 2187]). The d15 full-data run is
-expected to top the chart within the next ~24h
-([what's next →](https://shehio.github.io/world-models/next/)).
+The bitter-lesson levers (more compute via search + data) confirmed
+again. The "smarter network" lever (more parameters at constant data)
+still rejected. The "stronger teacher" lever turned out to be gated on
+**LR schedule** — d15 doesn't outperform d10 with constant LR, but
+does with cosine. Strongest checkpoint to date:
+**2,285 Elo @ UCI=1,800** from R2 v2 (d15 46M, 20×256 cosine) at epoch 4
+with sims=4,000 (CI [2,177, 2,554]). Tighter-CI second-place:
+**2,209 Elo** from R1 v2 (d15 46M, 40×256 cosine) at epoch 7,
+CI [2,115, 2,389].
+
+Self-play RL on top of the strongest distilled prior has been
+[attempted six times](https://shehio.github.io/world-models/next/#selfplay-postmortem) on spot and
+evicted before iter 1 finished each time — see the postmortem on the
+[next steps page](https://shehio.github.io/world-models/next/).

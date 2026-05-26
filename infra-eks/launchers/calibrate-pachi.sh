@@ -4,6 +4,12 @@
 #
 # GNU Go was too weak (KataGo@v200 swept 100/0). Pachi is the right
 # strength tier to give a measurable head-to-head.
+#
+# 2026-05-26: switched off spot. The 2026-05-26T06:00 attempt died with
+# "Job for docker.service canceled" + "EOF" on docker.sock during
+# user-data — spot reclaim killed the host mid-init. Calibration is
+# ~1h on a g6.xlarge ≈ $1.32 OD; the reliability matters far more than
+# the spot discount.
 
 set -euo pipefail
 
@@ -45,6 +51,16 @@ cleanup() {
 trap cleanup EXIT
 
 systemctl enable --now docker
+# Wait for docker daemon to actually accept connections (the unit can
+# report "active" before the socket is responsive on cold boot).
+for i in \$(seq 1 60); do
+    if docker info >/dev/null 2>&1; then
+        break
+    fi
+    sleep 2
+done
+docker info >/dev/null  # fail loudly if it never came up
+
 aws ecr get-login-password --region $IMAGE_REGION | docker login --username AWS --password-stdin $ECR
 docker pull \$ECR_IMAGE
 
@@ -96,7 +112,6 @@ aws ec2 run-instances --region $LAUNCH_REGION \
     --iam-instance-profile Name=$INSTANCE_PROFILE \
     --block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=80,VolumeType=gp3,DeleteOnTermination=true}' \
     --instance-initiated-shutdown-behavior terminate \
-    --instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}' \
     --user-data "$USER_DATA" \
     --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-go-calibrate-pachi-${STAMP}-od},{Key=role,Value=wm-go-calibration}]" \
     --query 'Instances[0].[InstanceId,State.Name,InstanceLifecycle]' --output text
