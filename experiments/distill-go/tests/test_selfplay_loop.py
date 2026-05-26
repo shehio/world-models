@@ -162,6 +162,15 @@ def test_replay_buffer_sample_returns_tensors_on_device():
     assert zs.dtype == torch.float32
 
 
+def test_replay_buffer_sample_on_empty_raises_clearly():
+    """np.random.randint(0, 0, size=N) gives a cryptic numpy error; our guard
+    raises a ValueError that names the precondition the caller must satisfy."""
+    import pytest
+    buf = ShardedReplayBuffer(max_shards=3)
+    with pytest.raises(ValueError, match="empty buffer"):
+        buf.sample(batch_size=4, device=torch.device("cpu"))
+
+
 def test_replay_buffer_sample_uses_all_shards():
     """Sampling should pool across shards, not just one."""
     buf = ShardedReplayBuffer(max_shards=5)

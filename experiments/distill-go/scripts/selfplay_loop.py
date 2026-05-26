@@ -84,6 +84,9 @@ class ShardedReplayBuffer:
 
     def sample(self, batch_size: int, device: torch.device):
         flat = self._flat()
+        if len(flat) == 0:
+            raise ValueError("ShardedReplayBuffer.sample called on empty buffer — "
+                             "the caller must `if len(buffer) >= batch_size` first")
         idxs = np.random.randint(0, len(flat), size=batch_size)
         batch = [flat[i] for i in idxs]
         states = torch.from_numpy(np.stack([b[0] for b in batch])).to(device)
