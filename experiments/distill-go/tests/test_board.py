@@ -321,6 +321,51 @@ def test_tromp_taylor_two_color_split():
     assert wp == 5 + 10    # 5 W stones + 10 empties in cols 3-4
 
 
+def test_tromp_taylor_dame_region_nobody_scores():
+    """An empty region that touches BOTH colors is dame — counts for neither.
+
+    Mutation-catches: if the `bordering == {BLACK}` / `{WHITE}` checks were
+    relaxed to `in {BLACK}` / `in {WHITE}`, this region would mistakenly
+    score for both sides.
+    """
+    b = GoBoard(size=5, komi=0.0)
+    # Row 1 = all BLACK. Row 3 = all WHITE. Row 2 (5 empties) borders both.
+    for x in range(5):
+        b.grid[1, x] = BLACK
+        b.grid[3, x] = WHITE
+    bp, wp = b.tromp_taylor_score()
+    # Row 0 (5 empties) only touches BLACK (via row 1) → black territory.
+    # Row 2 (5 empties) borders BOTH → dame, nobody.
+    # Row 4 (5 empties) only touches WHITE (via row 3) → white territory.
+    assert bp == 5 + 5    # 5 B stones + 5 empties in row 0
+    assert wp == 5 + 5    # 5 W stones + 5 empties in row 4
+
+
+def test_tromp_taylor_fully_filled_board_no_territory():
+    """Every point is a stone — no empties to assign as territory."""
+    b = GoBoard(size=3, komi=0.5)
+    # Checkerboard so neither side has empty neighbors that get captured.
+    for y in range(3):
+        for x in range(3):
+            b.grid[y, x] = BLACK if (y + x) % 2 == 0 else WHITE
+    bp, wp = b.tromp_taylor_score()
+    # 5 BLACK stones (corners + center), 4 WHITE stones, 0 territory either side.
+    assert bp == 5
+    assert wp == 4 + 0.5    # WHITE stones + komi
+
+
+def test_tromp_taylor_all_black_board_wins_decisively():
+    """Sanity: a board with only BLACK stones gives BLACK the entire board minus komi."""
+    b = GoBoard(size=3, komi=7.5)
+    for y in range(3):
+        for x in range(3):
+            b.grid[y, x] = BLACK
+    bp, wp = b.tromp_taylor_score()
+    assert bp == 9
+    assert wp == 7.5
+    assert b.winner() == BLACK   # 9 > 7.5
+
+
 # ---------------------------------------------------------------- coord helpers
 
 

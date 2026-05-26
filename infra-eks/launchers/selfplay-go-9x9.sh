@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # AlphaZero-style self-play on top of the 8x128 distilled Go prior.
 #
-# Starts from the d15-equivalent 9x9 prior (8×128 ep 14 = parity with KataGo @v=200,
-# absolute Elo ≥ 2,366) and runs distill-then-RL for a 24h budget. The chess
+# Starts from the d15-equivalent 9x9 prior (8×128 distilled_epoch015.pt =
+# the ckpt that scored parity with KataGo @v=200, absolute Elo ≥ 2,366 —
+# the eval and results.md both call it "ep 15" with 0-indexed-file naming)
+# and runs distill-then-RL for a 24h budget. The chess
 # six-attempts-evicted-on-spot postmortem says: USE OD, not spot. 9x9 iters
 # are short (~5 min vs chess's 90 min) but per-attempt setup is the same;
 # OD cost is ~$20 for the full 24h budget on g6.xlarge — not worth the

@@ -74,6 +74,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install pytest
+        run: pip install pytest
+      - name: Unit-test the sync script
+        run: python -m pytest scripts/test_sync_experiments_log.py -v
       - name: Check EXPERIMENTS_LOG.md matches site/content/experiments.md
         run: python scripts/sync_experiments_log.py --check
 

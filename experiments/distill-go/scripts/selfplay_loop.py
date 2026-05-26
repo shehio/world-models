@@ -37,12 +37,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import random
 import subprocess
 import sys
 import time
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -104,8 +103,13 @@ class ShardedReplayBuffer:
 # Self-play with PCR
 # ----------------------------------------------------------------------------
 
-def _outcome_white_pov(board: GoBoard) -> float:
-    """Game result from BLACK POV (chess convention): +1 if black wins, -1 if white wins, 0 if no winner."""
+def _outcome_black_pov(board: GoBoard) -> float:
+    """Game result from BLACK's POV: +1 if black wins, -1 if white wins, 0 if no winner.
+
+    BLACK-POV (not white) because BLACK plays first in Go — matches the
+    sample-z assignment below where `was_black ? z : -z` converts to
+    side-to-move POV.
+    """
     w = board.winner()
     if w == BLACK:
         return 1.0
@@ -173,7 +177,7 @@ def play_game_pcr(
         board.play(move)
         ply += 1
 
-    z_black = _outcome_white_pov(board)
+    z_black = _outcome_black_pov(board)
     samples = [(s, p, z_black if was_black else -z_black) for s, p, was_black in recorded]
     stats = {
         "full_moves": full_count,
@@ -188,42 +192,66 @@ def play_game_pcr(
 # ----------------------------------------------------------------------------
 
 def _worker(args, ckpt_path: str, out_queue, worker_id: int) -> None:
-    """Run `games_per_worker` games, push each game's samples to out_queue."""
-    cfg = GoConfig(
-        board_size=args.board_size,
-        n_input_planes=args.n_input_planes,
-        n_res_blocks=args.n_blocks,
-        n_filters=args.n_filters,
-        dirichlet_alpha=args.dirichlet_alpha,
-        dirichlet_eps=args.dirichlet_eps,
-        temp_moves=args.temp_moves,
-        c_puct=args.c_puct,
-    )
-    device = torch.device(args.worker_device)
-    net = AlphaZeroGoNet(cfg).to(device)
-    state = torch.load(ckpt_path, map_location=device, weights_only=False)
-    if isinstance(state, dict) and "state_dict" in state:
-        state = state["state_dict"]
-    net.load_state_dict(state)
-    net.eval()
+    """Run `games_per_worker` games, push each game's samples to out_queue.
 
-    for g in range(args.games_per_worker):
-        samples, z, ply, stats = play_game_pcr(
-            net, cfg, device,
-            sims_full=args.pcr_sims_full,
-            sims_reduced=args.pcr_sims_reduced,
-            p_full=args.pcr_p_full,
-            max_moves=args.max_moves,
+    Always sends a final {"done": True} so the main process never hangs
+    on queue.get() — even on exception (the finally block ensures it).
+    """
+    # Seed RNG distinctly per worker so PCR coin-flips + MCTS Dirichlet
+    # noise are independent across workers. Without this, every worker
+    # starts from Python's default seed (process start time) and games
+    # can correlate within an iter.
+    seed = (int(time.time() * 1000) ^ (worker_id * 2654435761)) & 0x7FFFFFFF
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    try:
+        cfg = GoConfig(
+            board_size=args.board_size,
+            n_input_planes=args.n_input_planes,
+            n_res_blocks=args.n_blocks,
+            n_filters=args.n_filters,
+            dirichlet_alpha=args.dirichlet_alpha,
+            dirichlet_eps=args.dirichlet_eps,
+            temp_moves=args.temp_moves,
+            c_puct=args.c_puct,
         )
+        device = torch.device(args.worker_device)
+        net = AlphaZeroGoNet(cfg).to(device)
+        state = torch.load(ckpt_path, map_location=device, weights_only=False)
+        if isinstance(state, dict) and "state_dict" in state:
+            state = state["state_dict"]
+        net.load_state_dict(state)
+        net.eval()
+
+        for g in range(args.games_per_worker):
+            samples, z, ply, stats = play_game_pcr(
+                net, cfg, device,
+                sims_full=args.pcr_sims_full,
+                sims_reduced=args.pcr_sims_reduced,
+                p_full=args.pcr_p_full,
+                max_moves=args.max_moves,
+            )
+            out_queue.put({
+                "worker": worker_id,
+                "game": g,
+                "samples": samples,
+                "z_black": z,
+                "ply": ply,
+                "stats": stats,
+            })
+    except Exception as e:
+        # Surface the error so the main process can log it, but still
+        # signal done so it doesn't deadlock waiting forever.
+        import traceback
         out_queue.put({
             "worker": worker_id,
-            "game": g,
-            "samples": samples,
-            "z_black": z,
-            "ply": ply,
-            "stats": stats,
+            "error": f"{type(e).__name__}: {e}",
+            "traceback": traceback.format_exc(),
         })
-    out_queue.put({"worker": worker_id, "done": True})
+    finally:
+        out_queue.put({"worker": worker_id, "done": True})
 
 
 # ----------------------------------------------------------------------------
@@ -264,7 +292,13 @@ def eval_vs_random(network, cfg: GoConfig, device: torch.device, games: int,
                                   c_puct=cfg.c_puct, add_root_noise=False,
                                   device=device, n_input_planes=cfg.n_input_planes,
                                   game_history=history)
-                move = select_move(visits, temperature=0.0)
+                # Defensive: select_move raises on empty visits dict (would
+                # happen only if MCTS expanded zero children, which means no
+                # legal moves at the root — fall through to pass).
+                if visits:
+                    move = select_move(visits, temperature=0.0)
+                else:
+                    move = cfg.pass_move
             else:
                 legal = [i for i, x in enumerate(board.legal_mask()) if x]
                 move = random.choice(legal) if legal else cfg.pass_move
@@ -417,16 +451,38 @@ def main():
         done_workers = 0
         n_games = 0
         n_positions = 0
+        n_errors = 0
+        # Per-game timeout: even if a worker hangs, the main loop won't.
+        # An iter at sims_full=200 typically takes seconds, so 1800s is
+        # ~30 min of slack — well above expected per-iter wallclock.
+        queue_timeout = max(args.pcr_sims_full * 1.5, 1800)
         while done_workers < args.workers:
-            msg = queue.get()
+            try:
+                msg = queue.get(timeout=queue_timeout)
+            except Exception:
+                print(f"  queue.get timed out after {queue_timeout}s — "
+                      f"{done_workers}/{args.workers} workers done; aborting iter",
+                      flush=True)
+                break
             if msg.get("done"):
                 done_workers += 1
+                continue
+            if "error" in msg:
+                n_errors += 1
+                print(f"  worker {msg['worker']} error: {msg['error']}", flush=True)
                 continue
             iter_samples.extend(msg["samples"])
             n_games += 1
             n_positions += len(msg["samples"])
         for p_ in procs:
-            p_.join()
+            # Don't block forever on a wedged child.
+            p_.join(timeout=30)
+            if p_.is_alive():
+                p_.terminate()
+                p_.join(timeout=5)
+        if n_errors > 0:
+            print(f"  iter had {n_errors} worker errors (continuing with what landed)",
+                  flush=True)
 
         iter_wall = time.time() - iter_t0
         total_games += n_games
