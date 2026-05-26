@@ -1,131 +1,100 @@
-# world-models — AlphaZero on chess, three training-procedure ablations
+# world-models — AlphaZero's network on one GPU
 
-A self-paced study of how the **training signal** changes what an
-AlphaZero ResNet can learn — RL self-play, hard Stockfish targets, and
-soft multipv Stockfish targets, evaluated on the same architecture.
+**[2,189 Elo](https://shehio.github.io/world-models/experiments/#stacking)**
+on chess (vs Stockfish UCI=1,800, sims=4,000, CI [2,098, 2,354]) from
+the same 20×256 ResNet AlphaZero used — supervised distillation from
+Stockfish on 30M positions, one L40S GPU, ~16 GPU-hours. Roughly
+**four orders of magnitude less compute** than the AlphaZero paper.
 
-The thesis: holding the network constant and varying only the
-*training procedure* surfaces the real differences between
-methods. Three sibling experiments, one shared chess core, one
-parallel AWS datagen pipeline.
+The live narrative — method, ablation pages, current Elo, infra, and
+the Go pipeline — lives on the site:
+**[shehio.github.io/world-models](https://shehio.github.io/world-models/)**.
 
-## Projects
+## What's in here
 
-| # | Project | Headline result | Latent | Planning | Training signal |
-|---|---|---|---|---|---|
-| **02** | [AlphaZero-chess](./experiments/selfplay/) | v4: +368 Elo vs random, 0 losses of 200 ([results](./experiments/selfplay/results.md)) | (true board state) | MCTS over real env | Self-play RL |
-| **02b** | [Stockfish distillation](./experiments/distill-hard/) | Real Elo 1185 (19W/25D/56L vs SF1320) | same as 02 | MCTS at eval only | **Hard** targets from SF d10 |
-| **02c** | [Scaled distillation](./experiments/distill-soft/) | **d15 ckpt: Elo ~1807** (+622 over 02b) — bigger teacher + 5M positions + GPU-EKS infra ([results](./experiments/distill-soft/results.md)) | same as 02 (bigger) | MCTS at eval only | **Multipv soft** targets from SF d10/d15 |
+Two games, four trainable pipelines, one shared core:
 
-The 02 → 02b → 02c arc holds *architecture* constant (AlphaZero ResNet)
-and varies the **training signal** (RL self-play → SF hard targets → SF
-multipv soft targets). The conceptual differences and the ceilings each
-hits are in
-[DISTILLATION_VS_ALPHAZERO.md](./DISTILLATION_VS_ALPHAZERO.md).
+| Pipeline | Code | Headline |
+|---|---|---|
+| **Chess · soft distillation** | [`experiments/distill-soft/`](./experiments/distill-soft/) | **2,189 Elo** vs Stockfish UCI=1,800 at sims=4,000 (d10 30M ep 15). The headline pipeline. |
+| **Chess · hard distillation** | [`experiments/distill-hard/`](./experiments/distill-hard/) | ~1,185 Elo from a 3M-param net on 250K positions — the simpler sibling, used as a soft-vs-hard ablation point. |
+| **Chess · self-play RL** | [`experiments/selfplay/`](./experiments/selfplay/) | Faithful AlphaZero (v1–v4): +368 Elo vs random from scratch on a laptop. The starting point for the distill-then-RL loop. |
+| **Go (9×9) · distillation** | [`experiments/distill-go/`](./experiments/distill-go/) | Parity with KataGo @ v200 in 15 epochs; 8×128 net on 1.236M KataGo positions. |
+
+All four share `wm_chess/` (board, network, MCTS, arena, catalog,
+merge tools), the same on-disk `.npz` schema, and the same datagen
+infrastructure (`infra-eks/`: EKS Indexed Jobs + bare-EC2 launchers,
+spot fallback across regions, multi-region auto-eval daemon).
 
 ## Layout
 
 ```
 .
-├── pyproject.toml                  Workspace root (uv workspace; one lock)
-├── uv.lock
-├── .env.example                    Template for AWS pipeline env vars
-├── wm_chess/                       Shared chess core (board, network,
-│                                     MCTS, arena, config, catalog,
-│                                     merge tools) — used by all three
-│                                     experiments below
+├── wm_chess/                 Shared core: board, network, MCTS, arena, catalog, merge tools
 ├── experiments/
-│   ├── selfplay/                   Self-play AlphaZero (5 progressive runs)
-│   ├── distill-hard/               Distillation: 10×128 + hard targets
-│   └── distill-soft/               Distillation: 20×256 + multipv soft targets
-├── infra-eks/                      EKS-native parallel datagen + GPU training
-│   ├── daemons/                      auto-eval (per-ckpt EC2) + pod-sync
-│   └── launchers/                    bare-EC2 one-shots (L40S, deep-sims eval, …)
-├── library/                        Indexed game library + auto-generated CATALOG
-├── docs/notes/                     Engineering notes — operational gotchas, infra patterns,
-│                                     point-in-time results — see docs/notes/README.md
-├── DISTILLATION_VS_ALPHAZERO.md    02 vs 02b vs 02c training procedures
-├── EVALS.md                        How the auto-eval daemon measures Elo
-├── EXPERIMENTS_LOG.md              Running log of the A / C / E ablations + AZ comparison
-├── site/                           Hugo static site (matches projectmontecarlo.com style)
-├── dashboard.html                  Self-contained run-evolution dashboard
-└── README.md                       you are here
+│   ├── selfplay/             Faithful AlphaZero (v1–v4 self-play, PUCT-MCTS, ResNet)
+│   ├── distill-hard/         Hard-target distillation from Stockfish d6/d10
+│   ├── distill-soft/         Soft multipv distillation — the headline pipeline
+│   ├── distill-go/           9×9 Go distilled from KataGo
+│   └── distill-go-spike/     The one-day go spike that motivated distill-go
+├── infra-eks/                EKS cluster manifests, Dockerfiles, daemons, bare-EC2 launchers
+├── library/                  Indexed game library + auto-generated CATALOG.md
+├── docs/notes/               Engineering notes — operational gotchas, infra patterns
+├── site/                     Hugo site (the live narrative + ablation pages)
+├── scripts/                  Cross-repo tooling (sync_experiments_log.py, ...)
+├── EVALS.md                  Auto-eval daemon, UCI anchors, Elo math, bisection
+├── EXPERIMENTS_LOG.md        Generated from site/content/experiments.md — do not edit by hand
+└── README.md                 you are here
 ```
 
-The four `pyproject.toml` files (one at root + one per workspace
-member) share a single `uv.lock` at the root. Run `uv sync
---all-packages --extra test` from the root once, then `uv run --project
-<member> python -m pytest <member>/tests/` to test any one in isolation.
+The chess packages (root, `wm_chess`, the three `experiments/*` chess
+projects) form one `uv` workspace with a shared `uv.lock`; the Go
+packages (`experiments/distill-go`, `experiments/distill-go-spike`)
+are standalone with their own locks. Run
+`uv sync --all-packages --extra test` from root once for the chess
+side; the Go projects use `uv sync --extra test` from their own
+directory.
 
 ## Quick start
 
 ```bash
-# 1. clone, then set up the workspace (single venv, single lock)
+# 1. one-shot workspace setup
 uv sync --all-packages --extra test
 
-# 2. run any experiment's tests
-uv run --project wm_chess           python -m pytest wm_chess/tests/
-uv run --project experiments/selfplay python -m pytest experiments/selfplay/tests/
+# 2. tests for any one member
+uv run --project wm_chess               python -m pytest wm_chess/tests/
+uv run --project experiments/selfplay   python -m pytest experiments/selfplay/tests/
+uv run --project experiments/distill-go python -m pytest experiments/distill-go/tests/
 
-# 3. for AWS pipeline work, copy the env template and fill in your account
-cp .env.example .env
-# edit .env with your AWS_ACCOUNT_ID, bucket names, etc.
-
-# 4. for end-to-end datagen on EKS, see infra-eks/README.md
+# 3. for AWS pipeline work
+cp .env.example .env       # fill in your account / bucket names
 ```
 
-## Navigation by interest
-
-- **Want the AWS datagen pipeline** → [`infra-eks/README.md`](./infra-eks/README.md)
-  — eksctl cluster, Docker image, Indexed Job parallel datagen on spot
-  CPU, S3-staged shards, k8s-native cross-pod merge. The historical
-  one-EC2-box Terraform pipeline is preserved as a writeup in
-  [02c/README — AWS / cloud architecture](./experiments/distill-soft/README.md#aws--cloud-architecture).
-- **Want how distillation runs are trained + evaluated** →
-  [`EVALS.md`](./EVALS.md) (auto-eval daemon, UCI=1350 anchor, Elo math,
-  multi-region fallback, `elo_bisect.py`),
-  [`infra-eks/daemons/README.md`](./infra-eks/daemons/README.md) (the
-  poller + per-checkpoint EC2),
-  [`infra-eks/launchers/README.md`](./infra-eks/launchers/README.md)
-  (one-shot bare-EC2 launchers for L40S training and ablation runs).
-- **Want to see the network architecture** →
-  [02c/README — Network architecture](./experiments/distill-soft/README.md#network-architecture)
-  (Mermaid; renders inline on GitHub). Same architecture used across
-  02 / 02b / 02c.
-- **Want to understand multipv / softmax T / hard-vs-soft targets** →
-  [02c/README — Vocabulary](./experiments/distill-soft/README.md#vocabulary-multipv-softmax-t-in-pawns-target-shape).
-- **Want to see the negative result** → [02c/results.md](./experiments/distill-soft/results.md).
-- **Want the AlphaZero self-play story (v1 → v5)** → [02/results.md](./experiments/selfplay/results.md).
-
-## Why chess
-
-- **Symbolic state** — skip perception, focus on search + value learning.
-- **Deterministic transitions** — uniform across all three experiments.
-- **Cheap to simulate** — `python-chess` does ~10⁶ legal-move generations/sec.
-- **Honest evaluation is easy** — play vs Stockfish at fixed Elo, vs random, vs prior checkpoints.
-
-Each experiment fits in hours on a Mac (with AWS as an option when an
-experiment genuinely needs many CPUs or a GPU). Beating random and a
-weak Stockfish baseline is the success criterion; reproducing
-AlphaZero's published Elo is not.
+End-to-end pipelines (datagen → training → eval) live under
+`infra-eks/`. The launcher scripts in `infra-eks/launchers/` are the
+quickest way to reproduce any single experiment on a bare EC2 box; the
+EKS Indexed Jobs in `infra-eks/k8s/` are the parallel-datagen path.
 
 ## Tests + CI
 
-GitHub Actions runs every workspace member's test suite on each push
-to main (see `.github/workflows/ci.yml`).
+GitHub Actions runs every workspace member's test suite on every push
+to main (see [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)).
+The same workflow regenerates `EXPERIMENTS_LOG.md` from the site and
+fails if the result differs from the committed copy, so the two stay
+in sync by construction.
 
 | Package | Tests | Wall |
 |---|---:|---:|
-| `wm_chess` (shared core + catalog + merge tools + stubs) | 84 | ~3 s |
-| `experiments/selfplay` | 49 | ~4 s |
-| `experiments/distill-hard` | 6 | ~2 s |
-| `experiments/distill-soft` | 80 | ~3 s |
-| **Total** | **219** | **~12 s** |
-
-Run any one with `uv run --project <member> python -m pytest
-<member>/tests/`.
+| `wm_chess` (shared core + catalog + merge tools) | 84 | ~17 s |
+| `experiments/selfplay` | 49 | ~6 s |
+| `experiments/distill-hard` | 6 | ~3 s |
+| `experiments/distill-soft` | 93 | ~3 s |
+| `experiments/distill-go` | 21 | ~13 s |
+| **Total** | **253** | **~42 s** |
 
 ## References
 
-- Silver et al., *Mastering Chess and Shogi by Self-Play (AlphaZero)* (2017) — https://arxiv.org/abs/1712.01815
-- DeepMind blog, *AlphaZero: Shedding new light on chess, shogi, and Go* (2018) — https://deepmind.google/discover/blog/alphazero-shedding-new-light-on-the-grand-games-of-chess-shogi-and-go/
+- Silver et al., [*Mastering Chess and Shogi by Self-Play (AlphaZero)*](https://arxiv.org/abs/1712.01815) (2017)
+- DeepMind blog, [*AlphaZero: Shedding new light on chess, shogi, and Go*](https://deepmind.google/discover/blog/alphazero-shedding-new-light-on-the-grand-games-of-chess-shogi-and-go/) (2018)
+- Wu, [*Accelerating Self-Play Learning in Go*](https://arxiv.org/abs/1902.10565) — KataGo's playout-cap randomization (used in `experiments/selfplay/` and `experiments/distill-go/`)
+- [Leela Chess Zero](https://lczero.org) — the distill-then-RL recipe this project is following
