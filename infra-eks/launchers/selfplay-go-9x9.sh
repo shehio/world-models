@@ -22,13 +22,16 @@
 set -euo pipefail
 
 ACCOUNT_ID=594561963943
-IMAGE_REGION=us-east-1
+# wm-go-gpu image lives in us-east-2 ECR; the bucket + EC2 are us-east-1.
+# Two distinct regions, so two distinct AWS-CLI --region flags below.
+ECR_REGION=us-east-2
+S3_REGION=us-east-1
 LAUNCH_REGION=us-east-1
 AMI=ami-027c3ae8019fc0d3a
 SUBNET=${SUBNET:-subnet-042fb3c497e2631a7}      # us-east-1b default; override on capacity errors
 INSTANCE_TYPE=${INSTANCE_TYPE:-g6.xlarge}
 INSTANCE_PROFILE=wm-chess-merge-instance-profile
-ECR=$ACCOUNT_ID.dkr.ecr.us-east-2.amazonaws.com  # wm-go-gpu image lives in us-east-2
+ECR=$ACCOUNT_ID.dkr.ecr.$ECR_REGION.amazonaws.com
 
 S3_BUCKET=wm-chess-library-594561963943
 
@@ -65,7 +68,7 @@ S3_CKPT_BASE="$S3_CKPT_BASE"
 ECR_IMAGE="$ECR/wm-go-gpu:latest"
 
 cleanup() {
-    aws s3 cp /var/log/selfplay.log "\$S3_CKPT_BASE/host-launch.log" --region $IMAGE_REGION 2>&1 || true
+    aws s3 cp /var/log/selfplay.log "\$S3_CKPT_BASE/host-launch.log" --region $S3_REGION 2>&1 || true
     shutdown -h +1 || true
 }
 trap cleanup EXIT
@@ -74,7 +77,7 @@ systemctl enable --now docker
 for i in \$(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 2; done
 docker info >/dev/null
 
-aws ecr get-login-password --region $IMAGE_REGION | docker login --username AWS --password-stdin $ECR
+aws ecr get-login-password --region $ECR_REGION | docker login --username AWS --password-stdin $ECR
 docker pull \$ECR_IMAGE
 
 mkdir -p /mnt/work
@@ -87,7 +90,7 @@ docker run --rm \\
     --shm-size=2g \\
     -v /mnt/work:/work-tmp \\
     -e PRIOR_S3="\$PRIOR_S3" -e S3_CKPT_BASE="\$S3_CKPT_BASE" \\
-    -e AWS_DEFAULT_REGION=$IMAGE_REGION \\
+    -e AWS_DEFAULT_REGION=$S3_REGION \\
     --entrypoint bash \\
     \$ECR_IMAGE -lc '
         set -ex
