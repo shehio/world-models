@@ -1,6 +1,6 @@
 baseURL = "https://shehio.github.io/world-models/"
 languageCode = "en-us"
-title = "World Models — Chess"
+title = "world-models — chess & go, distilled from Stockfish/KataGo on one GPU"
 # Rewrite absolute URLs in content (e.g. /baseline/) so they pick up the
 # /world-models/ subpath when deployed to project Pages.
 canonifyURLs = true

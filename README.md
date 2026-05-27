@@ -1,12 +1,14 @@
-# world-models — AlphaZero's network on one GPU
+# world-models — chess & go, distilled from Stockfish/KataGo on one GPU
 
-**[2,301 Elo](https://shehio.github.io/world-models/experiments/#peak-elo)**
-on chess (R2 v2 ep 14, vs Stockfish UCI=1,800, sims=4,000, 95% CI
-[2,190, 2,601] — the **lower** bound clears the previous peak),
-distilled from Stockfish on ~46M positions, **one L40S GPU, ~16
-GPU-hours**. Roughly **four orders of magnitude less compute** than
-the AlphaZero paper. Tighter-CI second-place: 2,153 Elo at
-sims=8,000 vs UCI=2,000 (CI ±70).
+**Chess**: [2,301 Elo](https://shehio.github.io/world-models/experiments/#peak-elo)
+(R2 v2 ep 14 vs Stockfish UCI=1,800, sims=4,000, 95% CI [2,190, 2,601])
+distilled from Stockfish on ~46M positions. Tighter-CI second-place:
+2,153 Elo at sims=8,000 vs UCI=2,000 (CI ±70).
+**Go (9×9)**: [≥ 2,366](https://shehio.github.io/world-models/go/)
+(parity with KataGo @v=200, anchored to GnuGo L10) from 1.236M
+KataGo-labeled positions. Both on **one L40S GPU per training run,
+~16 GPU-hours each** — roughly four orders of magnitude less compute
+than the AlphaZero paper.
 
 Live narrative + method + ablations + self-play postmortems on the
 site: **[shehio.github.io/world-models](https://shehio.github.io/world-models/)**.
