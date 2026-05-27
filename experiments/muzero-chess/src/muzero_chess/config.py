@@ -56,6 +56,13 @@ class MuZeroConfig:
     # batching amortizes Python overhead + the per-call CUDA launch.
     mcts_batch_size: int = 8
     virtual_loss: float = 1.0      # penalty added to Q for each pending visit
+    # Top-K expansion below the root: only keep the K highest-prior children
+    # at non-root nodes. The full 4672-action expansion is the paper algorithm
+    # but makes _select_child a 4672-iteration Python loop and dominates the
+    # wall clock. Most actions have vanishingly small prior anyway, so the
+    # search-quality loss is negligible. Root expansion is unchanged
+    # (legal-action mask). Use 0 / None for "no top-K, expand all".
+    mcts_top_k: int = 32
 
     # K-step unroll for training.
     num_unroll_steps: int = 5

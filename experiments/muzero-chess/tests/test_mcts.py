@@ -182,6 +182,38 @@ def test_run_mcts_batched_size_1_matches_run_mcts_distribution():
     assert np.allclose(pi_seq, pi_batch)
 
 
+def test_top_k_expansion_below_root_keeps_only_k_children():
+    """At non-root expansion with top_k set, we should see exactly top_k
+    children (not the full 4672 action space)."""
+    cfg = _tiny_cfg(num_simulations=4, mcts_batch_size=1, mcts_top_k=16)
+    net = MuZeroNet(cfg)
+    net.eval()
+    obs = torch.randn(1, INPUT_PLANES, 8, 8)
+    # Provide a single legal action at the root so the first descent goes
+    # one level deep and triggers a non-root expansion on its only child.
+    root = run_mcts(net, obs, cfg, add_root_noise=False, legal_actions=[42])
+    # The root has one child (the masked legal). After one sim, that
+    # child should have been expanded with top_k=16 children.
+    child_42 = root.children[42]
+    assert child_42.is_expanded
+    assert len(child_42.children) == 16, (
+        f"non-root expansion should keep exactly top_k=16 children, "
+        f"got {len(child_42.children)}"
+    )
+
+
+def test_top_k_zero_means_no_pruning():
+    """top_k=0 should fall through to the full 4672-action expansion."""
+    cfg = _tiny_cfg(num_simulations=2, mcts_batch_size=1, mcts_top_k=0)
+    net = MuZeroNet(cfg)
+    net.eval()
+    obs = torch.randn(1, INPUT_PLANES, 8, 8)
+    root = run_mcts(net, obs, cfg, add_root_noise=False, legal_actions=[42])
+    child_42 = root.children[42]
+    assert child_42.is_expanded
+    assert len(child_42.children) == ACTION_DIM
+
+
 def test_run_mcts_batched_legal_mask_at_root():
     cfg = _tiny_cfg(num_simulations=8, mcts_batch_size=4)
     net = MuZeroNet(cfg)

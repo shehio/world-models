@@ -37,6 +37,7 @@ RUN_ID=${RUN_ID:-$(date -u +%Y%m%dT%H%MZ)-muzero-chess}
 # Defaults that the user explicitly asked for (cloud stage).
 SIMS=${SIMS:-400}
 MCTS_BATCH_SIZE=${MCTS_BATCH_SIZE:-8}        # parallel descents per network call
+MCTS_TOP_K=${MCTS_TOP_K:-32}                  # non-root expansion fan-out
 EVAL_EVERY=${EVAL_EVERY:-5}
 EVAL_GAMES=${EVAL_GAMES:-20}
 EVAL_STOCKFISH_ELO=${EVAL_STOCKFISH_ELO:-1320}
@@ -66,7 +67,7 @@ CKPT_S3_BASE="s3://$S3_BUCKET/$S3_PREFIX/$RUN_ID"
 
 echo "[launcher] region=$REGION instance=$INSTANCE_TYPE market=$INSTANCE_MARKET"
 echo "[launcher] s3 base: $CKPT_S3_BASE"
-echo "[launcher] sims=$SIMS  mcts_batch=$MCTS_BATCH_SIZE  eval_every=$EVAL_EVERY  eval_games=$EVAL_GAMES  eval_uci=$EVAL_STOCKFISH_ELO"
+echo "[launcher] sims=$SIMS  mcts_batch=$MCTS_BATCH_SIZE  mcts_top_k=$MCTS_TOP_K  eval_every=$EVAL_EVERY  eval_games=$EVAL_GAMES  eval_uci=$EVAL_STOCKFISH_ELO"
 echo "[launcher] iterations=$ITERATIONS  time_budget=${TIME_BUDGET}s"
 
 USER_DATA=$(cat <<EOF
@@ -94,6 +95,7 @@ docker run --rm \\
     -e RUN_ID=$RUN_ID \\
     -e SIMS=$SIMS \\
     -e MCTS_BATCH_SIZE=$MCTS_BATCH_SIZE \\
+    -e MCTS_TOP_K=$MCTS_TOP_K \\
     -e EVAL_EVERY=$EVAL_EVERY \\
     -e EVAL_GAMES=$EVAL_GAMES \\
     -e EVAL_STOCKFISH_ELO=$EVAL_STOCKFISH_ELO \\

@@ -63,6 +63,9 @@ def main() -> None:
     p.add_argument("--mcts-batch-size", type=int,
                    default=_env_default("MCTS_BATCH_SIZE", 8, int),
                    help="parallel descents per network call (virtual-loss MCTS)")
+    p.add_argument("--mcts-top-k", type=int,
+                   default=_env_default("MCTS_TOP_K", 32, int),
+                   help="non-root expansion fan-out (0 = paper-faithful 4672)")
     p.add_argument("--unroll", type=int,
                    default=_env_default("UNROLL", 5, int))
     p.add_argument("--batch-size", type=int,
@@ -111,6 +114,7 @@ def main() -> None:
         pred_n_res_blocks=args.pred_blocks, pred_n_filters=args.pred_filters,
         num_simulations=args.sims,
         mcts_batch_size=args.mcts_batch_size,
+        mcts_top_k=args.mcts_top_k,
         num_unroll_steps=args.unroll,
         batch_size=args.batch_size,
         lr=args.lr,

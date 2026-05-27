@@ -140,26 +140,47 @@ def _select_child(parent: Node, cfg: MuZeroConfig, mm: MinMaxStats) -> tuple[int
 
 
 def _expand_with_policy(node: Node, latent: torch.Tensor, policy_logits: torch.Tensor,
-                        legal_actions: list[int] | None = None) -> None:
+                        legal_actions: list[int] | None = None,
+                        top_k: int | None = None) -> None:
     """Attach latent + create child stubs with prior probabilities.
 
-    If `legal_actions` is provided (root only), the policy is masked to
-    those actions before softmaxing. Below the root, MuZero expands ALL
-    actions — the dynamics network has to learn to suppress bad ones.
+    Three modes:
+      legal_actions != None (root)          → mask to those actions, keep all
+      legal_actions == None, top_k != None  → keep top_k highest-prior actions
+      legal_actions == None, top_k == None  → keep all 4672 (paper-faithful but slow)
+
+    Top-K below the root is a wall-clock optimization: the full 4672-child
+    fan-out makes _select_child a 4672-iteration Python loop and is the
+    Python-bound bottleneck of the search. Keeping the top 32-ish actions
+    by prior loses negligible search quality (most actions get vanishingly
+    small prior anyway).
     """
     node.latent = latent
-    if legal_actions is None:
-        probs = torch.softmax(policy_logits, dim=-1).cpu().numpy()
-        for a, p in enumerate(probs):
-            node.children[a] = Node(prior=float(p))
-    else:
-        # Mask + softmax over legal moves only.
+    if legal_actions is not None:
+        # Root: mask + softmax over legal moves only.
         masked = torch.full_like(policy_logits, fill_value=-1e9)
         for a in legal_actions:
             masked[a] = policy_logits[a]
         probs = torch.softmax(masked, dim=-1).cpu().numpy()
         for a in legal_actions:
             node.children[a] = Node(prior=float(probs[a]))
+        return
+
+    # Non-root expansion.
+    probs = torch.softmax(policy_logits, dim=-1).cpu().numpy()
+    if top_k is not None and 0 < top_k < probs.shape[0]:
+        # np.argpartition gives the indices of the top-K largest (unordered).
+        idx = np.argpartition(-probs, top_k - 1)[:top_k]
+        top_probs = probs[idx]
+        # Renormalize so the kept priors sum to 1 — selection assumes this.
+        s = top_probs.sum()
+        if s > 0:
+            top_probs = top_probs / s
+        for a, p in zip(idx, top_probs):
+            node.children[int(a)] = Node(prior=float(p))
+    else:
+        for a, p in enumerate(probs):
+            node.children[int(a)] = Node(prior=float(p))
 
 
 def _add_dirichlet_noise(node: Node, cfg: MuZeroConfig) -> None:
@@ -252,7 +273,7 @@ def run_mcts(
                         node.latent.unsqueeze(0), action_t,
                     )
                 next_node.reward = float(r.item())
-                _expand_with_policy(next_node, s_next[0], p[0])  # no mask below root
+                _expand_with_policy(next_node, s_next[0], p[0], top_k=cfg.mcts_top_k)
                 leaf_value = float(v.item())
                 _backup(path, leaf_value, cfg, mm)
                 break
@@ -352,7 +373,7 @@ def run_mcts_batched(
             for i, path in enumerate(pending_paths):
                 leaf = path[-1]
                 leaf.reward = float(r[i].item())
-                _expand_with_policy(leaf, s_next[i], p[i])
+                _expand_with_policy(leaf, s_next[i], p[i], top_k=cfg.mcts_top_k)
                 _revert_virtual_loss(path, cfg)
                 _backup(path, float(v[i].item()), cfg, mm)
 
