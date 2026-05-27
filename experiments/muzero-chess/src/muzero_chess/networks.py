@@ -37,7 +37,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .config import MuZeroConfig, BOARD_SIZE
+from .config import MuZeroConfig, BOARD_SIZE, N_MOVE_PLANES
 
 
 class ResidualBlock(nn.Module):
@@ -95,12 +95,13 @@ class RepresentationNet(nn.Module):
 class DynamicsNet(nn.Module):
     """g_θ: (latent, action) → (next_latent, reward).
 
-    The action is encoded as a (B, 1, 8, 8) plane: 1 at the source-square
-    of the move, broadcast to fill (could be richer; this is the smallest
-    encoding that still tells g_θ "where on the board the move happened").
-    A full MuZero implementation would use a more expressive action plane
-    (e.g. one channel per move-direction); this is a simpler educational
-    choice that's enough to train on chess.
+    The action is encoded as a (B, 73, 8, 8) sparse one-hot plane stack —
+    one cell set to 1 at (move_type, source_rank, source_file). This is
+    the MuZero-paper-faithful action representation for AlphaZero's
+    8×8×73 chess move space, and captures both *where* the piece moved
+    from and *what kind of move* it was (sliding direction/distance,
+    knight jump, or underpromotion). The decoding mirrors
+    wm_chess.board.encode_move:  action = plane * 64 + from_square.
 
     The reward head produces a scalar in [−1, +1] (tanh): per-move reward
     is 0 in chess except at terminal where it's ±1, but the dynamics net
@@ -113,8 +114,8 @@ class DynamicsNet(nn.Module):
     def __init__(self, cfg: MuZeroConfig):
         super().__init__()
         self.action_dim = cfg.action_dim
-        # latent concatenated with action plane → conv stack → next_latent.
-        in_ch = cfg.latent_channels + 1
+        # latent concatenated with 73-channel action plane → conv stack → next_latent.
+        in_ch = cfg.latent_channels + N_MOVE_PLANES
         self.trunk = _resnet_stack(
             in_ch=in_ch,
             mid_ch=cfg.dyn_n_filters,
@@ -127,14 +128,7 @@ class DynamicsNet(nn.Module):
         self.reward_fc = nn.Linear(1, 1)
 
     def forward(self, latent: torch.Tensor, action: torch.Tensor):
-        B = latent.shape[0]
-        # Encode action as a source-square plane (best single-channel choice
-        # for the AlphaZero 8×8×73 move encoding: source square = action // 73).
-        action_source = (action // 73).long()    # (B,) in [0, 64)
-        plane = torch.zeros(B, 1, BOARD_SIZE * BOARD_SIZE, device=latent.device, dtype=latent.dtype)
-        plane.scatter_(2, action_source.view(B, 1, 1), 1.0)
-        plane = plane.view(B, 1, BOARD_SIZE, BOARD_SIZE)
-        # Concat along channel dim.
+        plane = _action_to_plane(action, latent.device, latent.dtype)
         x = torch.cat([latent, plane], dim=1)
         h = self.trunk(x)
         next_latent = self.next_latent_proj(h)
@@ -142,6 +136,23 @@ class DynamicsNet(nn.Module):
         r = r.mean(dim=(2, 3))                # (B, 1) global average
         reward = torch.tanh(self.reward_fc(r)).squeeze(-1)
         return next_latent, reward
+
+
+def _action_to_plane(action: torch.Tensor, device, dtype) -> torch.Tensor:
+    """Encode a batch of action indices as a (B, 73, 8, 8) sparse one-hot.
+
+    Decodes the AZ move encoding (action = plane * 64 + from_square) and
+    sets a single cell per batch element. Matches wm_chess.board.encode_move.
+    """
+    B = action.shape[0]
+    a = action.long()
+    plane_idx = a // (BOARD_SIZE * BOARD_SIZE)              # (B,) in [0, 73)
+    from_sq = a % (BOARD_SIZE * BOARD_SIZE)                 # (B,) in [0, 64)
+    flat_idx = plane_idx * (BOARD_SIZE * BOARD_SIZE) + from_sq
+    n_cells = N_MOVE_PLANES * BOARD_SIZE * BOARD_SIZE
+    plane = torch.zeros(B, n_cells, device=device, dtype=dtype)
+    plane.scatter_(1, flat_idx.view(B, 1), 1.0)
+    return plane.view(B, N_MOVE_PLANES, BOARD_SIZE, BOARD_SIZE)
 
 
 class PredictionNet(nn.Module):

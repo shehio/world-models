@@ -21,6 +21,7 @@ from dataclasses import dataclass
 INPUT_PLANES = 19          # 12 piece planes + STM + 4 castling + EP + halfmove
 ACTION_DIM = 4672          # 8x8x73 — AlphaZero's move encoding
 BOARD_SIZE = 8
+N_MOVE_PLANES = 73         # AZ move encoding: action = plane * 64 + from_square
 
 
 @dataclass(frozen=True)
