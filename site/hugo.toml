@@ -17,8 +17,12 @@ canonifyURLs = true
         block = true
         title = true
   [markup.tableOfContents]
+    # Only h2 headings in the "On This Page" sidebar. Including h3 made
+    # the TOC a flat list of every subsection (~25 entries on the
+    # experiments page) with no visual nesting, pushing it past the
+    # viewport. h2-only keeps the sidebar to a scannable ~6-10 entries.
     startLevel = 2
-    endLevel = 3
+    endLevel = 2
     ordered = false
 
 [outputs]

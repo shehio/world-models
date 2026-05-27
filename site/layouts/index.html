@@ -18,6 +18,7 @@
       <a href="{{ "/method/" | relURL }}">→ Method &amp; Elo bisection</a>
       <a href="{{ "/vs-alphazero/" | relURL }}">→ vs AZ</a>
       <a href="{{ "/vs-leela/" | relURL }}">→ vs Leela</a>
+      <a href="{{ "/vs-muzero/" | relURL }}">→ vs MuZero</a>
       <a href="{{ "/go/" | relURL }}">→ Go (9×9)</a>
       <a href="{{ "/next/" | relURL }}">→ What's next</a>
     </p>
@@ -207,7 +208,11 @@
     </a>
     <a href="{{ "/vs-leela/" | relURL }}" class="card">
       <h3>vs Leela</h3>
-      <p>Distill-then-RL · stopping after the distill · 10⁵× less compute</p>
+      <p>Distill-then-RL · we ran 7 attempts · loop runs, ~10⁵× less compute kills it</p>
+    </a>
+    <a href="{{ "/vs-muzero/" | relURL }}" class="card">
+      <h3>vs MuZero</h3>
+      <p>Learned-model MCTS vs known-rules MCTS · we kept the rules engine</p>
     </a>
     <a href="{{ "/go/" | relURL }}" class="card">
       <h3>Go (9×9)</h3>
