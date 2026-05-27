@@ -30,10 +30,10 @@ set -euo pipefail
 ACCOUNT_ID=594561963943
 ECR_REGION=us-east-1               # wm-chess-gpu lives here
 S3_REGION=us-east-1                # bucket here
-LAUNCH_REGION=eu-central-1         # OD G quota fully free here
-AMI=${AMI:-ami-01e9d13d4c5e54237}  # DL Base GPU AL2023 eu-central-1 (same as d15-full30m)
-SUBNET=${SUBNET:-subnet-0a4bed60}  # eu-central-1a default (the proven-working one)
-INSTANCE_TYPE=${INSTANCE_TYPE:-g6e.8xlarge}
+LAUNCH_REGION=us-east-1            # eu-central-1 g6e.8xlarge OD dry in all 3 AZs at launch time
+AMI=${AMI:-ami-027c3ae8019fc0d3a}  # DL Base GPU AL2023 us-east-1 (same as d10-selfplay)
+SUBNET=${SUBNET:-subnet-00be06b9c01d8b036}  # us-east-1c default
+INSTANCE_TYPE=${INSTANCE_TYPE:-g6.4xlarge}  # 16 vCPU + L4 GPU; same as the original spot attempts
 INSTANCE_PROFILE=wm-chess-merge-instance-profile
 ECR=$ACCOUNT_ID.dkr.ecr.$ECR_REGION.amazonaws.com
 
@@ -49,10 +49,10 @@ RUN_ID=$(date -u +%Y%m%dT%H%MZ)-selfplay-from-r2v2-ep14-OD
 N_BLOCKS=20
 N_FILTERS=256
 SIMS=800
-# g6e.8xlarge has 32 vCPU. One trainer process uses the GPU; the rest
-# run MCTS workers. 30 workers × 4 games/worker = 120 games/iter
-# (vs 32 games/iter on the previous g6.4xlarge attempts).
-WORKERS=30
+# g6.4xlarge has 16 vCPU. One trainer process uses the GPU; the rest
+# run MCTS workers. 14 workers × 4 games/worker = 56 games/iter
+# (vs 32 games/iter on the original spot attempts with 16 workers × 2).
+WORKERS=14
 GAMES_PER_WORKER=4
 TRAIN_STEPS=200
 # LR=1e-5 — the value that preserved the prior on the prior spot
