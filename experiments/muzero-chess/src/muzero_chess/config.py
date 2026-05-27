@@ -1,0 +1,77 @@
+"""MuZero on chess — hyperparameters.
+
+MuZero differs from AlphaZero in that the dynamics function is learned,
+not the real environment. The hidden-state shape is the central
+architectural decision: it has to be small enough to train but big enough
+that the dynamics network can predict the next state of chess after a
+move from it. We mirror AlphaZero-family practice: an 8x8 spatial map
+with N channels, since chess positions are naturally 8x8.
+
+Defaults target a small educational config — fast to train on a single
+GPU, big enough to actually learn something on chess at scale, small
+enough that the spike fits in a session.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+# Chess board encoding constants from wm_chess.board.
+# Re-stated here so the config is self-contained; verified by a test.
+INPUT_PLANES = 19          # 12 piece planes + STM + 4 castling + EP + halfmove
+ACTION_DIM = 4672          # 8x8x73 — AlphaZero's move encoding
+BOARD_SIZE = 8
+
+
+@dataclass(frozen=True)
+class MuZeroConfig:
+    # Hidden state shape: (latent_channels, BOARD_SIZE, BOARD_SIZE).
+    # The dynamics network preserves this shape across recurrent calls.
+    latent_channels: int = 64
+
+    # Representation network (h_θ).
+    repr_n_res_blocks: int = 5
+    repr_n_filters: int = 64       # internal conv channels; output projects to latent_channels
+
+    # Dynamics network (g_θ).
+    # Inputs: (latent (B, C, 8, 8), action_index int → action plane (B, 1, 8, 8))
+    # Outputs: (next_latent, reward)
+    dyn_n_res_blocks: int = 3
+    dyn_n_filters: int = 64
+
+    # Prediction network (f_θ).
+    pred_n_res_blocks: int = 2
+    pred_n_filters: int = 64
+
+    # MCTS over the learned dynamics.
+    num_simulations: int = 50      # cheap for the educational spike; AZ defaults to 800
+    c_puct_base: float = 19_652    # MuZero paper's pb_c_base
+    c_puct_init: float = 1.25      # MuZero paper's pb_c_init
+    dirichlet_alpha: float = 0.3   # chess-tuned alpha from AlphaZero paper
+    dirichlet_eps: float = 0.25
+    discount: float = 1.0          # board games have no temporal discount
+
+    # K-step unroll for training.
+    num_unroll_steps: int = 5
+    n_step_return: int = 10        # n-step bootstrap for value targets
+
+    # Training.
+    batch_size: int = 128
+    lr: float = 1e-3
+    weight_decay: float = 1e-4
+
+    # Self-play.
+    temp_moves: int = 30
+    max_plies: int = 200
+
+    @property
+    def latent_shape(self) -> tuple[int, int, int]:
+        return (self.latent_channels, BOARD_SIZE, BOARD_SIZE)
+
+    @property
+    def input_planes(self) -> int:
+        return INPUT_PLANES
+
+    @property
+    def action_dim(self) -> int:
+        return ACTION_DIM

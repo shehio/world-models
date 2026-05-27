@@ -30,6 +30,7 @@ members = [
     "experiments/selfplay",
     "experiments/distill-hard",
     "experiments/distill-soft",
+    "experiments/muzero-chess",
 ]
 
 [tool.uv.sources]

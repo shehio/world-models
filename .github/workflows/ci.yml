@@ -25,6 +25,8 @@ jobs:
             dir: experiments/distill-soft
           - package: distill-go
             dir: experiments/distill-go
+          - package: muzero-chess
+            dir: experiments/muzero-chess
     steps:
       - uses: actions/checkout@v4
 
