@@ -1,6 +1,6 @@
 ---
 title: "Vs Leela Chess Zero"
-subtitle: "we're running Leela's distill-then-RL recipe — and stopping after the distill"
+subtitle: "running Leela's distill-then-RL recipe at 10⁵× less compute — and finding what breaks"
 next: "/next/"
 aliases:
   - /leela/
@@ -11,13 +11,13 @@ aliases:
 
 | | Leela Chess Zero (Lc0) | this project |
 |---|---|---|
-| approach | supervised pre-training + tabula-rasa self-play RL (hybrid) | supervised distillation from Stockfish only |
-| network | same AlphaZero family: ResNet, 19-plane history. Production T80 = 384×30 blocks (~120M params) | 20×256 (~24M params) or 40×256 (~50M); planned to go bigger |
-| training compute | thousands of community GPUs over **months** (millions of GPU-hours) | 1 GPU per run, ~5-100 GPU-hours |
-| self-play data | hundreds of billions of positions | **none yet** (planned distill-then-RL still in flight) |
-| supervised pretraining data | early Lc0: human / Stockfish games. Modern Lc0 nets re-bootstrap from older Lc0 self-play | **30-46M Stockfish-labeled positions** (d10 mpv=8 T=1) |
-| eval MCTS sims | 800 typical / much higher in tournaments | 800 routine / 4,000 on the deep-eval daemon |
-| peak Elo | **~3,600+ CCRL** (top engine globally) | **2,189** (d10 30M ep 15 @ sims=4,000 vs UCI=1,800) |
+| approach | supervised pre-training + tabula-rasa self-play RL (hybrid) | supervised distillation from Stockfish + self-play attempt on top |
+| network | same AlphaZero family: ResNet, 19-plane history. Production T80 = 384×30 blocks (~120M params) | 20×256 (~24M params) or 40×256 (~50M); same architectural family |
+| training compute | thousands of community GPUs over **months** (millions of GPU-hours) | 1 GPU per run, ~5–100 GPU-hours |
+| self-play data | hundreds of billions of positions | ~hundreds–thousands of games (six spot-evicted attempts; attempt #7 currently running on OD) |
+| supervised pretraining data | early Lc0: human / Stockfish games. Modern Lc0 nets re-bootstrap from older Lc0 self-play | **30–46M Stockfish-labeled positions** (d10/d15 mpv=8 T=1) |
+| eval MCTS sims | 800 typical / much higher in tournaments | 800 routine / 4,000 deep-eval / one-off 8,000 |
+| peak Elo | **~3,600+ CCRL** (top engine globally) | **2,301** wide-CI (R2 v2 ep 14 sims=4,000 vs UCI=1,800, CI [2,190, 2,601]) · **2,153** tight-CI (ep 4 sims=8,000 vs UCI=2,000, CI [2,084, 2,235]) |
 
 ## What's the Same
 
@@ -39,16 +39,30 @@ but the *shape* is identical.
 
 ## What's Different
 
-### Stopping point
+### Stopping point — and what we learned by *trying* the self-play half
 
 Lc0 runs distill → self-play → distill → self-play indefinitely. The
 self-play half is what closes the gap to engines like Stockfish, and
-it requires thousands of GPUs to do meaningfully. This project ran
-the distill phase and *plans* a self-play phase ([what's next →](/next/))
-but has not run it yet. The 2,189 Elo headline is "what you can get
-from distillation alone, on one GPU, for ~16 GPU-hours of training."
-Lc0's headline of ~3,600 is "what you can get from years of community
-self-play on top of distillation."
+it requires thousands of GPUs to do meaningfully. The original
+write-up of this page said we *planned* a self-play phase but hadn't
+run it. We've now run it seven times — six chess attempts on spot
+(all evicted before iter 1 finished — see the
+[self-play postmortem](/next/#selfplay-postmortem)), one chess
+attempt on OD ([currently in flight](/next/)), plus a full 24-hour
+Go-side run. The Go run is the cleanest data point: it completed
+~63 iterations without infrastructure failures, training loss
+dropped 4.71 → 2.50, and a 40-game H2H at iter 42 vs the distilled
+prior came in at **21–19–0** — score 0.525, Elo gap +17 with a
+±100 Elo CI. **Indistinguishable from no change.**
+
+That null result is actually consistent with the published Lc0
+trajectory: the *first* Lc0 self-play iterations took weeks of
+community compute before producing detectable Elo gains. We don't
+have that compute. The honest headline is that the distilled prior
+is the practical ceiling on a single GPU: 2,301 Elo (wide CI) /
+2,153 (tight CI) for chess, ≥2,366 Go-scale for the 9×9 Go net.
+Lc0's 3,600 is exclusively what years of community self-play on top
+of the same starting recipe buys.
 
 ### Scale
 
@@ -140,26 +154,47 @@ results.
 
 ## What this Project Is Actually Testing
 
-How close can you get to a strong chess net with **distillation alone**
-on a **single GPU**, on a **fixed budget**?
+How close can you get to a strong chess (and Go) net with **distillation
+alone — and then *try* the self-play half on a tiny budget** — on a
+**single GPU**, on a **fixed budget**?
 
-The honest answer so far: ~2,189 Elo vs UCI=1,800-anchored Stockfish.
-Strong amateur strength, well below grandmaster. The ceiling is set
-by:
+The honest answer so far:
 
-1. **Data scale** — 30-46M positions vs Lc0's hundreds of billions.
+- **Chess: 2,301 Elo (wide CI) / 2,153 (tight CI)** vs calibrated
+  Stockfish opponents. Strong amateur strength, well below grandmaster.
+- **Go: ≥ 2,366 (lower-bound)** on the AlphaGo scale, on 9×9. Same
+  competitive-amateur tier, anchored to GnuGo L10.
+- **Self-play on top: +17 ± 100 Elo over the prior on Go after 4
+  hours.** Indistinguishable from no change. Chess attempt #7 in
+  flight — same recipe, OD instead of spot, will know within ~24h.
+
+The ceiling on the distillation side is set by:
+
+1. **Data scale** — 30–46M positions vs Lc0's hundreds of billions.
 2. **Teacher quality** — Stockfish d15 is ~2,500 Elo, plus the
    multipv=8 soft targets dilute the signal somewhat.
 3. **Training-recipe sophistication** — constant LR plateaus,
-   cosine schedules might help (see the in-flight R1 v2 and R2
-   cosine variants).
+   cosine LR closed the gap to the teacher (R2 v2 cosine ep 14 = 2,301
+   vs R1 v1 constant LR ep 7 = 2,146).
+
+The ceiling on the *self-play* side is set by:
+
+1. **Compute** — Lc0 needed wall-weeks of community GPUs to see real
+   gains on top of a distilled prior. Our 24h-budget × 1 GPU is ~10⁴×
+   less. The Go null result is the textbook signature.
+2. **Algorithmic tricks** — KataGo's paper documents ~9× efficiency
+   gains over vanilla AlphaZero through ownership-aux heads, global
+   pooling, opponent-policy prediction, and game-specific features.
+   *Lc0 also didn't use these* — Lc0's actual recipe is just "good
+   MCTS + lots of self-play games," same as ours. They got away with
+   it because they had the games.
 
 What this project *deliberately doesn't* try: matching Lc0's headline
-strength. To do that you'd need either (a) the self-play phase that's
-in the [next steps](/next/), or (b) ~10⁵× the compute budget. Both are
-out of scope for "what fits on a single GPU."
+strength. To do that you'd need (a) the self-play phase running at
+genuine Lc0-scale compute (~$10⁵× our budget), and probably (b) the
+KataGo efficiency tricks layered on top.
 
-## Lessons that Mirror Lc0's Trajectory
+## Lessons that Mirror — and Extend — Lc0's Trajectory
 
 - **Bigger network ≠ better at our scale.** Lc0 confirmed this too,
   early on — the 256-channel nets stayed competitive with the
@@ -171,11 +206,25 @@ out of scope for "what fits on a single GPU."
   Elo apart — same dynamic we measured (+277 Elo from sims=800
   to sims=4,000 on the d15 5M prior).
 - **Distillation gives a usable starting point in hours, not months.**
-  We hit 2,189 Elo in ~16 GPU-hours. Lc0's tabula-rasa years would
+  We hit 2,301 Elo in ~16 GPU-hours. Lc0's tabula-rasa years would
   not have produced that quickly without warm-starting.
+- **Self-play improvement on top of a distilled prior is brutally
+  compute-sensitive.** This is the new lesson from our seven attempts.
+  Lc0 reads in retrospect as "distill + self-play work together" —
+  but the 1,000+ Elo gap from distill-only (~2,500) to Lc0-final
+  (~3,600) is *entirely* the self-play half, and self-play needs
+  ~unbounded compute to deliver. Our 24h budget is too short to
+  even *register* an improvement, let alone a meaningful one.
+- **Infrastructure is half the battle.** Lc0's volunteer-distributed
+  training architecture is itself a research contribution. Our
+  six-attempt spot-eviction saga ([postmortem](/next/#selfplay-postmortem))
+  is the small-scale analog: the *algorithm* worked from day one,
+  but the eviction window in a given AZ was shorter than one iter,
+  so iter 1 never completed across six tries before we moved to OD.
 
 The story is consistent: **the recipe Lc0 actually shipped (distill
-+ self-play) is the right one**. We're running the cheap half of it
-to see how far that gets, and finding it's further than you'd guess
-but still leaves the headline-level gap entirely on the self-play
-side.
++ self-play) is the right one, and the gap to their headline is
+overwhelmingly the self-play half running at compute we don't have.
+What's interesting at our scale is the *distill ceiling*, which we
+get to publish numbers for, and the *failure modes* of single-GPU
+self-play, which we can document.**
