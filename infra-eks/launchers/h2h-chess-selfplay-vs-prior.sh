@@ -78,7 +78,7 @@ docker run --rm \\
         echo "A: $CKPT_A_S3" | tee -a \$OUT
         echo "B: $PRIOR_S3" | tee -a \$OUT
         echo "sims: $SIMS  workers: $WORKERS  games: \$(($WORKERS * $GAMES_PER_WORKER))" | tee -a \$OUT
-        uv run python scripts/h2h_mp.py \\
+        python scripts/h2h_mp.py \\
             --ckpt-a /work-tmp/ckpt_a.pt \\
             --ckpt-b /work-tmp/ckpt_b.pt \\
             --workers $WORKERS --games-per-worker $GAMES_PER_WORKER --sims $SIMS \\
