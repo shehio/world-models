@@ -15,6 +15,7 @@ from muzero_chess.mcts import (
     Node,
     root_visit_distribution,
     run_mcts,
+    run_mcts_batched,
     select_action,
 )
 from muzero_chess.networks import MuZeroNet
@@ -114,6 +115,81 @@ def test_select_action_with_temperature_returns_legal():
     for _ in range(20):
         chosen = select_action(root, temperature=1.0)
         assert chosen in {10, 20, 30}
+
+
+def test_run_mcts_batched_runs_and_visits_root():
+    cfg = _tiny_cfg(num_simulations=16, mcts_batch_size=4)
+    net = MuZeroNet(cfg)
+    net.eval()
+    obs = torch.randn(1, INPUT_PLANES, 8, 8)
+    root = run_mcts_batched(net, obs, cfg, add_root_noise=False)
+    assert root.is_expanded
+    total = sum(c.visit_count for c in root.children.values())
+    assert total >= 1
+    # The default initial root sets visit_count=1 (from initial_inference seed).
+    assert root.visit_count >= 1
+
+
+def test_run_mcts_batched_fully_reverts_virtual_loss():
+    """After every batch we revert per-path; final tree should have 0
+    pending virtual loss / virtual visits on every node."""
+    cfg = _tiny_cfg(num_simulations=20, mcts_batch_size=5)
+    net = MuZeroNet(cfg)
+    net.eval()
+    obs = torch.randn(1, INPUT_PLANES, 8, 8)
+    root = run_mcts_batched(net, obs, cfg, add_root_noise=False)
+
+    def walk(node):
+        yield node
+        for c in node.children.values():
+            if c.is_expanded:
+                yield from walk(c)
+
+    for n in walk(root):
+        assert n.virtual_count == 0, "virtual_count leaked"
+        assert abs(n.virtual_loss) < 1e-9, "virtual_loss leaked"
+
+
+def test_run_mcts_batched_visit_total_matches_sims():
+    """Sum of root child visits should account for cfg.num_simulations
+    leaves (one expansion per simulation). The root's own visit_count
+    grows by num_simulations on top of the initial seed of 1."""
+    cfg = _tiny_cfg(num_simulations=12, mcts_batch_size=4)
+    net = MuZeroNet(cfg)
+    net.eval()
+    obs = torch.randn(1, INPUT_PLANES, 8, 8)
+    root = run_mcts_batched(net, obs, cfg, add_root_noise=False)
+    child_visit_sum = sum(c.visit_count for c in root.children.values())
+    # Each simulation backs up once through one child + root. So child
+    # visits sum to >= num_simulations (some sims may take same child path).
+    assert child_visit_sum == cfg.num_simulations
+
+
+def test_run_mcts_batched_size_1_matches_run_mcts_distribution():
+    """With batch_size=1 there's no virtual loss, so batched should match
+    sequential MCTS exactly (same RNG state)."""
+    cfg = _tiny_cfg(num_simulations=8, mcts_batch_size=1)
+    net = MuZeroNet(cfg)
+    net.eval()
+    obs = torch.randn(1, INPUT_PLANES, 8, 8)
+
+    torch.manual_seed(0); np.random.seed(0)
+    r_seq = run_mcts(net, obs, cfg, add_root_noise=False)
+    torch.manual_seed(0); np.random.seed(0)
+    r_batch = run_mcts_batched(net, obs, cfg, add_root_noise=False, batch_size=1)
+    pi_seq = root_visit_distribution(r_seq, ACTION_DIM)
+    pi_batch = root_visit_distribution(r_batch, ACTION_DIM)
+    assert np.allclose(pi_seq, pi_batch)
+
+
+def test_run_mcts_batched_legal_mask_at_root():
+    cfg = _tiny_cfg(num_simulations=8, mcts_batch_size=4)
+    net = MuZeroNet(cfg)
+    net.eval()
+    obs = torch.randn(1, INPUT_PLANES, 8, 8)
+    legal = [10, 100, 200, 4000]
+    root = run_mcts_batched(net, obs, cfg, add_root_noise=False, legal_actions=legal)
+    assert set(root.children.keys()) == set(legal)
 
 
 def test_root_visit_distribution_is_a_probability():

@@ -51,6 +51,11 @@ class MuZeroConfig:
     dirichlet_alpha: float = 0.3   # chess-tuned alpha from AlphaZero paper
     dirichlet_eps: float = 0.25
     discount: float = 1.0          # board games have no temporal discount
+    # Batched MCTS: K parallel descents per network call, diversified by virtual
+    # loss. 1 = sequential reference path; the wall-clock win is on GPU where
+    # batching amortizes Python overhead + the per-call CUDA launch.
+    mcts_batch_size: int = 8
+    virtual_loss: float = 1.0      # penalty added to Q for each pending visit
 
     # K-step unroll for training.
     num_unroll_steps: int = 5

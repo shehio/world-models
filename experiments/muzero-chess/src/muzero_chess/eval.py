@@ -21,7 +21,7 @@ from wm_chess.arena import play_match, stockfish_engine, stockfish_policy
 from wm_chess.board import decode_move, encode_board, encode_move
 
 from .config import MuZeroConfig
-from .mcts import run_mcts, select_action
+from .mcts import run_mcts_batched, select_action
 
 
 def muzero_policy(
@@ -37,7 +37,7 @@ def muzero_policy(
     def policy(board: chess.Board) -> chess.Move:
         obs = torch.from_numpy(encode_board(board)).unsqueeze(0)
         legal = [encode_move(m, board) for m in board.legal_moves]
-        root = run_mcts(
+        root = run_mcts_batched(
             network, obs, cfg_used,
             add_root_noise=False,
             legal_actions=legal,

@@ -23,7 +23,7 @@ import torch
 from wm_chess.board import decode_move, encode_board, encode_move
 
 from .config import MuZeroConfig
-from .mcts import root_visit_distribution, run_mcts, select_action
+from .mcts import root_visit_distribution, run_mcts_batched, select_action
 from .replay import GameRecord
 
 
@@ -50,7 +50,7 @@ def play_game(
             break
 
         obs_t = torch.from_numpy(obs).unsqueeze(0)
-        root = run_mcts(
+        root = run_mcts_batched(
             network, obs_t, cfg,
             add_root_noise=add_root_noise,
             legal_actions=legal_idxs,
