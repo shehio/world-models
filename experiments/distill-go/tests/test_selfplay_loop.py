@@ -62,14 +62,27 @@ def test_play_game_pcr_basic_shapes():
     assert z in (-1.0, 0.0, 1.0)
 
     expected_policy_dim = cfg.policy_size  # 5² + 1 = 26
-    for state, pi, sz in samples:
-        assert state.shape == (cfg.n_input_planes, cfg.board_size, cfg.board_size)
+    S = cfg.board_size
+    for sample in samples:
+        # New 6-tuple format: (state, pi, z, ownership, score, opp_pi)
+        assert len(sample) == 6
+        state, pi, sz, ownership, score, opp_pi = sample
+        assert state.shape == (cfg.n_input_planes, S, S)
         assert state.dtype == np.float32
         assert pi.shape == (expected_policy_dim,)
         assert pi.dtype == np.float32
         assert abs(pi.sum() - 1.0) < 1e-3 or pi.sum() == 0.0
         assert isinstance(sz, float)
         assert sz in (-1.0, 0.0, 1.0)
+        # Aux targets always present, even if game cut off:
+        assert ownership.shape == (S, S)
+        assert ownership.dtype == np.int8
+        assert ((ownership == 0) | (ownership == 1) | (ownership == 2)).all()
+        assert isinstance(score, float)
+        assert opp_pi.shape == (expected_policy_dim,)
+        assert opp_pi.dtype == np.float32
+        # opp_pi is either all-zeros (no opp move) or sums to 1 (one-hot).
+        assert opp_pi.sum() == 0.0 or abs(opp_pi.sum() - 1.0) < 1e-6
 
 
 def test_play_game_pcr_zero_p_full_records_nothing():
@@ -150,16 +163,29 @@ def test_replay_buffer_window_evicts_oldest_shard():
 
 
 def test_replay_buffer_sample_returns_tensors_on_device():
+    """Buffer's sample() returns a dict of stacked tensors.
+
+    Tests backward-compat: 3-tuple samples (no aux) get auto-upcast to
+    6-tuples with zero aux fields, so old shards in a buffer still work.
+    """
     buf = ShardedReplayBuffer(max_shards=2)
     buf.add_iteration([_fake_sample(i) for i in range(20)])
     device = torch.device("cpu")
-    states, pis, zs = buf.sample(batch_size=4, device=device)
-    assert states.shape == (4, 4, 5, 5)
-    assert pis.shape == (4, 26)
-    assert zs.shape == (4,)
-    assert states.device.type == "cpu"
-    assert pis.dtype == torch.float32
-    assert zs.dtype == torch.float32
+    batch = buf.sample(batch_size=4, device=device)
+    assert isinstance(batch, dict)
+    assert batch["state"].shape == (4, 4, 5, 5)
+    assert batch["pi"].shape == (4, 26)
+    assert batch["z"].shape == (4,)
+    assert batch["state"].device.type == "cpu"
+    assert batch["pi"].dtype == torch.float32
+    assert batch["z"].dtype == torch.float32
+    # Aux fields auto-promoted to zeros for 3-tuple samples.
+    assert batch["ownership"].shape == (4, 5, 5)
+    assert batch["score"].shape == (4,)
+    assert batch["opp_pi"].shape == (4, 26)
+    assert (batch["ownership"] == 0).all()
+    assert (batch["score"] == 0).all()
+    assert (batch["opp_pi"] == 0).all()
 
 
 def test_replay_buffer_sample_on_empty_raises_clearly():
@@ -182,8 +208,8 @@ def test_replay_buffer_sample_uses_all_shards():
              float(shard_id))
             for _ in range(50)
         ])
-    _, _, zs = buf.sample(batch_size=300, device=torch.device("cpu"))
-    seen = set(zs.tolist())
+    batch = buf.sample(batch_size=300, device=torch.device("cpu"))
+    seen = set(batch["z"].tolist())
     assert seen == {0.0, 1.0, 2.0}, f"sampling missed shards; saw {seen}"
 
 
@@ -191,20 +217,30 @@ def test_replay_buffer_sample_uses_all_shards():
 # train_step
 # ----------------------------------------------------------------------------
 
+def _zero_aux_batch(B: int, policy_size: int, S: int, device):
+    """Helper: dict batch with zero aux targets — exercises the base path."""
+    return {
+        "state": torch.randn(B, 4, S, S, device=device),
+        "pi": torch.softmax(torch.randn(B, policy_size, device=device), dim=-1),
+        "z": torch.zeros(B, device=device),
+        "ownership": torch.zeros(B, S, S, dtype=torch.long, device=device),
+        "score": torch.zeros(B, device=device),
+        "opp_pi": torch.zeros(B, policy_size, device=device),
+    }
+
+
 def test_train_step_runs_and_returns_floats():
     cfg = GoConfig(board_size=5, n_input_planes=4, n_res_blocks=1, n_filters=8)
     device = torch.device("cpu")
     net = AlphaZeroGoNet(cfg).to(device)
     opt = torch.optim.Adam(net.parameters(), lr=1e-3)
-    states = torch.randn(8, 4, 5, 5, device=device)
-    pis = torch.softmax(torch.randn(8, cfg.policy_size, device=device), dim=-1)
-    zs = torch.tensor([0.0, 1.0, -1.0, 0.5, -0.5, 0.0, 1.0, -1.0], device=device)
-    stats = train_step(net, opt, (states, pis, zs))
+    batch = _zero_aux_batch(B=8, policy_size=cfg.policy_size, S=cfg.board_size, device=device)
+    batch["z"] = torch.tensor([0.0, 1.0, -1.0, 0.5, -0.5, 0.0, 1.0, -1.0], device=device)
+    stats = train_step(net, opt, batch)
     assert isinstance(stats["loss"], float)
     assert isinstance(stats["policy_loss"], float)
     assert isinstance(stats["value_loss"], float)
     assert stats["loss"] > 0
-    # value_loss should be in a sensible range for tanh outputs vs [-1, 1] targets
     assert stats["value_loss"] < 5.0
 
 
@@ -214,15 +250,82 @@ def test_train_step_actually_updates_weights():
     net = AlphaZeroGoNet(cfg).to(device)
     before = {name: p.detach().clone() for name, p in net.named_parameters()}
     opt = torch.optim.SGD(net.parameters(), lr=1e-2)
-    states = torch.randn(8, 4, 5, 5, device=device)
-    pis = torch.softmax(torch.randn(8, cfg.policy_size, device=device), dim=-1)
-    zs = torch.zeros(8, device=device)
-    train_step(net, opt, (states, pis, zs))
+    batch = _zero_aux_batch(B=8, policy_size=cfg.policy_size, S=cfg.board_size, device=device)
+    train_step(net, opt, batch)
     n_changed = sum(
         1 for name, p in net.named_parameters()
         if not torch.allclose(before[name], p)
     )
     assert n_changed > 0, "no parameter changed after one SGD step — backprop broken?"
+
+
+def test_train_step_with_aux_ownership_returns_extra_losses():
+    """When use_aux_ownership=True, train_step computes the aux losses
+    and includes them in the stats dict."""
+    cfg = GoConfig(board_size=5, n_input_planes=4, n_res_blocks=1, n_filters=8,
+                   use_aux_ownership=True)
+    device = torch.device("cpu")
+    net = AlphaZeroGoNet(cfg).to(device)
+    opt = torch.optim.Adam(net.parameters(), lr=1e-3)
+    batch = _zero_aux_batch(B=4, policy_size=cfg.policy_size, S=cfg.board_size, device=device)
+    stats = train_step(net, opt, batch)
+    assert "ownership_loss" in stats
+    assert "score_loss" in stats
+    assert stats["ownership_loss"] >= 0
+    assert stats["score_loss"] >= 0
+
+
+def test_train_step_with_aux_opp_policy_runs():
+    """use_aux_opp_policy=True path returns the extra opp_policy_loss."""
+    cfg = GoConfig(board_size=5, n_input_planes=4, n_res_blocks=1, n_filters=8,
+                   use_aux_opp_policy=True)
+    device = torch.device("cpu")
+    net = AlphaZeroGoNet(cfg).to(device)
+    opt = torch.optim.Adam(net.parameters(), lr=1e-3)
+    batch = _zero_aux_batch(B=4, policy_size=cfg.policy_size, S=cfg.board_size, device=device)
+    # Need at least one non-zero opp_pi to exercise the loss path.
+    batch["opp_pi"][0, 5] = 1.0
+    stats = train_step(net, opt, batch)
+    assert "opp_policy_loss" in stats
+    assert stats["opp_policy_loss"] >= 0
+
+
+def test_aux_heads_load_from_plain_prior_via_strict_false():
+    """ownership + opp_policy heads only ADD modules; the trunk stays the
+    same. So a plain-prior state_dict loads into an aux-enabled net via
+    strict=False — the new heads start randomly, the rest inherits."""
+    cfg_plain = GoConfig(board_size=5, n_input_planes=4, n_res_blocks=1,
+                          n_filters=8)
+    cfg_aux = GoConfig(board_size=5, n_input_planes=4, n_res_blocks=1,
+                        n_filters=8,
+                        use_aux_ownership=True, use_aux_opp_policy=True)
+    net_plain = AlphaZeroGoNet(cfg_plain)
+    net_aux = AlphaZeroGoNet(cfg_aux)
+    # strict=False should accept the plain state_dict.
+    missing, unexpected = net_aux.load_state_dict(net_plain.state_dict(), strict=False)
+    # The new aux heads are the missing keys; nothing should be unexpected.
+    assert len(unexpected) == 0
+    assert any("ownership" in m or "score" in m or "opp_policy" in m for m in missing)
+
+
+def test_global_pool_changes_trunk_shape_so_cannot_load_from_plain():
+    """use_global_pool=True changes conv shapes in the trunk. Even
+    strict=False cannot bridge shape mismatches — pytorch raises on them.
+    Document this so users know a global-pool run needs to retrain
+    distillation rather than warm-start from the existing prior."""
+    cfg_plain = GoConfig(board_size=5, n_input_planes=4, n_res_blocks=1,
+                          n_filters=8, use_global_pool=False)
+    cfg_pool = GoConfig(board_size=5, n_input_planes=4, n_res_blocks=1,
+                         n_filters=8, use_global_pool=True)
+    net_plain = AlphaZeroGoNet(cfg_plain)
+    net_pool = AlphaZeroGoNet(cfg_pool)
+    # Parameter count differs — different trunk modules.
+    assert (sum(p.numel() for p in net_plain.parameters())
+            != sum(p.numel() for p in net_pool.parameters()))
+    # Loading should raise due to shape mismatch even with strict=False.
+    import pytest
+    with pytest.raises(RuntimeError, match="size mismatch"):
+        net_pool.load_state_dict(net_plain.state_dict(), strict=False)
 
 
 # ----------------------------------------------------------------------------

@@ -366,6 +366,68 @@ def test_tromp_taylor_all_black_board_wins_decisively():
     assert b.winner() == BLACK   # 9 > 7.5
 
 
+# ---------------------------------------------------------------- ownership_map
+
+
+def test_ownership_map_empty_board_is_all_empty():
+    """No stones → no territory either. ownership_map is all EMPTY."""
+    b = GoBoard(size=5)
+    own = b.ownership_map()
+    assert own.shape == (5, 5)
+    assert (own == 0).all()    # 0 = EMPTY
+
+
+def test_ownership_map_marks_stones_correctly():
+    """A stone owns its own point."""
+    b = GoBoard(size=5)
+    b.grid[1, 1] = BLACK
+    b.grid[3, 3] = WHITE
+    own = b.ownership_map()
+    assert own[1, 1] == BLACK
+    assert own[3, 3] == WHITE
+
+
+def test_ownership_map_assigns_single_color_territory():
+    """An empty region bordering only BLACK gets marked as BLACK."""
+    b = GoBoard(size=5)
+    # Wall at column 2 = BLACK; everything else (cols 0,1,3,4) is empty.
+    for y in range(5):
+        b.grid[y, 2] = BLACK
+    own = b.ownership_map()
+    # Column 2: BLACK stones
+    assert (own[:, 2] == BLACK).all()
+    # Columns 0,1,3,4: empty regions bordering only BLACK → BLACK territory
+    for col in (0, 1, 3, 4):
+        assert (own[:, col] == BLACK).all(), f"col {col} should be BLACK territory"
+
+
+def test_ownership_map_dame_region_is_empty():
+    """An empty region bordering both colors is dame — stays EMPTY in ownership."""
+    b = GoBoard(size=5)
+    # Row 1 = all BLACK, row 3 = all WHITE.
+    for x in range(5):
+        b.grid[1, x] = BLACK
+        b.grid[3, x] = WHITE
+    own = b.ownership_map()
+    # Row 1 owned by BLACK, row 3 owned by WHITE (stones).
+    assert (own[1, :] == BLACK).all()
+    assert (own[3, :] == WHITE).all()
+    # Row 0 borders only BLACK → BLACK territory.
+    assert (own[0, :] == BLACK).all()
+    # Row 4 borders only WHITE → WHITE territory.
+    assert (own[4, :] == WHITE).all()
+    # Row 2 borders BOTH → dame, stays EMPTY (0).
+    assert (own[2, :] == 0).all()
+
+
+def test_ownership_map_returns_int8():
+    """Used as a softmax target — needs to convert to long for cross-entropy.
+    Int8 keeps the on-disk + per-position memory footprint minimal."""
+    b = GoBoard(size=5)
+    own = b.ownership_map()
+    assert own.dtype == np.int8
+
+
 # ---------------------------------------------------------------- coord helpers
 
 

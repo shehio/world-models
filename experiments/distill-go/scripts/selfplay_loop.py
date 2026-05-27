@@ -51,7 +51,7 @@ import torch.multiprocessing as mp
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from distill_go.board import BLACK, GoBoard
+from distill_go.board import BLACK, WHITE, EMPTY, GoBoard, board_to_planes, board_to_history_planes
 from distill_go.config import GoConfig
 from distill_go.mcts import run_mcts, select_move, visits_to_distribution
 from distill_go.network import AlphaZeroGoNet, get_device
@@ -83,16 +83,40 @@ class ShardedReplayBuffer:
         return self._flat_cache
 
     def sample(self, batch_size: int, device: torch.device):
+        """Return a dict of stacked tensors for one training batch.
+
+        Keys: state, pi, z (always); ownership, score, opp_pi (extras for
+        KataGo aux heads). Older samples that were 3-tuples are upcast to
+        6-tuples with zero-filled aux fields, so a buffer mixing old +
+        new shards still works.
+        """
         flat = self._flat()
         if len(flat) == 0:
             raise ValueError("ShardedReplayBuffer.sample called on empty buffer — "
                              "the caller must `if len(buffer) >= batch_size` first")
         idxs = np.random.randint(0, len(flat), size=batch_size)
         batch = [flat[i] for i in idxs]
+
+        # Probe sample width — backward-compat with 3-tuple samples.
+        sample_len = len(batch[0])
+        if sample_len < 6:
+            # Promote a 3-tuple to a 6-tuple with zero aux targets.
+            S = batch[0][0].shape[-1]            # state (..., S, S)
+            policy_dim = batch[0][1].shape[0]    # pi shape
+            zero_own = np.zeros((S, S), dtype=np.int8)
+            zero_opp = np.zeros(policy_dim, dtype=np.float32)
+            batch = [b + (zero_own, 0.0, zero_opp) for b in batch]
+
         states = torch.from_numpy(np.stack([b[0] for b in batch])).to(device)
         pis = torch.from_numpy(np.stack([b[1] for b in batch])).to(device)
         zs = torch.tensor([b[2] for b in batch], dtype=torch.float32, device=device)
-        return states, pis, zs
+        owns = torch.from_numpy(np.stack([b[3] for b in batch])).to(device).long()  # (B, S, S) int64 class labels
+        scores = torch.tensor([b[4] for b in batch], dtype=torch.float32, device=device)
+        opp_pis = torch.from_numpy(np.stack([b[5] for b in batch])).to(device)
+        return {
+            "state": states, "pi": pis, "z": zs,
+            "ownership": owns, "score": scores, "opp_pi": opp_pis,
+        }
 
     def __len__(self) -> int:
         return sum(len(s) for s in self.shards)
@@ -129,11 +153,35 @@ def play_game_pcr(
     sims_reduced: int,
     p_full: float,
     max_moves: int,
-) -> tuple[list[tuple[np.ndarray, np.ndarray, float]], float, int, dict]:
-    """One self-play game with PCR. Returns (samples, z_black_pov, ply, stats)."""
+):
+    """One self-play game with PCR.
+
+    Returns (samples, z_black_pov, ply, stats), where each sample is a
+    6-tuple:
+      (state, pi, z, ownership, score, opp_pi)
+
+      state      — (C, S, S) float32, board-encoded planes
+      pi         — (S²+1,) float32, MCTS visit-count distribution (the
+                   policy improvement target)
+      z          — float, game outcome from STM's POV (+1 win, -1 loss, 0 draw)
+      ownership  — (S, S) int8, STM-relative final ownership labels
+                   (0=empty/dame, 1=own, 2=opp). All zeros if game ended
+                   by max_moves cutoff (no reliable scoring).
+      score      — float, STM-relative score margin (own_pts − opp_pts).
+                   0.0 if game ended by max_moves cutoff.
+      opp_pi     — (S²+1,) float32, one-hot at the move the opponent
+                   actually played 1 ply after this position. All zeros
+                   if no such move exists (game ended before opp moved).
+
+    Aux targets (ownership / score / opp_pi) are filled regardless of
+    whether the network has aux heads enabled — train_step only computes
+    aux losses if the corresponding network flag is on.
+    """
     board = GoBoard(size=cfg.board_size, komi=cfg.komi)
-    # (state, pi, was_black_to_move)
-    recorded: list[tuple[np.ndarray, np.ndarray, bool]] = []
+    # Per-recorded-position scratch: state, pi, was_black_to_move, ply_at_record
+    recorded: list[dict] = []
+    # Every move played, ply-indexed, for opp_pi lookup.
+    moves_played: dict[int, int] = {}
     ply = 0
     full_count = reduced_count = 0
     game_history: list[GoBoard] = []
@@ -162,30 +210,76 @@ def play_game_pcr(
 
         if is_full:
             pi = visits_to_distribution(visits, cfg)
-            # Encode current state — same as mcts._encode_state
-            from distill_go.board import board_to_planes, board_to_history_planes
             full_history = game_history + [board.copy()]
             if cfg.n_input_planes == 17:
                 state = board_to_history_planes(full_history, n_history=8)
             else:
                 state = board_to_planes(board)
-            recorded.append((state, pi, board.to_move == BLACK))
+            recorded.append({
+                "state": state,
+                "pi": pi,
+                "was_black": board.to_move == BLACK,
+                "ply": ply,
+            })
 
         temp = 1.0 if ply < cfg.temp_moves else 0.0
         move = select_move(visits, temperature=temp)
+        moves_played[ply] = move
         game_history.append(board.copy())
-        # Cap history to keep memory bounded.
         if cfg.n_input_planes == 17 and len(game_history) > 8:
             game_history = game_history[-8:]
         board.play(move)
         ply += 1
 
     z_black = _outcome_black_pov(board)
-    samples = [(s, p, z_black if was_black else -z_black) for s, p, was_black in recorded]
+    game_ended_naturally = board.is_game_over
+
+    # Aux targets: only meaningful if the game ended naturally (two passes).
+    # Otherwise (max_moves cutoff), zero them out — torn games confuse the score head.
+    if game_ended_naturally:
+        own_abs = board.ownership_map()                  # (S, S) int8, BLACK / WHITE / EMPTY
+        bp_pts, wp_pts = board.tromp_taylor_score()
+        score_black_pov = bp_pts - wp_pts                # signed margin
+    else:
+        own_abs = np.zeros((cfg.board_size, cfg.board_size), dtype=np.int8)
+        score_black_pov = 0.0
+
+    S = cfg.board_size
+    policy_dim = cfg.policy_size
+    samples: list[tuple] = []
+    for rec in recorded:
+        was_black = rec["was_black"]
+        z = z_black if was_black else -z_black
+
+        # STM-relative ownership map: 1 = own, 2 = opp, 0 = empty/dame.
+        if game_ended_naturally:
+            stm_color = BLACK if was_black else WHITE
+            opp_color = WHITE if was_black else BLACK
+            own_stm = np.zeros((S, S), dtype=np.int8)
+            own_stm[own_abs == stm_color] = 1
+            own_stm[own_abs == opp_color] = 2
+            score = float(score_black_pov if was_black else -score_black_pov)
+        else:
+            own_stm = np.zeros((S, S), dtype=np.int8)
+            score = 0.0
+
+        # Opp-policy target: one-hot at the move that was played 1 ply
+        # after this recorded position (= the opponent's response).
+        opp_ply = rec["ply"] + 1
+        opp_pi = np.zeros(policy_dim, dtype=np.float32)
+        if opp_ply in moves_played:
+            opp_pi[moves_played[opp_ply]] = 1.0
+        # else: opp didn't move (recorded position was the last ply before
+        # the game ended), leave all-zeros — train_step's masked CE skips
+        # samples whose target sums to 0.
+
+        samples.append((rec["state"], rec["pi"], z, own_stm, score, opp_pi))
+
     stats = {
         "full_moves": full_count,
         "reduced_moves": reduced_count,
         "recorded_targets": len(samples),
+        "game_ended_naturally": game_ended_naturally,
     }
     return samples, z_black, ply, stats
 
@@ -219,6 +313,11 @@ def _worker(args, ckpt_path: str, out_queue, worker_id: int) -> None:
             dirichlet_eps=args.dirichlet_eps,
             temp_moves=args.temp_moves,
             c_puct=args.c_puct,
+            # Forward aux head flags so worker's net matches main's net
+            # — otherwise state_dict load fails with "unexpected keys".
+            use_global_pool=args.use_global_pool,
+            use_aux_ownership=args.use_aux_ownership,
+            use_aux_opp_policy=args.use_aux_opp_policy,
         )
         device = torch.device(args.worker_device)
         net = AlphaZeroGoNet(cfg).to(device)
@@ -262,19 +361,72 @@ def _worker(args, ckpt_path: str, out_queue, worker_id: int) -> None:
 # ----------------------------------------------------------------------------
 
 def train_step(network, optimizer, batch) -> dict[str, float]:
-    states, pi_targets, z_targets = batch
+    """One SGD step with KataGo-style aux losses when the network has them.
+
+    `batch` is a dict from ShardedReplayBuffer.sample(): state, pi, z,
+    ownership, score, opp_pi. The aux fields are always present; the
+    losses are only added when the corresponding cfg flag is on.
+
+    Loss = policy_CE + value_MSE
+         + cfg.aux_ownership_weight  · ownership_CE   (if use_aux_ownership)
+         + cfg.aux_score_weight      · score_MSE      (if use_aux_ownership;
+                                                       score is part of the
+                                                       same head package)
+         + cfg.aux_opp_policy_weight · opp_policy_CE  (if use_aux_opp_policy)
+
+    The KataGo paper's default weights (1.5 / 0.02 / 0.15) live in GoConfig.
+    """
+    cfg = network.cfg
+    states = batch["state"]
     network.train()
-    logits, value_pred = network(states)
-    log_probs = F.log_softmax(logits, dim=-1)
-    policy_loss = -(pi_targets * log_probs).sum(dim=-1).mean()
-    value_loss = F.mse_loss(value_pred, z_targets)
+
+    # forward_aux computes all heads present on the net.
+    out = network.forward_aux(states)
+    policy_logits = out["policy"]
+    value_pred = out["value"]
+
+    log_probs = F.log_softmax(policy_logits, dim=-1)
+    policy_loss = -(batch["pi"] * log_probs).sum(dim=-1).mean()
+    value_loss = F.mse_loss(value_pred, batch["z"])
     loss = policy_loss + value_loss
+
+    stats: dict[str, float] = {}
+    stats["policy_loss"] = float(policy_loss.item())
+    stats["value_loss"] = float(value_loss.item())
+
+    # Ownership + score aux losses (shared head package).
+    if cfg.use_aux_ownership and "ownership" in out:
+        # ownership target: (B, S, S) int64 class labels in {0, 1, 2}.
+        # ownership logits: (B, 3, S, S).
+        own_loss = F.cross_entropy(out["ownership"], batch["ownership"])
+        # score head: scalar margin. Targets can be tens of points wide;
+        # scale loss down to keep its gradient comparable to value MSE.
+        score_loss = F.mse_loss(out["score"], batch["score"])
+        loss = (loss
+                + cfg.aux_ownership_weight * own_loss
+                + cfg.aux_score_weight * score_loss)
+        stats["ownership_loss"] = float(own_loss.item())
+        stats["score_loss"] = float(score_loss.item())
+
+    # Opp-policy aux loss.
+    if cfg.use_aux_opp_policy and "opp_policy" in out:
+        # opp_pi target: (B, S²+1) one-hot (or all-zeros if no opp move).
+        # Mask out the zero-target rows so they don't contribute a loss
+        # (cross-entropy on a zero-sum target is undefined / NaN).
+        opp_log_probs = F.log_softmax(out["opp_policy"], dim=-1)
+        target_sums = batch["opp_pi"].sum(dim=-1)            # (B,) — 1.0 or 0.0
+        mask = (target_sums > 0).float()
+        per_sample = -(batch["opp_pi"] * opp_log_probs).sum(dim=-1)  # (B,)
+        denom = mask.sum().clamp(min=1.0)
+        opp_loss = (per_sample * mask).sum() / denom
+        loss = loss + cfg.aux_opp_policy_weight * opp_loss
+        stats["opp_policy_loss"] = float(opp_loss.item())
+
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
-    return {"loss": float(loss.item()),
-            "policy_loss": float(policy_loss.item()),
-            "value_loss": float(value_loss.item())}
+    stats["loss"] = float(loss.item())
+    return stats
 
 
 # ----------------------------------------------------------------------------
@@ -338,6 +490,15 @@ def main():
     p.add_argument("--temp-moves", type=int, default=30)
     p.add_argument("--max-moves", type=int, default=200)
 
+    # KataGo aux head flags (off by default to preserve compat with the
+    # prior; turn on to enable the efficiency tricks from the KataGo paper).
+    p.add_argument("--use-global-pool", action="store_true",
+                   help="Use KataGo global-pooling residual blocks (~1.60× speedup).")
+    p.add_argument("--use-aux-ownership", action="store_true",
+                   help="Aux ownership + score heads (~1.65× speedup).")
+    p.add_argument("--use-aux-opp-policy", action="store_true",
+                   help="Aux opponent-policy head (~1.30× speedup).")
+
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--games-per-worker", type=int, default=4)
     p.add_argument("--worker-device", default="cpu",
@@ -386,6 +547,9 @@ def main():
         batch_size=args.batch_size,
         lr=args.lr,
         weight_decay=args.weight_decay,
+        use_global_pool=args.use_global_pool,
+        use_aux_ownership=args.use_aux_ownership,
+        use_aux_opp_policy=args.use_aux_opp_policy,
     )
 
     train_device = torch.device(args.train_device) if args.train_device else get_device()
@@ -497,17 +661,27 @@ def main():
         # ---- train ----
         if len(buffer) >= args.batch_size:
             train_t0 = time.time()
-            losses = {"loss": 0.0, "policy_loss": 0.0, "value_loss": 0.0}
+            losses: dict[str, float] = {}
             for step in range(args.train_steps):
                 batch = buffer.sample(args.batch_size, train_device)
                 stats = train_step(net, optimizer, batch)
-                for k in losses:
-                    losses[k] += stats[k]
+                for k, v in stats.items():
+                    losses[k] = losses.get(k, 0.0) + v
             for k in losses:
                 losses[k] /= max(args.train_steps, 1)
             train_wall = time.time() - train_t0
-            print(f"  train ({args.train_steps} steps, {train_wall:.1f}s): "
-                  f"loss={losses['loss']:.3f} pol={losses['policy_loss']:.3f} val={losses['value_loss']:.3f}",
+            # Print main losses always; aux losses only when present.
+            parts = [
+                f"loss={losses.get('loss', 0):.3f}",
+                f"pol={losses.get('policy_loss', 0):.3f}",
+                f"val={losses.get('value_loss', 0):.3f}",
+            ]
+            for k_label in [("ownership_loss", "own"), ("score_loss", "scr"),
+                             ("opp_policy_loss", "opp")]:
+                key, lbl = k_label
+                if key in losses:
+                    parts.append(f"{lbl}={losses[key]:.3f}")
+            print(f"  train ({args.train_steps} steps, {train_wall:.1f}s): " + " ".join(parts),
                   flush=True)
         else:
             print(f"  skipping train (buffer={len(buffer)} < batch={args.batch_size})", flush=True)

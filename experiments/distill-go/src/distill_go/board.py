@@ -241,6 +241,51 @@ class GoBoard:
         b, w = self.tromp_taylor_score()
         return BLACK if b > w else WHITE
 
+    def ownership_map(self) -> np.ndarray:
+        """Per-point ownership at game end — the KataGo aux-ownership target.
+
+        Returns an (size, size) int8 array where each cell is:
+          BLACK  — the point is a black stone OR an empty point that flood-
+                   fills to only black-bordered region (= black's territory)
+          WHITE  — same for white
+          EMPTY  — the point is in a dame (mixed-border) region; neither
+                   side owns it
+
+        Komi is NOT folded in — that's the score target's job.
+        """
+        out = np.zeros((self.size, self.size), dtype=np.int8)
+        # Stones own themselves.
+        out[self.grid == BLACK] = BLACK
+        out[self.grid == WHITE] = WHITE
+
+        # For each empty region, flood-fill + check bordering colors.
+        seen: set = set()
+        for y in range(self.size):
+            for x in range(self.size):
+                if self.grid[y, x] != EMPTY or (y, x) in seen:
+                    continue
+                region = []
+                bordering = set()
+                q = deque([(y, x)])
+                seen.add((y, x))
+                while q:
+                    cy, cx = q.popleft()
+                    region.append((cy, cx))
+                    for ny, nx in self._neighbors(cy, cx):
+                        if self.grid[ny, nx] == EMPTY and (ny, nx) not in seen:
+                            seen.add((ny, nx))
+                            q.append((ny, nx))
+                        elif self.grid[ny, nx] in (BLACK, WHITE):
+                            bordering.add(int(self.grid[ny, nx]))
+                if bordering == {BLACK}:
+                    for (cy, cx) in region:
+                        out[cy, cx] = BLACK
+                elif bordering == {WHITE}:
+                    for (cy, cx) in region:
+                        out[cy, cx] = WHITE
+                # Else: dame — leave as EMPTY in the ownership map.
+        return out
+
     # ------------------------------------------------------------------ copy
 
     def copy(self) -> "GoBoard":
