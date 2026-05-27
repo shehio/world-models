@@ -43,9 +43,16 @@ python -c "import torch; print('cuda available:', torch.cuda.is_available(), 'de
 
 # Pull the muzero-chess source. The image only has wm_chess + distill-soft +
 # selfplay installed; muzero-chess and the cloud runner come from here.
+# Use a curl+tar tarball download instead of `git clone` — the pytorch
+# runtime base image strips git, and installing it via apt costs ~30s of
+# metadata fetch we'd rather not pay every cold start.
 if [ ! -d "$WORK_REPO" ]; then
-    echo "[clone] world-models main → $WORK_REPO"
-    git clone --depth 1 https://github.com/shehio/world-models.git "$WORK_REPO"
+    echo "[fetch] world-models main → $WORK_REPO (curl + tar; no git in image)"
+    TAR=/tmp/world-models.tar.gz
+    curl -fsSL https://github.com/shehio/world-models/archive/refs/heads/main.tar.gz -o "$TAR"
+    tar -xzf "$TAR" -C /tmp/
+    mv /tmp/world-models-main "$WORK_REPO"
+    rm -f "$TAR"
 fi
 
 # Add muzero-chess to PYTHONPATH. wm_chess is already installed (-e) in the
