@@ -40,6 +40,7 @@ from __future__ import annotations
 import argparse
 import math
 import os
+import shutil
 import sys
 import time
 from dataclasses import asdict, replace
@@ -55,13 +56,22 @@ os.environ.setdefault("MKL_NUM_THREADS", "1")
 import torch
 import torch.multiprocessing as mp
 
-from wm_chess.arena import network_policy, play_match, random_policy
+from wm_chess.arena import (
+    network_policy,
+    play_match,
+    random_policy,
+    stockfish_engine,
+    stockfish_policy,
+)
 from wm_chess.config import Config
 from wm_chess.network import AlphaZeroNet
 from selfplay.ckpt import load_net_state_dict
 from selfplay.replay import ShardedReplayBuffer
 from selfplay.selfplay import play_game, play_game_pcr
 from selfplay.train import train_step
+
+# Single source of truth for hyperparameter defaults — see wm_chess/config.py.
+_DEFAULTS = Config()
 
 
 def _load_net_weights(path: str, map_location):
@@ -71,6 +81,46 @@ def _load_net_weights(path: str, map_location):
     Selfplay checkpoints: {"net": state_dict, "opt": ..., "iter": ..., "hour": ...}
     """
     return load_net_state_dict(torch.load(path, map_location=map_location))
+
+
+# Logistic Elo model: a 400-point gap == a 10x odds ratio (FIDE/Elo convention).
+_ELO_SCALE = 400.0
+# Clamp the score into (0, 1) so the logit stays finite at a clean sweep/shutout.
+_SCORE_CLAMP_EPS = 1e-4
+
+
+def _elo_from_score(score: float, anchor_elo: int) -> float:
+    """Convert a match score vs a fixed-Elo opponent into an absolute Elo estimate."""
+    s = min(max(score, _SCORE_CLAMP_EPS), 1.0 - _SCORE_CLAMP_EPS)
+    return anchor_elo - _ELO_SCALE * math.log10(1.0 / s - 1.0)
+
+
+def eval_vs_stockfish_panel(net, cfg, device, *, elos, n_games, sims, depth,
+                            batch_size, n_history, max_plies) -> None:
+    """Play `net` vs a panel of fixed-Elo Stockfish levels; print absolute Elo.
+
+    A cheap in-loop progress signal on the same anchor method as the definitive
+    distill-soft eval (fewer games here, so noisier). Skips silently if stockfish
+    isn't on PATH so the local CPU smoke stays runnable.
+    """
+    if shutil.which("stockfish") is None:
+        print("  [sf-eval] stockfish not on PATH — skipping yardstick", flush=True)
+        return
+    net.eval()
+    pol = network_policy(net, cfg, device, sims=sims,
+                         batch_size=batch_size, n_history=n_history)
+    for elo in elos:
+        try:
+            with stockfish_engine(elo=elo) as eng:
+                sf_pol = stockfish_policy(eng, depth=depth)
+                stats = play_match(pol, sf_pol, n_games=n_games, max_plies=max_plies)
+        except Exception as e:  # a missing/flaky engine shouldn't kill training
+            print(f"  [sf-eval] vs SF {elo} failed: {e}", flush=True)
+            continue
+        est = _elo_from_score(stats["score"], elo)
+        print(f"  [sf-eval] vs SF {elo}: score={stats['score']:.3f} "
+              f"W{stats['wins']} D{stats['draws']} L{stats['losses']} → ~{est:.0f} Elo",
+              flush=True)
 
 
 def selfplay_worker(args: tuple) -> list:
@@ -187,6 +237,27 @@ def main():
     p.add_argument("--eval-games", type=int, default=10)
     p.add_argument("--eval-sims", type=int, default=100)
     p.add_argument("--eval-every", type=int, default=2)
+    # Arena gating (AlphaGo Zero evaluator). Defaults live in wm_chess/config.py.
+    # gate-every=0 disables it (workers self-play from the latest net, no gate).
+    p.add_argument("--gate-every", type=int, default=_DEFAULTS.gate_every,
+                   help="run a candidate-vs-champion gate every N iters; 0 = no gating.")
+    p.add_argument("--gate-games", type=int, default=_DEFAULTS.gate_games,
+                   help="games in the gating match")
+    p.add_argument("--gate-sims", type=int, default=_DEFAULTS.gate_sims,
+                   help="MCTS sims per move during the gating match")
+    p.add_argument("--gate-threshold", type=float, default=_DEFAULTS.gate_threshold,
+                   help="promote the candidate only if its score vs champion >= this")
+    # KL-anchor to the distilled teacher (trust region for warm-started RL).
+    p.add_argument("--kl-beta", type=float, default=_DEFAULTS.kl_beta,
+                   help="weight on KL(policy||teacher); 0 = off")
+    p.add_argument("--teacher-ckpt", default="",
+                   help="checkpoint for the frozen KL-anchor teacher (defaults to --resume weights)")
+    # In-loop Stockfish yardstick (runs on each promotion when gating is on).
+    p.add_argument("--sf-eval-elos", default="",
+                   help="comma-separated Stockfish UCI Elos to eval promoted champions vs; empty = off")
+    p.add_argument("--sf-eval-games", type=int, default=_DEFAULTS.sf_eval_games)
+    p.add_argument("--sf-eval-sims", type=int, default=_DEFAULTS.sf_eval_sims)
+    p.add_argument("--sf-eval-depth", type=int, default=_DEFAULTS.sf_eval_depth)
     # I/O
     p.add_argument("--ckpt-dir", default="checkpoints_mp")
     p.add_argument("--resume", default=None)
@@ -207,8 +278,7 @@ def main():
                   max_plies=args.max_plies,
                   n_input_planes=n_input_planes,
                   n_res_blocks=args.n_blocks, n_filters=args.n_filters,
-                  batch_size=256,  # training batch
-                  lr=args.lr)
+                  lr=args.lr)  # training batch size comes from Config.batch_size
 
     os.makedirs(args.ckpt_dir, exist_ok=True)
     current_ckpt = os.path.join(args.ckpt_dir, "current.pt")
@@ -297,8 +367,43 @@ def main():
     print(f"time budget: {args.time_budget}s  max iters: {args.max_iters}",
           flush=True)
 
+    # KL-anchor teacher: a frozen snapshot of the distilled prior. Built only
+    # when --kl-beta > 0. Defaults to --teacher-ckpt, else the weights we just
+    # loaded (fine for a fresh run that starts from the prior).
+    teacher_net = None
+    if args.kl_beta > 0.0:
+        teacher_net = AlphaZeroNet(cfg).to(device)
+        t_path = args.teacher_ckpt or args.resume
+        if t_path:
+            teacher_net.load_state_dict(_load_net_weights(t_path, device))
+        else:
+            teacher_net.load_state_dict(network.state_dict())
+        teacher_net.eval()
+        for pr in teacher_net.parameters():
+            pr.requires_grad_(False)
+        print(f"KL-anchor ON: beta={args.kl_beta} teacher={t_path or 'initial weights'}",
+              flush=True)
+
+    # Arena gating: workers self-play from the frozen champion; the trainer
+    # improves a candidate (`network`); every --gate-every iters the candidate
+    # must beat the champion to be promoted. gate-every=0 disables all of this.
+    gating = args.gate_every > 0
+    champion_net = None
+    champion_ckpt = os.path.join(args.ckpt_dir, "champion.pt")
+    sf_eval_elos = [int(x) for x in args.sf_eval_elos.split(",") if x.strip()]
+    if gating:
+        champion_net = AlphaZeroNet(cfg).to(device)
+        champion_net.load_state_dict(network.state_dict())
+        champion_net.eval()
+        torch.save({k: v.cpu() for k, v in champion_net.state_dict().items()}, champion_ckpt)
+        print(f"GATING ON: every {args.gate_every} iters, promote if candidate scores "
+              f">= {args.gate_threshold:.0%} over {args.gate_games} games @ sims={args.gate_sims}",
+              flush=True)
+
     # Save initial checkpoint so workers have something to load on iter 0.
     torch.save(network.state_dict(), current_ckpt)
+    # Workers self-play from the champion when gating, else from the latest net.
+    worker_ckpt = champion_ckpt if gating else current_ckpt
 
     # Launch persistent worker pool. Workers inherit nothing important
     # because we use spawn; they import alphazero fresh.
@@ -333,14 +438,16 @@ def main():
                     pg["lr"] *= args.lr_decay_factor
                 print(f"  LR decayed to {optimizer.param_groups[0]['lr']:.2e} at iter {it}", flush=True)
 
-            # Step 1: write the latest checkpoint for workers.
-            # Move to CPU before save so workers (CPU-only) can load directly.
-            torch.save({k: v.cpu() for k, v in network.state_dict().items()}, current_ckpt)
+            # Step 1: write the latest candidate for workers — but only when NOT
+            # gating. Under gating, workers self-play from the frozen champion
+            # (champion_ckpt), which changes only on promotion.
+            if not gating:
+                torch.save({k: v.cpu() for k, v in network.state_dict().items()}, current_ckpt)
 
             # Step 2: dispatch games_per_worker games to each of N workers.
             t0 = time.time()
             worker_args = [
-                (i, current_ckpt, args.games_per_worker,
+                (i, worker_ckpt, args.games_per_worker,
                  cfg, args.sims, args.batch_size,
                  args.pcr, args.pcr_sims_full, args.pcr_sims_reduced, args.pcr_p_full,
                  args.n_history)
@@ -369,10 +476,11 @@ def main():
             # Step 4: train.
             if len(replay) >= cfg.batch_size:
                 t0 = time.time()
-                loss_acc = {"loss": 0.0, "policy_loss": 0.0, "value_loss": 0.0}
+                loss_acc = {"loss": 0.0, "policy_loss": 0.0, "value_loss": 0.0, "kl": 0.0}
                 for _ in range(args.train_steps):
                     batch = replay.sample(cfg.batch_size, device)
-                    losses = train_step(network, optimizer, batch)
+                    losses = train_step(network, optimizer, batch,
+                                        teacher_net=teacher_net, kl_beta=args.kl_beta)
                     for k, v in losses.items():
                         loss_acc[k] += v
                 tr_dt = time.time() - t0
@@ -380,7 +488,8 @@ def main():
                 print(f"  train ({n} steps, {tr_dt:.1f}s): "
                       f"loss={loss_acc['loss']/n:.3f} "
                       f"pol={loss_acc['policy_loss']/n:.3f} "
-                      f"val={loss_acc['value_loss']/n:.3f}",
+                      f"val={loss_acc['value_loss']/n:.3f} "
+                      f"kl={loss_acc['kl']/n:.3f}",
                       flush=True)
 
             # Save full state (net + optimizer + counters) for crash-safe resume.
@@ -392,8 +501,44 @@ def main():
                 "hour": hourly_idx,
             }, state_ckpt)
 
-            # Step 5: periodic eval + save iter checkpoint.
-            if (it + 1) % args.eval_every == 0:
+            # Step 5: gating (if on) else the original vs-random eval.
+            if gating and (it + 1) % args.gate_every == 0:
+                t0 = time.time()
+                network.eval()
+                # add_root_noise diversifies the match so it isn't the same
+                # deterministic game N times (both sides play greedily otherwise).
+                cand_pol = network_policy(network, cfg, device, sims=args.gate_sims,
+                                          batch_size=args.batch_size, n_history=args.n_history,
+                                          add_root_noise=True)
+                champ_pol = network_policy(champion_net, cfg, device, sims=args.gate_sims,
+                                           batch_size=args.batch_size, n_history=args.n_history,
+                                           add_root_noise=True)
+                gstats = play_match(cand_pol, champ_pol, n_games=args.gate_games,
+                                    max_plies=args.max_plies)
+                g_dt = time.time() - t0
+                if gstats["score"] >= args.gate_threshold:
+                    champion_net.load_state_dict(network.state_dict())
+                    cpu_state = {k: v.cpu() for k, v in champion_net.state_dict().items()}
+                    torch.save(cpu_state, champion_ckpt)
+                    ckpt_path = os.path.join(args.ckpt_dir, f"net_iter{it:03d}.pt")
+                    torch.save(cpu_state, ckpt_path)
+                    print(f"  GATE iter {it} ({g_dt:.1f}s): candidate {gstats['score']:.3f} "
+                          f"(W{gstats['wins']} D{gstats['draws']} L{gstats['losses']}) "
+                          f">= {args.gate_threshold:.0%} → PROMOTED, saved {ckpt_path}", flush=True)
+                    if sf_eval_elos:
+                        eval_vs_stockfish_panel(
+                            champion_net, cfg, device, elos=sf_eval_elos,
+                            n_games=args.sf_eval_games, sims=args.sf_eval_sims,
+                            depth=args.sf_eval_depth, batch_size=args.batch_size,
+                            n_history=args.n_history, max_plies=args.max_plies)
+                else:
+                    # Reject: roll the candidate back to the champion. Optimizer
+                    # momentum re-warms against the reverted weights (acceptable).
+                    network.load_state_dict(champion_net.state_dict())
+                    print(f"  GATE iter {it} ({g_dt:.1f}s): candidate {gstats['score']:.3f} "
+                          f"(W{gstats['wins']} D{gstats['draws']} L{gstats['losses']}) "
+                          f"< {args.gate_threshold:.0%} → REJECTED, reverted to champion", flush=True)
+            elif not gating and (it + 1) % args.eval_every == 0:
                 t0 = time.time()
                 net_pol = network_policy(network, cfg, device,
                                          sims=args.eval_sims,
