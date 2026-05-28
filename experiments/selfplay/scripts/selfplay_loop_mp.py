@@ -95,25 +95,81 @@ def _elo_from_score(score: float, anchor_elo: int) -> float:
     return anchor_elo - _ELO_SCALE * math.log10(1.0 / s - 1.0)
 
 
-def eval_vs_stockfish_panel(net, cfg, device, *, elos, n_games, sims, depth,
-                            batch_size, n_history, max_plies) -> None:
-    """Play `net` vs a panel of fixed-Elo Stockfish levels; print absolute Elo.
+def match_worker(args: tuple) -> dict:
+    """Worker: load two nets from disk, play n_games (alternating colors), return A's W/D/L."""
+    ckpt_a, ckpt_b, n_games, cfg, sims, batch_size, n_history, seed = args
+    torch.set_num_threads(1)
+    import random as _r
+    import numpy as _np
+    torch.manual_seed(seed)
+    _np.random.seed(seed)
+    _r.seed(seed)
+    dev = torch.device("cpu")
+    na = AlphaZeroNet(cfg); na.load_state_dict(_load_net_weights(ckpt_a, "cpu")); na.eval()
+    nb = AlphaZeroNet(cfg); nb.load_state_dict(_load_net_weights(ckpt_b, "cpu")); nb.eval()
+    pa = network_policy(na, cfg, dev, sims=sims, batch_size=batch_size,
+                        n_history=n_history, add_root_noise=True)
+    pb = network_policy(nb, cfg, dev, sims=sims, batch_size=batch_size,
+                        n_history=n_history, add_root_noise=True)
+    return play_match(pa, pb, n_games=n_games, max_plies=cfg.max_plies)
 
-    A cheap in-loop progress signal on the same anchor method as the definitive
-    distill-soft eval (fewer games here, so noisier). Skips silently if stockfish
-    isn't on PATH so the local CPU smoke stays runnable.
+
+def sf_match_worker(args: tuple) -> dict:
+    """Worker: load a net + open its own Stockfish, play n_games, return the net's W/D/L."""
+    ckpt, elo, n_games, cfg, sims, depth, batch_size, n_history, seed = args
+    torch.set_num_threads(1)
+    import random as _r
+    import numpy as _np
+    torch.manual_seed(seed)
+    _np.random.seed(seed)
+    _r.seed(seed)
+    dev = torch.device("cpu")
+    net = AlphaZeroNet(cfg); net.load_state_dict(_load_net_weights(ckpt, "cpu")); net.eval()
+    pol = network_policy(net, cfg, dev, sims=sims, batch_size=batch_size, n_history=n_history)
+    with stockfish_engine(elo=elo) as eng:
+        return play_match(pol, stockfish_policy(eng, depth=depth),
+                          n_games=n_games, max_plies=cfg.max_plies)
+
+
+def _split_games(n_games: int, workers: int) -> list:
+    """Spread n_games across workers as evenly as possible."""
+    base, rem = divmod(n_games, workers)
+    return [base + (1 if i < rem else 0) for i in range(workers)]
+
+
+def _agg_match(results: list) -> dict:
+    """Sum per-worker W/D/L into one match result (A's POV)."""
+    w = sum(r["wins"] for r in results)
+    d = sum(r["draws"] for r in results)
+    l = sum(r["losses"] for r in results)
+    g = w + d + l
+    return {"games": g, "wins": w, "draws": d, "losses": l,
+            "score": (w + 0.5 * d) / g if g else 0.0}
+
+
+def parallel_match(pool, ckpt_a: str, ckpt_b: str, n_games: int, workers: int,
+                   cfg, sims: int, batch_size: int, n_history: int) -> dict:
+    """A-vs-B match fanned out across the worker pool (vs. one game at a time in the trainer)."""
+    args = [(ckpt_a, ckpt_b, c, cfg, sims, batch_size, n_history, 1000 + i)
+            for i, c in enumerate(_split_games(n_games, workers)) if c > 0]
+    return _agg_match(pool.map(match_worker, args))
+
+
+def parallel_sf_eval(pool, ckpt: str, elos, n_games: int, workers: int, cfg,
+                     sims: int, depth: int, batch_size: int, n_history: int) -> None:
+    """In-loop Stockfish-panel yardstick, fanned out across the worker pool.
+
+    Same anchor method as the definitive distill-soft eval (fewer games, noisier).
+    Skips silently if stockfish isn't on PATH so the local CPU smoke stays runnable.
     """
     if shutil.which("stockfish") is None:
         print("  [sf-eval] stockfish not on PATH — skipping yardstick", flush=True)
         return
-    net.eval()
-    pol = network_policy(net, cfg, device, sims=sims,
-                         batch_size=batch_size, n_history=n_history)
     for elo in elos:
+        args = [(ckpt, elo, c, cfg, sims, depth, batch_size, n_history, 2000 + i)
+                for i, c in enumerate(_split_games(n_games, workers)) if c > 0]
         try:
-            with stockfish_engine(elo=elo) as eng:
-                sf_pol = stockfish_policy(eng, depth=depth)
-                stats = play_match(pol, sf_pol, n_games=n_games, max_plies=max_plies)
+            stats = _agg_match(pool.map(sf_match_worker, args))
         except Exception as e:  # a missing/flaky engine shouldn't kill training
             print(f"  [sf-eval] vs SF {elo} failed: {e}", flush=True)
             continue
@@ -501,20 +557,16 @@ def main():
                 "hour": hourly_idx,
             }, state_ckpt)
 
-            # Step 5: gating (if on) else the original vs-random eval.
+            # Step 5: gating (if on) else the original vs-random eval. The gate
+            # match + Stockfish eval fan out across the worker pool (Step 2's
+            # processes) — playing one game at a time in the trainer wasted 14 cores.
             if gating and (it + 1) % args.gate_every == 0:
                 t0 = time.time()
-                network.eval()
-                # add_root_noise diversifies the match so it isn't the same
-                # deterministic game N times (both sides play greedily otherwise).
-                cand_pol = network_policy(network, cfg, device, sims=args.gate_sims,
-                                          batch_size=args.batch_size, n_history=args.n_history,
-                                          add_root_noise=True)
-                champ_pol = network_policy(champion_net, cfg, device, sims=args.gate_sims,
-                                           batch_size=args.batch_size, n_history=args.n_history,
-                                           add_root_noise=True)
-                gstats = play_match(cand_pol, champ_pol, n_games=args.gate_games,
-                                    max_plies=args.max_plies)
+                candidate_ckpt = os.path.join(args.ckpt_dir, "candidate.pt")
+                torch.save({k: v.cpu() for k, v in network.state_dict().items()}, candidate_ckpt)
+                gstats = parallel_match(pool, candidate_ckpt, champion_ckpt,
+                                        args.gate_games, args.workers, cfg,
+                                        args.gate_sims, args.batch_size, args.n_history)
                 g_dt = time.time() - t0
                 if gstats["score"] >= args.gate_threshold:
                     champion_net.load_state_dict(network.state_dict())
@@ -526,11 +578,10 @@ def main():
                           f"(W{gstats['wins']} D{gstats['draws']} L{gstats['losses']}) "
                           f">= {args.gate_threshold:.0%} → PROMOTED, saved {ckpt_path}", flush=True)
                     if sf_eval_elos:
-                        eval_vs_stockfish_panel(
-                            champion_net, cfg, device, elos=sf_eval_elos,
-                            n_games=args.sf_eval_games, sims=args.sf_eval_sims,
-                            depth=args.sf_eval_depth, batch_size=args.batch_size,
-                            n_history=args.n_history, max_plies=args.max_plies)
+                        parallel_sf_eval(pool, champion_ckpt, sf_eval_elos,
+                                         args.sf_eval_games, args.workers, cfg,
+                                         args.sf_eval_sims, args.sf_eval_depth,
+                                         args.batch_size, args.n_history)
                 else:
                     # Reject: roll the candidate back to the champion. Optimizer
                     # momentum re-warms against the reverted weights (acceptable).
