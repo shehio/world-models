@@ -87,6 +87,10 @@ cat > "$CKPT_DIR/run_metadata.json" <<META
   "pcr_sims_full": $PCR_SIMS_FULL,
   "pcr_sims_reduced": $PCR_SIMS_REDUCED,
   "pcr_p_full": $PCR_P_FULL,
+  "gate_every": ${GATE_EVERY:-null},
+  "gate_games": ${GATE_GAMES:-null},
+  "gate_threshold": ${GATE_THRESHOLD:-null},
+  "kl_beta": ${KL_BETA:-null},
   "started_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 META
@@ -126,7 +130,18 @@ fi
 SYNC_PID=$!
 trap 'echo "=== final sync ==="; kill $SYNC_PID 2>/dev/null || true; aws s3 sync "$CKPT_DIR/" "$CKPT_S3_BASE/" --no-progress --exclude "*.tmp.*" || true' EXIT
 
-cd /work/experiments/selfplay
+# Source: by default run the code baked into the image at /work. When
+# REFRESH_SRC_FROM_MAIN=1, pull the latest tree from main (curl+tar, same pattern
+# as the muzero entrypoint) so code changes don't require an image rebuild.
+if [ "${REFRESH_SRC_FROM_MAIN:-}" = "1" ]; then
+    echo "=== refreshing source from main (REFRESH_SRC_FROM_MAIN=1) ==="
+    curl -fsSL https://github.com/shehio/world-models/archive/refs/heads/main.tar.gz -o /tmp/wm.tar.gz
+    tar -xzf /tmp/wm.tar.gz -C /tmp/
+    export PYTHONPATH="/tmp/world-models-main/wm_chess/src:${PYTHONPATH:-}"
+    cd /tmp/world-models-main/experiments/selfplay
+else
+    cd /work/experiments/selfplay
+fi
 
 PCR_ARGS=()
 if [ "$PCR" = "1" ]; then
@@ -135,6 +150,19 @@ if [ "$PCR" = "1" ]; then
               --pcr-sims-reduced "$PCR_SIMS_REDUCED"
               --pcr-p-full "$PCR_P_FULL")
 fi
+
+# Gating / KL / Stockfish-yardstick flags are pass-through: only forwarded when
+# the launcher set the env var, so wm_chess/config.py owns the off-by-default
+# behavior — no defaults duplicated here.
+GATE_ARGS=()
+if [ -n "${GATE_EVERY:-}" ];     then GATE_ARGS+=(--gate-every "$GATE_EVERY"); fi
+if [ -n "${GATE_GAMES:-}" ];     then GATE_ARGS+=(--gate-games "$GATE_GAMES"); fi
+if [ -n "${GATE_SIMS:-}" ];      then GATE_ARGS+=(--gate-sims "$GATE_SIMS"); fi
+if [ -n "${GATE_THRESHOLD:-}" ]; then GATE_ARGS+=(--gate-threshold "$GATE_THRESHOLD"); fi
+if [ -n "${KL_BETA:-}" ];        then GATE_ARGS+=(--kl-beta "$KL_BETA"); fi
+if [ -n "${SF_EVAL_ELOS:-}" ];   then GATE_ARGS+=(--sf-eval-elos "$SF_EVAL_ELOS"); fi
+if [ -n "${SF_EVAL_GAMES:-}" ];  then GATE_ARGS+=(--sf-eval-games "$SF_EVAL_GAMES"); fi
+if [ -n "${SF_EVAL_SIMS:-}" ];   then GATE_ARGS+=(--sf-eval-sims "$SF_EVAL_SIMS"); fi
 
 echo "=== launching self-play loop ==="
 python scripts/selfplay_loop_mp.py \
@@ -156,9 +184,11 @@ python scripts/selfplay_loop_mp.py \
     --eval-every "$EVAL_EVERY" \
     --eval-games "$EVAL_GAMES" \
     --eval-sims "$EVAL_SIMS" \
+    --teacher-ckpt "$PRIOR_LOCAL" \
     --hourly-dump \
     --ckpt-dir "$CKPT_DIR" \
     "${PCR_ARGS[@]}" \
+    "${GATE_ARGS[@]}" \
     2>&1 | tee "$CKPT_DIR/selfplay_log.txt"
 
 echo "=== $(date -u) selfplay done ==="
