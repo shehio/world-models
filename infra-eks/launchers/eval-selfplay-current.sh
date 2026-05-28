@@ -20,7 +20,9 @@ ECR=$ACCOUNT_ID.dkr.ecr.$IMAGE_REGION.amazonaws.com
 SELFPLAY_RUN_ID=${SELFPLAY_RUN_ID:-20260525T0453Z-selfplay-from-d10ep15}
 CKPT_S3=${CKPT_S3:-s3://wm-chess-library-594561963943/d10-mpv8-T1-g250000-20260513T0615Z/selfplay/net-20x256/$SELFPLAY_RUN_ID/current.pt}
 LABEL=${LABEL:-iter0}
-RESULT_KEY=s3://wm-chess-library-594561963943/d10-mpv8-T1-g250000-20260513T0615Z/selfplay/net-20x256/$SELFPLAY_RUN_ID/eval_results-${LABEL}-sims800.txt
+# Overridable so runs living under a different prefix (e.g. d15-mpv8 R2v2)
+# write their results next to their own checkpoints, not the d10 default.
+RESULT_KEY=${RESULT_KEY:-s3://wm-chess-library-594561963943/d10-mpv8-T1-g250000-20260513T0615Z/selfplay/net-20x256/$SELFPLAY_RUN_ID/eval_results-${LABEL}-sims800.txt}
 
 USER_DATA=$(cat <<EOF
 #!/bin/bash
