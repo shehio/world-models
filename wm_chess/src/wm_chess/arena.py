@@ -94,12 +94,19 @@ def network_policy(
     sims: int | None = None,
     batch_size: int = 1,
     n_history: int = 1,
+    temperature: float = 0.0,
+    add_root_noise: bool = False,
 ) -> Policy:
     """A policy callable wrapping (network + MCTS). batch_size>1 uses batched MCTS.
 
     n_history > 1 enables the AZ-paper 8-step input encoding. The policy
     reconstructs prior board states from `board.move_stack` at every call,
     so callers don't need to track game history themselves.
+
+    temperature/add_root_noise default to deterministic, noise-free play (the
+    right choice for eval). Set add_root_noise=True (and/or temperature>0) to
+    diversify games — the arena gate uses this so candidate-vs-champion isn't
+    the same deterministic game repeated N times.
     """
     sims = sims if sims is not None else cfg.sims_eval
 
@@ -110,7 +117,9 @@ def network_policy(
                 board, network,
                 num_sims=sims,
                 c_puct=cfg.c_puct,
-                add_root_noise=False,
+                add_root_noise=add_root_noise,
+                dirichlet_alpha=cfg.dirichlet_alpha,
+                dirichlet_eps=cfg.dirichlet_eps,
                 device=device,
                 batch_size=batch_size,
                 game_history=gh,
@@ -121,12 +130,14 @@ def network_policy(
                 board, network,
                 num_sims=sims,
                 c_puct=cfg.c_puct,
-                add_root_noise=False,
+                add_root_noise=add_root_noise,
+                dirichlet_alpha=cfg.dirichlet_alpha,
+                dirichlet_eps=cfg.dirichlet_eps,
                 device=device,
                 game_history=gh,
                 n_history=n_history,
             )
-        return select_move(visits, temperature=0.0)
+        return select_move(visits, temperature=temperature)
 
     return policy
 
