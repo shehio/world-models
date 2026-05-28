@@ -77,6 +77,15 @@ class MuZeroConfig:
     temp_moves: int = 30
     max_plies: int = 200
 
+    # --- Distill-init mode (reuse a distilled AlphaZeroNet as frozen h + f,
+    # train only the dynamics g). Ignored by the from-scratch loop. ---
+    teacher_ckpt: str = ""          # local path to the distilled checkpoint
+    teacher_n_blocks: int = 20      # AlphaZeroNet trunk depth of the teacher
+    teacher_n_filters: int = 256    # = latent_channels when distill-init is on
+    latent_loss_weight: float = 1.0   # MSE(g-rollout latent, h(real next obs))
+    pred_loss_weight: float = 0.25    # consistency through frozen f (policy CE + value MSE)
+    epsilon_random: float = 0.1     # fraction of random moves in transition data gen
+
     @property
     def latent_shape(self) -> tuple[int, int, int]:
         return (self.latent_channels, BOARD_SIZE, BOARD_SIZE)
@@ -88,3 +97,23 @@ class MuZeroConfig:
     @property
     def action_dim(self) -> int:
         return ACTION_DIM
+
+
+def distill_init_config(**overrides) -> MuZeroConfig:
+    """Config for the distill-init experiment: the latent is the teacher's
+    trunk output, so latent_channels must equal the teacher's filter width.
+    The dynamics net runs at that same width. Everything h/f-shaped is
+    irrelevant here (those come from the frozen teacher, not from cfg)."""
+    base = dict(
+        latent_channels=256,
+        dyn_n_filters=256,
+        dyn_n_res_blocks=4,
+        teacher_n_blocks=20,
+        teacher_n_filters=256,
+        num_unroll_steps=5,
+        num_simulations=800,    # match the teacher's sims=800 eval anchor
+        batch_size=256,
+        lr=1e-3,
+    )
+    base.update(overrides)
+    return MuZeroConfig(**base)
