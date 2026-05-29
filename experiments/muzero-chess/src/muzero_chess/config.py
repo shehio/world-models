@@ -85,6 +85,11 @@ class MuZeroConfig:
     latent_loss_weight: float = 1.0   # MSE(g-rollout latent, h(real next obs))
     pred_loss_weight: float = 0.25    # consistency through frozen f (policy CE + value MSE)
     epsilon_random: float = 0.1     # fraction of random moves in transition data gen
+    # MuZero (Schrittwieser et al. 2020, App. G) scales the gradient at the
+    # start of the dynamics function by 1/2 each unroll step, keeping the total
+    # gradient on g roughly constant with depth. 1.0 = no scaling (original
+    # behavior); 0.5 = paper-faithful.
+    dynamics_grad_scale: float = 1.0
 
     @property
     def latent_shape(self) -> tuple[int, int, int]:

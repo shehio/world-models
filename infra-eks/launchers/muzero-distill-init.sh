@@ -38,6 +38,8 @@ TRAIN_STEPS_PER_ROUND=${TRAIN_STEPS_PER_ROUND:-500}
 BATCH_SIZE=${BATCH_SIZE:-256}
 LR=${LR:-1e-3}
 EPSILON_RANDOM=${EPSILON_RANDOM:-0.1}
+LATENT_LOSS_WEIGHT=${LATENT_LOSS_WEIGHT:-1.0}   # 0 = drop latent-match → paper value-equivalence only
+DYNAMICS_GRAD_SCALE=${DYNAMICS_GRAD_SCALE:-1.0} # 0.5 = MuZero App. G dynamics gradient scaling
 EVAL_GAMES=${EVAL_GAMES:-30}
 EVAL_ELOS=${EVAL_ELOS:-1350,1800}       # 1350 = SF UCI floor (learned the hard way)
 TIME_BUDGET=${TIME_BUDGET:-21600}       # 6h cap
@@ -47,6 +49,7 @@ echo "[launcher] region=$REGION instance=$INSTANCE_TYPE market=$INSTANCE_MARKET"
 echo "[launcher] s3 base: $CKPT_S3_BASE"
 echo "[launcher] teacher: $TEACHER_CKPT_S3"
 echo "[launcher] sims=$SIMS n_games=$N_GAMES rounds=$ROUNDS eval_elos=$EVAL_ELOS"
+echo "[launcher] levers: latent_loss_weight=$LATENT_LOSS_WEIGHT epsilon_random=$EPSILON_RANDOM dynamics_grad_scale=$DYNAMICS_GRAD_SCALE"
 
 USER_DATA=$(cat <<EOF
 #!/bin/bash
@@ -75,6 +78,7 @@ docker run --rm \\
     -e UNROLL=$UNROLL -e N_GAMES=$N_GAMES -e ROUNDS=$ROUNDS \\
     -e TRAIN_STEPS_PER_ROUND=$TRAIN_STEPS_PER_ROUND \\
     -e BATCH_SIZE=$BATCH_SIZE -e LR=$LR -e EPSILON_RANDOM=$EPSILON_RANDOM \\
+    -e LATENT_LOSS_WEIGHT=$LATENT_LOSS_WEIGHT -e DYNAMICS_GRAD_SCALE=$DYNAMICS_GRAD_SCALE \\
     -e EVAL_GAMES=$EVAL_GAMES -e EVAL_ELOS=$EVAL_ELOS \\
     --entrypoint bash \\
     $ECR/wm-chess-gpu:latest -lc '

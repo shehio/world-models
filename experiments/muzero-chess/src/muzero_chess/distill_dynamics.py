@@ -31,6 +31,15 @@ from wm_chess.board import decode_move, encode_board, encode_move
 from .config import MuZeroConfig
 
 
+def _scale_gradient(x: torch.Tensor, scale: float) -> torch.Tensor:
+    """Identity in the forward pass; scales the gradient by `scale` in the
+    backward pass. MuZero App. G applies this to the dynamics hidden state
+    each unroll step (scale=0.5). scale=1.0 is an exact no-op."""
+    if scale == 1.0:
+        return x
+    return x * scale + x.detach() * (1.0 - scale)
+
+
 @dataclass
 class _Game:
     obs: list[np.ndarray]      # encoded board at each ply, length T
@@ -162,6 +171,8 @@ def distill_step(composed, optimizer, batch: dict, cfg: MuZeroConfig) -> dict[st
         pred_loss = pred_loss + (-(tp_soft[:, target] * logp).sum(dim=-1).mean()
                                  + F.mse_loss(v_hat, tv[:, target]))
         reward_loss = reward_loss + F.mse_loss(r_hat, rewards[:, k])
+        # Scale the gradient flowing into the next unroll step (MuZero App. G).
+        s_hat = _scale_gradient(s_hat, cfg.dynamics_grad_scale)
 
     latent_loss = latent_loss / K
     pred_loss = pred_loss / K
