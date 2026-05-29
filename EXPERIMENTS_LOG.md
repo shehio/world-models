@@ -577,6 +577,8 @@ Underlying script: [`experiments/selfplay/scripts/h2h_mp.py`](https://github.com
 | data scale (30M vs 5M positions) | **confirmed** (+199) |
 | stronger teacher (d15 vs d10) at full data, constant LR | **rejected** (R1 v1 / R2 v1 both topped out below d10's 2,189) |
 | stronger teacher (d15 vs d10) at full data, **cosine LR** | **confirmed** (R2 v2 ep 14 = **2,301** [CI lower bound 2,190 ← clears 2,300]; ep 4 = 2,285; R1 v2 ep 7 = 2,209) |
+| self-play RL past the distilled teacher (1 GPU) | **rejected** — regresses ungated (→ ~1,730), holds but no climb gated (~2,101). See [negative results](#selfplay-muzero-negative) |
+| MuZero on one GPU (from-scratch / distill-init) | **rejected** — from-scratch caps ~700–900; distill-init collapses under MCTS. See [negative results](#selfplay-muzero-negative) |
 
 The bitter-lesson levers (more compute via search + data) confirmed
 again. The "smarter network" lever (more parameters at constant data)
@@ -587,6 +589,71 @@ does with cosine. Strongest checkpoint to date:
 epoch 14 with sims=4,000 (CI [2,190, 2,601]) — and the 95% CI lower
 bound strictly clears the prior peak (d10 ep 15 = 2,189). Wider-CI
 sibling at the same anchor: **2,285** (R2 v2 ep 4, CI [2,177, 2,554]).
+
+## Self-play & MuZero — Negative Results at Fixed Compute <a id="selfplay-muzero-negative"></a>
+
+The distillation campaign above reached ~2,100–2,300. Two families of
+follow-ups tried to push *past* the distilled teacher. Both are negative
+results at one-GPU compute, and together they are the strongest evidence
+for the project thesis: **distillation ≫ self-play / from-scratch at fixed
+compute.**
+
+Teacher baseline for the comparisons below, on the standard distill-soft
+`eval.py` harness at sims=800: **~2,101** [2,020, 2,224] (anchor SF UCI=1,800;
+vs SF-1350 it's 0.99 → ~2,148 but saturated).
+
+### MuZero (learned world-model)
+
+1. **From-scratch MuZero** — 64-ch latent, sims=400, 200 iters from random
+   init on one L4 (run `20260527T2211Z-muzero-chess`). **Capped ~700–900 Elo**
+   vs SF UCI=1,350 (best eval 3 draws/20, mostly 0/20; plateaued). Shelved:
+   from-random MuZero on a single GPU is compute-starved — sparse terminal
+   rewards, no teacher.
+
+2. **Distill-init MuZero** — reuse the 2,301 distilled teacher as a *frozen*
+   representation `h` + *frozen* prediction `f`, and train **only** the
+   dynamics `g` (latent-match + value-equivalence on teacher self-play
+   transitions). `f(h(obs))` reproduces the teacher exactly, so the *root*
+   eval is the teacher by construction. **Result: it collapses under MCTS.**
+   vs Stockfish at sims=800 the composed net scored 0.133 → 0.05 → **0/30**
+   over rounds 0–2 and stayed at the noise floor through round 8, *while* the
+   distillation loss fell then plateaued (`pred_loss` bottomed ~3.0, never
+   lower). The learned `g` minimizes the supervised objective but produces
+   latents that, unrolled multi-step in the search tree, drift off the
+   manifold where the frozen `f` is meaningful — so 800 sims amplify
+   confidently-wrong rollouts. Clean negative: latent-match + prediction-
+   consistency on teacher self-play does **not** preserve search strength.
+
+### Self-play RL from the distilled teacher
+
+3. **Ungated self-play (attempt #7, OD, ran to completion).** Bootstrapped
+   from the R2v2-ep14 teacher, LR=1e-5, PCR, 56 games/iter, ~10 iters. The
+   iter-10 checkpoint on the *same* harness: **~1,730** [1,656, 1,797] — a
+   confirmed **~370-Elo regression** below the teacher (non-overlapping CIs).
+   So when the loop actually runs to completion it *degrades* the strong
+   supervised init: the MCTS self-play targets aren't better than what a
+   ~2,100 net already plays, and with no guardrail the noisy low-LR updates
+   walk it off the supervised optimum. (Earlier attempts #1–#6 never cleared
+   iter 1 — first catastrophic forgetting at LR=1e-3/1e-4, then spot
+   evictions.)
+
+4. **Gated self-play (MVP, 2026-05-29).** Added AlphaGo-Zero **arena gating**
+   (promote a candidate only if it beats the current champion ≥55% over 60
+   games), a **KL-anchor** to the teacher (trust region), a **50-shard replay
+   window**, and an in-loop **Stockfish yardstick**. **Result: holds, doesn't
+   climb.** Gating makes regression impossible by construction — the champion
+   floors at the teacher's ~2,101 — but candidates keep scoring **below 55%
+   vs the teacher** (0.542 then 0.408 → both rejected; candidate ≈ or < the
+   teacher), so nothing promotes. Gating converts "self-play destroys the
+   teacher" (#3) into "self-play holds the teacher," but yields no climb at
+   this compute.
+
+**Verdict.** At one-GPU compute, self-play RL does not push past the distilled
+teacher: from scratch it caps ~700–900 (MuZero), and from a strong init it
+*regresses* ungated and *holds* (no climb) gated. The binding constraint is
+the **strength of the self-play signal at this data scale** (~1.3k recorded
+samples/iter), not infrastructure or LR. Distillation reached 2,101/2,301;
+self-play cannot improve on it here.
 40×256 cosine variant best: **2,209** (R1 v2 ep 7, CI [2,115, 2,389]).
 
 R1 v2 and R2 v2 trainers were

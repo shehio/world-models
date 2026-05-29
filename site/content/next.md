@@ -118,6 +118,38 @@ In rough order of "would fix it":
 The algorithm is *not* the bottleneck right now. It's the launcher
 making a bet on spot stability that doesn't hold.
 
+### Update 2026-05-29 — self-play ran on OD, and the verdict flipped {#selfplay-od-verdict}
+
+The postmortem above blamed infrastructure (spot eviction). Moving to OD
+removed that — and self-play then *ran to completion*, which surfaced the real
+result:
+
+- **Ungated (attempt #7, OD g6.4xlarge, ~10 iters).** The iter-10 checkpoint,
+  evaluated on the same harness as the teacher (**~2,101** [2,020, 2,224] @
+  sims=800), came in at **~1,730** [1,656, 1,797] — a confirmed **~370-Elo
+  regression**. When the loop actually runs, the strong prior *degrades*: the
+  MCTS self-play targets aren't better than what a ~2,100 net already plays,
+  so the low-LR updates walk it off the supervised optimum.
+- **Gated (MVP, 2026-05-29).** Added AlphaGo-Zero arena gating (promote only
+  if a candidate beats the champion ≥55% over 60 games), a KL-anchor to the
+  teacher, a 50-shard replay window, and an in-loop Stockfish yardstick.
+  Gating *works* — the champion floors at the teacher's ~2,101, no regression —
+  but candidates keep scoring **below 55%** vs the teacher (0.542, then 0.408
+  → rejected), so nothing promotes. **Self-play holds the teacher; it does not
+  climb.**
+
+So the bottleneck was never the algorithm *or* the spot launcher — it's that
+**the self-play signal is too weak to improve a ~2,100 net at one-GPU data
+scale** (~1.3k recorded samples/iter). This is the strongest confirmation yet
+of the project thesis: distillation ≫ self-play at fixed compute. Full
+write-up in
+[EXPERIMENTS_LOG.md](https://github.com/shehio/world-models/blob/main/EXPERIMENTS_LOG.md#selfplay-muzero-negative).
+
+(Engineering footnote: one gated relaunch was lost to a mistaken
+"optimization" that moved the gate match onto CPU workers — ~2-3× slower for
+the 20×256 net than the single-threaded GPU gate. See
+[failure-modes #18](/failures/).)
+
 ## What Originally Was Running Here (preserved for context)
 
 Before the self-play postmortem above, this page described the
@@ -210,7 +242,7 @@ have evidence we're climbing toward it, not stuck below it.
 
 | # | Lever | Estimated Δ Elo | Effort | Status |
 |---|---|---|---|---|
-| 1 | **Self-play RL** on top of distilled prior (the Lc0 recipe) | +200 to +500+ | Weeks of GPU + careful LR tuning | Six spot attempts so far, all evicted before iter 1 finishes — see the [postmortem above](#selfplay-postmortem). Algorithm fixed (LR=1e-5); the bottleneck is moving off spot. |
+| 1 | **Self-play RL** on top of distilled prior (the Lc0 recipe) | +200 to +500+ | Weeks of GPU + careful LR tuning | Ran on OD + gated (2026-05-29): **regresses ungated (→~1,730), holds but does NOT climb gated (~2,101)**. Signal too weak at 1-GPU data scale — see the [verdict update](#selfplay-od-verdict). |
 | 2 | **Higher eval sim count** (sims=16,000+) | +100 to +200 | $0 retraining, ~4× per-game time at eval | Untested above sims=4,000 |
 | 3 | **Finish R1 v2 (cosine d15)** | +0 to +100 | Currently 15/40 epochs; ~5 more days wallclock | In flight. Best so far = 2,209 at ep 7; could climb further. |
 | 4 | **Re-eval R2 v2 ep 4 at 400-game count** | tightens CI (currently ±200 Elo) | One ~4h eval run (~$5) | Open. 2,285 point estimate is the project high but the CI is too wide to publish confidently. |
@@ -224,6 +256,13 @@ plausibly hit 2,500.** Everything else is incremental. Self-play
 replaces "match the teacher's policy" with "find moves the teacher
 missed via search, then train on those" — which is *also* what got
 Leela from ~2,500 to ~3,600 over years of community compute.
+
+**Update 2026-05-29:** this ranking predates *actually running* self-play. On
+OD it ran to completion and **regressed** (→~1,730); gated, it **holds** at
+~2,101 but doesn't climb (see the [verdict update](#selfplay-od-verdict)). At
+one-GPU data scale, self-play is no longer the clear path to 2,500 — the
+distillation levers (cosine LR, deeper eval-side search) remain the reliable
+ones. The honest current ceiling is the distilled **~2,301**.
 
 ### Order of operations
 

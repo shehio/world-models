@@ -345,6 +345,33 @@ trajectory. No $ cost — the daemon's S3 calls are negligible. The
 hole is visible in the R2 trajectory table on the
 [experiments page](/experiments/#d15-46m).
 
+## 18 — Parallelizing the Self-Play Gate onto CPU Workers Was Slower
+
+**Symptom.** The gated self-play loop's candidate-vs-champion gate
+match (60 games) + Stockfish yardstick, after being "parallelized"
+across the 14 CPU self-play workers, ran **~110 min+** — *slower* than
+the original single-threaded gate (~45 min).
+
+**Root cause.** The original gate ran in the trainer process on the
+**GPU** (~45 s/game). The "fix" fanned the match across the CPU worker
+pool (the pattern self-play uses). But for the 20×256 / ~23.7M-param
+net, CPU batch-1 MCTS is ~tens-of-times slower *per game* than the GPU,
+so 14× worker parallelism didn't come close to offsetting it. Self-play
+uses CPU workers because *many concurrent* full games amortize, and the
+net was historically small (10×128, where "batch-1 is faster on CPU"
+held) — false for 20×256.
+
+**Fix.** Reverted (commit `67335fc`): gate match + Stockfish eval run
+single-threaded in the trainer on the GPU. The gate was never the
+bottleneck — self-play dominates at ~2.7h/iter, so a 45-min GPU gate is
+~13% overhead. If gate time matters, cut `gate_games` / `gate_sims`, not
+CPU parallelism. Rule: before parallelizing GPU-bound MCTS onto CPU
+workers, check the per-game device cost first.
+
+**Damage.** One gated relaunch discarded ~6h in (`i-0a729949eca23ef5d`),
+plus the ~110-min gate that triggered the diagnosis before it was killed.
+**~$10 in g5.4xlarge time + the relaunch churn.**
+
 ## Session-Total Damage
 
 Adding up #10 through #17 from the 2026-05-22 → 2026-05-25 d15
