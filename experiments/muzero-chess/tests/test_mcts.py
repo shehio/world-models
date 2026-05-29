@@ -13,6 +13,7 @@ from muzero_chess.config import MuZeroConfig, INPUT_PLANES, ACTION_DIM
 from muzero_chess.mcts import (
     MinMaxStats,
     Node,
+    _select_child,
     root_visit_distribution,
     run_mcts,
     run_mcts_batched,
@@ -222,6 +223,30 @@ def test_run_mcts_batched_legal_mask_at_root():
     legal = [10, 100, 200, 4000]
     root = run_mcts_batched(net, obs, cfg, add_root_noise=False, legal_actions=legal)
     assert set(root.children.keys()) == set(legal)
+
+
+def test_select_child_picks_move_good_for_parent_not_opponent():
+    """Negamax POV regression: a child stores its value in the CHILD mover's
+    POV, so the parent must rank children by the NEGATED child value. With
+    equal priors and both children visited, the parent must pick the child
+    whose position is BAD for the child's mover (= good for the parent). The
+    pre-fix code omitted the negation and selected the opponent-favoring move,
+    inverting the search and collapsing strength even from a perfect root prior."""
+    cfg = MuZeroConfig()
+    mm = MinMaxStats()
+    parent = Node(prior=0.0)
+    parent.visit_count = 10
+    good = Node(prior=0.5)  # value = -0.9 → bad for child's mover → good for parent
+    good.visit_count = 5
+    good.value_sum = -0.9 * 5
+    bad = Node(prior=0.5)   # value = +0.9 → good for child's mover → bad for parent
+    bad.visit_count = 5
+    bad.value_sum = +0.9 * 5
+    parent.children = {1: good, 2: bad}
+    for c in parent.children.values():
+        mm.update(-(c.reward + cfg.discount * c.value))
+    action, _ = _select_child(parent, cfg, mm)
+    assert action == 1, "parent must select the move good for the PARENT (negamax POV)"
 
 
 def test_root_visit_distribution_is_a_probability():

@@ -117,10 +117,13 @@ def _ucb_score(parent: Node, child: Node, cfg: MuZeroConfig, mm: MinMaxStats) ->
     pb_c *= math.sqrt(p_n) / (1 + c_n)
     prior_score = pb_c * child.prior
     if c_n > 0:
-        # Q from child's reward + discount * (effective) child value.
-        # The reward is paid TO the parent when transitioning to the child;
-        # since selection flips POV at each ply, parent sees +reward + γ * value.
-        value_score = mm.normalize(child.reward + cfg.discount * child.effective_value)
+        # Q(parent → child) from the PARENT's perspective. The child stores its
+        # value in its OWN mover's POV (negamax backup negates each ply), so we
+        # negate to view it from the parent — this is exactly the value _backup
+        # credits to the parent for choosing this child: -(reward + γ·child.value).
+        # Without the negation the parent ranks children by what's good for the
+        # OPPONENT, inverting the search.
+        value_score = mm.normalize(-(child.reward + cfg.discount * child.effective_value))
     else:
         value_score = 0.0
     return prior_score + value_score
@@ -203,7 +206,9 @@ def _backup(path: list[Node], leaf_value: float, cfg: MuZeroConfig,
     for node in reversed(path):
         node.value_sum += value
         node.visit_count += 1
-        mm.update(node.reward + cfg.discount * node.value)
+        # Track the SAME parent-POV edge value that _ucb_score normalizes, so the
+        # min-max range matches the quantity used in selection.
+        mm.update(-(node.reward + cfg.discount * node.value))
         # Two-player negamax: flip sign + add reward at this node (the reward
         # was the reward of GETTING to this node, paid by the prior mover).
         value = -(node.reward + cfg.discount * value)
