@@ -165,9 +165,10 @@ promoted **exactly once**:
 | 5 | 0.467 (W17 D22 L21) | rejected |
 | 7 | 0.500 (W17 D26 L17) | rejected |
 
-The single promotion landed at **~1,968** vs SF-1800 (20-game in-loop eval; a
-100-game eval is firming the number) — still ~130 Elo *below* the teacher's
-~2,101, and every later candidate scored ≤ 0.50 against it. So with gating the
+The single promotion landed at **1,931** [1,862, 2,011] vs SF-1800 (100-game
+eval, 53W/30D/17L) — ~170 Elo *below* the teacher's ~2,101 [2,020, 2,224], with
+the confidence intervals essentially non-overlapping (a *real* gap, not noise),
+and every later candidate scored ≤ 0.50 against it. So with gating the
 champion **floors at the teacher and never climbs**: one promotion shaped like
 noise, not a trajectory. Same verdict as the MVP above, now with a full run
 behind it.
