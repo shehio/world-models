@@ -150,6 +150,46 @@ write-up in
 the 20×256 net than the single-threaded GPU gate. See
 [failure-modes #18](/failures/).)
 
+### Update 2026-05-30 — the gated run finished, and the MuZero sibling was a bug {#selfplay-gated-final}
+
+Two follow-ups closed the loop on the verdict above.
+
+**The gated run ran to its full 24h budget** (`20260529T0533Z`, g5.4xlarge A10G,
+8 iters, on the corrected single-GPU gate). Over a full-length run the champion
+promoted **exactly once**:
+
+| gate @ iter | candidate vs champion (60g, sims=200) | result |
+|---|---|---|
+| 1 | 0.408 (W7 D35 L18) | rejected |
+| 3 | **0.600** (W20 D32 L8) | **promoted → `net_iter003`** |
+| 5 | 0.467 (W17 D22 L21) | rejected |
+| 7 | 0.500 (W17 D26 L17) | rejected |
+
+The single promotion landed at **~1,968** vs SF-1800 (20-game in-loop eval; a
+100-game eval is firming the number) — still ~130 Elo *below* the teacher's
+~2,101, and every later candidate scored ≤ 0.50 against it. So with gating the
+champion **floors at the teacher and never climbs**: one promotion shaped like
+noise, not a trajectory. Same verdict as the MVP above, now with a full run
+behind it.
+
+**Go says the same thing, more cleanly.** The 9×9 self-play run (`20260526T1947Z`,
+seeded from the 8×128 KataGo-parity teacher, 103 ungated iters) ended at **parity**
+with its teacher — head-to-head **21–19 over 40 games, Elo gap +17, 95% CI
+[−89, +124]**: statistically indistinguishable. Go neither beat the teacher nor
+regressed. Across both games, on correct search: **distillation ≥ self-play at
+fixed compute** — "≫" for chess, "≈" for 9×9 Go.
+
+**Why "correct search" matters here.** The [MuZero leg](/vs-muzero/) — a separate,
+*learned-dynamics* experiment — had collapsed to 0/30 vs Stockfish. That turned
+out to be an **inverted value-sign in its MCTS child selection**: it ranked
+children by the child's own-side-to-move value without negating to the parent's
+POV, so the search preferred the *opponent's* best reply, and more simulations
+made it worse. Fixed, the MuZero distill-init jumps from random to ~1,700 (still
+short of the teacher). Crucially the bug was **confined to the MuZero MCTS** — both
+self-play searches above (`wm_chess.mcts` and `distill_go.mcts`) negate to the
+parent POV correctly, so the chess and Go results here stand. A clean reminder
+that a "negative result" is only as trustworthy as the harness underneath it.
+
 ## What Originally Was Running Here (preserved for context)
 
 Before the self-play postmortem above, this page described the
