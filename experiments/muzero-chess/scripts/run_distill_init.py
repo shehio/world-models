@@ -69,6 +69,7 @@ def main() -> None:
     p.add_argument("--epsilon-random", type=float, default=_env("EPSILON_RANDOM", 0.1, float))
     p.add_argument("--latent-loss-weight", type=float, default=_env("LATENT_LOSS_WEIGHT", 1.0, float))
     p.add_argument("--dynamics-grad-scale", type=float, default=_env("DYNAMICS_GRAD_SCALE", 1.0, float))
+    p.add_argument("--g-output-relu", type=int, default=_env("G_OUTPUT_RELU", 0, int))
     p.add_argument("--eval-games", type=int, default=_env("EVAL_GAMES", 30, int))
     p.add_argument("--eval-elos", default=_env("EVAL_ELOS", "1350,1800"))
     p.add_argument("--ckpt-dir", default=_env("CKPT_DIR", "/work/checkpoints_distill_init"))
@@ -100,6 +101,7 @@ def main() -> None:
         epsilon_random=args.epsilon_random,
         latent_loss_weight=args.latent_loss_weight,
         dynamics_grad_scale=args.dynamics_grad_scale,
+        g_output_relu=bool(args.g_output_relu),
     )
     print(f"[config] {cfg}", flush=True)
 

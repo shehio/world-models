@@ -90,6 +90,12 @@ class MuZeroConfig:
     # gradient on g roughly constant with depth. 1.0 = no scaling (original
     # behavior); 0.5 = paper-faithful.
     dynamics_grad_scale: float = 1.0
+    # ReLU the dynamics output so g's latent lands on the SAME non-negative
+    # manifold as the frozen teacher h (whose trunk ends in ReLU → latent ≥ 0).
+    # Without it g emits raw (signed, unbounded) latents that the frozen f was
+    # never trained to decode, so deep MCTS unrolls drift off-manifold. Off by
+    # default (original behavior); on = manifold-matched.
+    g_output_relu: bool = False
 
     @property
     def latent_shape(self) -> tuple[int, int, int]:

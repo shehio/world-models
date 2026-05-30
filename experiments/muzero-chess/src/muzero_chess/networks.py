@@ -114,6 +114,9 @@ class DynamicsNet(nn.Module):
     def __init__(self, cfg: MuZeroConfig):
         super().__init__()
         self.action_dim = cfg.action_dim
+        # Optionally ReLU the output latent to match the teacher's post-ReLU
+        # (non-negative) manifold in distill-init; see MuZeroConfig.g_output_relu.
+        self.g_output_relu = cfg.g_output_relu
         # latent concatenated with 73-channel action plane → conv stack → next_latent.
         in_ch = cfg.latent_channels + N_MOVE_PLANES
         self.trunk = _resnet_stack(
@@ -132,6 +135,8 @@ class DynamicsNet(nn.Module):
         x = torch.cat([latent, plane], dim=1)
         h = self.trunk(x)
         next_latent = self.next_latent_proj(h)
+        if self.g_output_relu:                 # match teacher's post-ReLU latent manifold
+            next_latent = F.relu(next_latent)
         r = F.relu(self.reward_bn(self.reward_conv(h)))
         r = r.mean(dim=(2, 3))                # (B, 1) global average
         reward = torch.tanh(self.reward_fc(r)).squeeze(-1)
