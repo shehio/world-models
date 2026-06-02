@@ -667,3 +667,38 @@ Self-play RL on top of the strongest distilled prior has been
 [attempted six times](https://shehio.github.io/world-models/next/#selfplay-postmortem) on spot and
 evicted before iter 1 finished each time — see the postmortem on the
 [next steps page](https://shehio.github.io/world-models/next/).
+
+## Cost & Process Lessons <a id="cost-lessons"></a>
+
+May 2026 AWS spend was **$3,143** (~80% EC2 GPU/CPU compute, $250 idle EKS
+control planes, $293 tax), spread across 5 regions (eu-central-1 $1,249,
+us-east-1 $1,116, + Tokyo/Ireland/Ohio). Most was legitimate research compute —
+data generation plus the runs that produced the 2,300-Elo teacher and the
+self-play/MuZero verdicts. But a few things were avoidable, and one bug nearly
+produced a wrong conclusion. What we'd do differently:
+
+1. **Test-before-spend.** The MuZero MCTS had an inverted value-sign in child
+   selection (ranked children in the child's POV without negating to the parent's
+   — a negamax bug). It confounded the from-scratch run, the distill-init
+   collapse, and four lever runs — nearly cementing a false "MuZero can't learn
+   this" result. A 2-minute local unit test caught it. **Gate the core
+   search/value/loss math behind a correctness test before any GPU run** — not
+   just a "does it run" smoke.
+2. **On-demand for long runs; spot only for short or restartable ones.** Six
+   self-play attempts were spot-evicted before iter 1 finished (~90-min iters vs
+   sub-90-min eviction windows), each leaving only an iter-0 checkpoint = the
+   prior with one SGD pass = nothing. The fix (OD, or a resume-from-S3 path)
+   should have been the default after attempt #1.
+3. **Tear down standing infra when idle.** The EKS autoeval control plane(s) ran
+   much of the month (~$250) while evals were actually fired via a one-shot
+   launcher anyway. Prefer one-shot launchers; delete idle clusters.
+4. **Tag every instance** (`experiment=<run-id>`) — the bill had no tag
+   attribution, so cost-per-experiment had to be inferred from instance type and
+   region.
+5. **Reuse generated data.** ~$940 of CPU spot was data-gen; cache shards in S3
+   and reuse across runs rather than regenerating per run.
+
+**Guardrails added 2026-06-02:** an account-wide AWS Budget
+(`monthly-account-guardrail`, $1,000/mo, alerts at 50/80/100% actual + forecast)
+and Cost Anomaly Detection (daily email on any ≥$50 spike), both to the project
+owner. Budgets are account-wide, so one covers every region/service.
