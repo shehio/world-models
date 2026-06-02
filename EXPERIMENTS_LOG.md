@@ -699,6 +699,8 @@ produced a wrong conclusion. What we'd do differently:
    and reuse across runs rather than regenerating per run.
 
 **Guardrails added 2026-06-02:** an account-wide AWS Budget
-(`monthly-account-guardrail`, $1,000/mo, alerts at 50/80/100% actual + forecast)
-and Cost Anomaly Detection (daily email on any ≥$50 spike), both to the project
-owner. Budgets are account-wide, so one covers every region/service.
+(`monthly-spend-tracker-100`) that emails at **every $100 of actual monthly
+spend** ($100 → $1,000), plus Cost Anomaly Detection (daily email on any ≥$50
+spike), both to the project owner. Budgets are account-wide, so one covers every
+region/service. (Above $1,000 the per-$100 alerts stop — AWS threshold lists are
+finite — but anomaly detection still fires on spikes.)
