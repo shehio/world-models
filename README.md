@@ -82,7 +82,7 @@ single experiment on a bare EC2 box; the EKS Indexed Jobs in
 | Chess · best point estimate | **2,301 Elo** (CI [2,190, 2,601]) | R2 v2 ep 14, sims=4,000, vs UCI=1,800 |
 | Chess · tightest-CI measurement | 2,153 Elo (CI [2,084, 2,235]) | R2 v2 ep 4, sims=8,000, vs UCI=2,000 |
 | Chess · self-play improvement so far | indistinguishable from zero on attempts 1–6 (all spot-evicted before iter 1) | [postmortem](https://shehio.github.io/world-models/next/#selfplay-postmortem) |
-| Go · 9×9 distillation lower-bound Elo | **≥ 2,366** (AlphaGo scale) | 8×128 ep 15 = parity with KataGo @v200, anchored to GnuGo L10 |
+| Go · 9×9 distillation lower-bound Elo | **≥ 2,366** (Go-Elo, GnuGo-anchored — *not* the AlphaGo-paper scale; [caveat](https://shehio.github.io/world-models/go/)) | 8×128 ep 15 = parity with KataGo @v200, anchored to GnuGo L10 |
 | Go · self-play improvement | +17 ± 100 Elo over prior at iter 42 (24h, one L4 GPU) | h2h, 40 games, alternating colors |
 
 ## Tests + CI

@@ -42,7 +42,7 @@ LATENT_LOSS_WEIGHT=${LATENT_LOSS_WEIGHT:-1.0}   # 0 = drop latent-match → pape
 DYNAMICS_GRAD_SCALE=${DYNAMICS_GRAD_SCALE:-1.0} # 0.5 = MuZero App. G dynamics gradient scaling
 G_OUTPUT_RELU=${G_OUTPUT_RELU:-0}               # 1 = ReLU g output → match teacher's post-ReLU latent manifold
 EVAL_GAMES=${EVAL_GAMES:-30}
-EVAL_ELOS=${EVAL_ELOS:-1350,1800}       # 1350 = SF UCI floor (learned the hard way)
+EVAL_ELOS=${EVAL_ELOS:-1350,1800}       # 1350 = our SF floor (engine min is 1320 on SF16+; 1350 safe on SF <=15.1)
 TIME_BUDGET=${TIME_BUDGET:-21600}       # 6h cap
 
 CKPT_S3_BASE="s3://$S3_BUCKET/$S3_PREFIX/$RUN_ID"

@@ -40,7 +40,7 @@ MCTS_BATCH_SIZE=${MCTS_BATCH_SIZE:-8}        # parallel descents per network cal
 MCTS_TOP_K=${MCTS_TOP_K:-32}                  # non-root expansion fan-out
 EVAL_EVERY=${EVAL_EVERY:-5}
 EVAL_GAMES=${EVAL_GAMES:-20}
-EVAL_STOCKFISH_ELO=${EVAL_STOCKFISH_ELO:-1350}   # Stockfish UCI_Elo floor is 1350, not 1320
+EVAL_STOCKFISH_ELO=${EVAL_STOCKFISH_ELO:-1350}   # our SF floor; engine min is 1320 on SF16+ (1350 on SF <=15.1)
 EVAL_SIMS=${EVAL_SIMS:-0}                     # 0 = same as training SIMS
 
 ITERATIONS=${ITERATIONS:-200}

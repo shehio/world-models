@@ -71,13 +71,17 @@ Wired into the auto-eval daemon's `region_config`.
 ## 5 — Stockfish UCI_Elo=1320 Rejected
 
 **Symptom.** Eval pod died with `value 1320 less than minimum 1350`.
-The first auto-eval after upgrading to Stockfish 17 broke.
+An auto-eval crashed: the image's Stockfish enforced a 1350 `UCI_Elo`
+minimum while the eval code targeted 1320 (02b's anchor).
 
-**Root cause.** Stockfish 17 bumped the `UCI_Elo` minimum from 1320
-to 1350.
+**Root cause.** A 1350 minimum is the *historical* floor. Stockfish
+actually **lowered** the minimum from 1350 → 1320 in 2023 (PR #4341,
+first shipped in SF16), so the crashing binary was SF ≤ 15.1 (the
+version `apt` ships on Debian/Ubuntu stable) — not the "17" we'd
+assumed. We originally recorded this backwards (as "SF17 raised it").
 
-**Fix.** Daemon default is now 1,350. Old 1,185-Elo 02b numbers are
-normalized in the experiment's `results.md`.
+**Fix.** Daemon default is now 1,350 — safe across every version. Old
+1,185-Elo 02b numbers are normalized in the experiment's `results.md`.
 
 ## 6 — Repeated VcpuLimitExceeded in us-east-1
 

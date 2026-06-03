@@ -34,8 +34,9 @@ def stockfish_engine(
 ) -> Iterator[chess.engine.SimpleEngine]:
     """Context manager that opens a Stockfish UCI engine and configures strength.
 
-    elo:    if set, enables UCI_LimitStrength and pins UCI_Elo (min 1350 —
-            modern Stockfish builds raised the floor from the historical 1320).
+    elo:    if set, enables UCI_LimitStrength and pins UCI_Elo. We floor at
+            1350 to be safe across versions; the engine min is 1320 on SF16+
+            (lowered from 1350 in 2023, PR #4341) but 1350 on SF <=15.1.
     skill:  if set (0..20), passes Skill Level instead.
 
     Use only one of elo/skill. depth/time limits are passed at .play() call.
