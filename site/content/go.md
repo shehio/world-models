@@ -11,9 +11,9 @@ aliases:
 
 A 9×9 Go agent distilled from KataGo (multipv=8 at v=400, ~1.236M
 positions) reaches **parity with KataGo at 200 visits** in 15 epochs.
-Anchored against GnuGo L10 (AlphaGo paper scale, ~1,800 Elo), the
-KataGo @v=200 opponent sits at **≥ 2,366 absolute Elo**, so the
-student does too.
+Anchored against GnuGo L10 (assumed ≈1,800 Elo on a conventional
+Go-Elo scale — see the anchor caveat below), the KataGo @v=200 opponent
+sits at **≥ 2,366 absolute Elo**, so the student does too *on that scale*.
 
 | ckpt | sims | opponent | win rate | Elo gap |
 |---|---:|---|---|---:|
@@ -37,7 +37,8 @@ To convert the "parity with KataGo @v=200" result into a Go-Elo
 absolute number, we need to anchor KataGo @v=200 itself against a
 calibrated opponent. Run 2026-05-26 18:21 UTC (`i-07a0f9582d96fcd9a`,
 g6.xlarge OD): **100 games KataGo @v=200 vs GnuGo L10 on 9×9, komi 7.5,
-anchor GnuGo = 1,800 Elo** (Silver et al. 2016, AlphaGo paper scale).
+anchor GnuGo = 1,800 Elo** (assumed; a conventional single-digit-kyu
+Go-Elo estimate — *not* the AlphaGo-paper scale, see caveat below).
 
 ```
 KataGo @v=200  vs  GnuGo L10  (100 games, 9×9):  100 W / 0 D / 0 L
@@ -59,6 +60,16 @@ small-board networks at 2,800+ on 9×9) but pinning it requires a
 stronger anchor than GnuGo. Pachi 1.0 from Ubuntu apt was the obvious
 candidate but deadlocks in non-TTY containers regardless of playout
 count; CrazyStone / Aya / Lc0 would each need new docker integration.
+
+**Anchor caveat.** The ≈1,800 GnuGo figure is an *assumption* on a
+conventional Go-Elo scale — it is **not** from the AlphaGo paper. That
+paper (Silver et al., Nature 2016, Extended Data Table 6) actually rates
+GnuGo 3.8 (level 10) at **431 Elo** on its own compressed BayesElo scale
+(anchored to Fan Hui = 2,908; the ~1,800–1,900 entries there are Zen and
+CrazyStone, not GnuGo). So **≥ 2,366 is only valid on a scale where GnuGo
+L10 ≈ 1,800**; treat the absolute number as anchor-dependent. The lower
+*bound* (KataGo @v=200 beats GnuGo by ≥ 566 Elo) is robust regardless of
+the anchor.
 
 → launcher: [`infra-eks/launchers/calibrate-katago-vs-gnugo.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/calibrate-katago-vs-gnugo.sh) ·
 result: `s3://wm-chess-library-594561963943/go-calibration/katago-v200-vs-gnugo-l10-20260526T1821Z.txt`
