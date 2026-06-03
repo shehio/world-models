@@ -166,8 +166,9 @@ The honest answer so far:
 
 - **Chess: 2,301 Elo (wide CI) / 2,153 (tight CI)** vs calibrated
   Stockfish opponents. Strong amateur strength, well below grandmaster.
-- **Go: ≥ 2,366 (lower-bound)** on the AlphaGo scale, on 9×9. Same
-  competitive-amateur tier, anchored to GnuGo L10.
+- **Go: ≥ 2,366 (lower-bound)** on a GnuGo-anchored Go-Elo scale (*not*
+  the AlphaGo-paper scale), on 9×9. Same competitive-amateur tier,
+  anchored to GnuGo L10.
 - **Self-play on top: +17 ± 100 Elo over the prior on Go after 4
   hours.** Indistinguishable from no change. Chess attempt #7 in
   flight — same recipe, OD instead of spot, will know within ~24h.

@@ -92,11 +92,14 @@ per region:
 RuntimeError: invalid argument UCI_Elo: value 1320 less than minimum 1350
 ```
 
-The first auto-eval after upgrading to Stockfish 17 in the image
-broke; older code targeted 1320 (02b's anchor).
+An auto-eval crashed: the image's Stockfish enforced a 1350 minimum
+while the eval code targeted 1320 (02b's anchor).
 
-**Root cause:** Stockfish 17 bumped the `UCI_Elo` minimum from 1320 to
-1350.
+**Root cause:** We had the history backwards. Stockfish *lowered* the
+`UCI_Elo` minimum from 1350 → 1320 in 2023 (PR #4341, first shipped in
+SF16), so a binary that still rejects 1320 is SF ≤ 15.1 (the version
+`apt` ships on Debian/Ubuntu stable) — not the "17" the image was
+assumed to carry.
 
 **Fix:** Daemon's `STOCKFISH_ELO` default is now 1350. Old 1185-Elo
 02b numbers are normalized in

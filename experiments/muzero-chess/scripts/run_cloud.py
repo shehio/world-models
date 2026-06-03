@@ -96,7 +96,7 @@ def main() -> None:
                    default=_env_default("EVAL_GAMES", 20, int))
     p.add_argument("--eval-stockfish-elo", type=int,
                    default=_env_default("EVAL_STOCKFISH_ELO", 1350, int),
-                   help="Stockfish UCI_LimitStrength floor is 1350, not 1320")
+                   help="our UCI_Elo floor; engine min is 1320 on SF16+ (1350 on SF <=15.1), 1350 is safe")
     p.add_argument("--eval-sims", type=int,
                    default=_env_default("EVAL_SIMS", 0, int),
                    help="0 = same as training sims")
