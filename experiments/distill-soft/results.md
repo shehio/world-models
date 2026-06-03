@@ -225,7 +225,7 @@ to hard targets while keeping some secondary-ranking info.
 | **A** | hard one-hot targets (everything else same) | "was the soft-target the problem, or the bigger net?" | ~$5 |
 | **B** | T=0.3 soft (sharper) | "are soft targets per se bad, or is T=1 too smooth?" | ~$5 |
 | **C** | d15 teacher, multipv=8 (full original plan) | "does multipv help when the teacher is stronger?" | ~$25 |
-| D | distill→AZ-self-play (Lc0 path) | "can self-play close the search gap?" | $50+, days |
+| D | distill→AZ-self-play (prior + self-play) | "can self-play close the search gap?" | $50+, days |
 
 **Recommended next step**: A. It's the cleanest single-variable ablation
 — same data, same net, same training time, just different loss. If A

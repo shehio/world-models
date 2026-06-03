@@ -79,8 +79,8 @@ about which knob controls the ceiling:
   eval budget, not the model.
 - **data** (full 30M positions, running) → tests whether the rest is
   data-driven.
-- **self-play** (running) → tests Lc0's "distill first, RL second"
-  recipe on a single GPU.
+- **self-play** (running) → tests the prior-plus-self-play idea
+  (Lc0 / AlphaZero) on top of an engine-distilled prior, on a single GPU.
 
 If we had AZ's compute we wouldn't run these experiments — we'd just
 do AZ's thing and report ~3,500 Elo. The interesting question for a
