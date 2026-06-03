@@ -1,6 +1,6 @@
 ---
 title: "What's next"
-subtitle: "distill-then-RL — lc0's recipe, running on an EKS pod right now"
+subtitle: "distill-then-RL — a distilled prior plus self-play, running on an EKS pod right now"
 next: "/infra/"
 aliases:
   - /selfplay/
@@ -16,8 +16,10 @@ self-sustaining and the only ceiling is compute.
 
 A single GPU can't reproduce AlphaZero from scratch — it would take
 wall-weeks to reach 1,500 Elo from random init. But it *can* run the
-realistic path: **distill-then-RL**, which is what Leela Chess Zero
-actually did to reach grandmaster level on volunteer hardware.
+realistic path: **distill-then-RL** — warm-start a strong prior, then
+self-play. That prior-plus-self-play shape is how Leela Chess Zero
+reached grandmaster level on volunteer hardware (Lc0 built its prior
+from self-play; we build ours by distilling Stockfish).
 
 ## The Loop
 
@@ -39,7 +41,8 @@ The loss is exactly the AlphaZero loss; the only difference from
 ## Self-Play Postmortem — Six Attempts, No Progress {#selfplay-postmortem}
 
 Self-play *should* be the next +200 to +500 Elo on top of the
-distilled prior (it's what Lc0 did to break past Stockfish-distill).
+distilled prior (self-play on a strong prior is how Lc0 reached engine
+strength — though Lc0's prior came from self-play, not a Stockfish distill).
 We've launched the loop six times since 2026-05-25 and not yet gotten
 past iteration 1. Two distinct failure modes, both fixed in code, but
 the *infrastructure* turned out to be the binding constraint.
@@ -283,7 +286,7 @@ have evidence we're climbing toward it, not stuck below it.
 
 | # | Lever | Estimated Δ Elo | Effort | Status |
 |---|---|---|---|---|
-| 1 | **Self-play RL** on top of distilled prior (the Lc0 recipe) | +200 to +500+ | Weeks of GPU + careful LR tuning | Ran on OD + gated (2026-05-29): **regresses ungated (→~1,730), holds but does NOT climb gated (~2,101)**. Signal too weak at 1-GPU data scale — see the [verdict update](#selfplay-od-verdict). |
+| 1 | **Self-play RL** on top of distilled prior (self-play on a prior, à la Lc0/AlphaZero) | +200 to +500+ | Weeks of GPU + careful LR tuning | Ran on OD + gated (2026-05-29): **regresses ungated (→~1,730), holds but does NOT climb gated (~2,101)**. Signal too weak at 1-GPU data scale — see the [verdict update](#selfplay-od-verdict). |
 | 2 | **Higher eval sim count** (sims=16,000+) | +100 to +200 | $0 retraining, ~4× per-game time at eval | Untested above sims=4,000 |
 | 3 | **Finish R1 v2 (cosine d15)** | +0 to +100 | Currently 15/40 epochs; ~5 more days wallclock | In flight. Best so far = 2,209 at ep 7; could climb further. |
 | 4 | **Re-eval R2 v2 ep 4 at 400-game count** | tightens CI (currently ±200 Elo) | One ~4h eval run (~$5) | Open. 2,285 point estimate is the project high but the CI is too wide to publish confidently. |
@@ -295,8 +298,8 @@ have evidence we're climbing toward it, not stuck below it.
 **Lever #1 (self-play) is still the only one in this list that can
 plausibly hit 2,500.** Everything else is incremental. Self-play
 replaces "match the teacher's policy" with "find moves the teacher
-missed via search, then train on those" — which is *also* what got
-Leela from ~2,500 to ~3,600 over years of community compute.
+missed via search, then train on those" — which is *also* what carried
+Leela to ~3,600 over years of community self-play.
 
 **Update 2026-05-29:** this ranking predates *actually running* self-play. On
 OD it ran to completion and **regressed** (→~1,730); gated, it **holds** at

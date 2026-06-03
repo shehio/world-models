@@ -7,8 +7,9 @@ distilled from Stockfish on ~46M positions. Tighter-CI second-place:
 **Go (9×9)**: [≥ 2,366](https://shehio.github.io/world-models/go/)
 (parity with KataGo @v=200, anchored to GnuGo L10) from 1.236M
 KataGo-labeled positions. Both on **one L40S GPU per training run,
-~16 GPU-hours each** — roughly four orders of magnitude less compute
-than the AlphaZero paper.
+~16 GPU-hours each** — roughly three-to-four orders of magnitude less
+compute than the AlphaZero training run (~10³× by device-hours, ~10⁴×
+by FLOPs).
 
 Live narrative + method + ablations + self-play postmortems on the
 site: **[shehio.github.io/world-models](https://shehio.github.io/world-models/)**.
@@ -106,6 +107,6 @@ two stay in sync by construction.
 - Silver et al., [*Mastering Chess and Shogi by Self-Play (AlphaZero)*](https://arxiv.org/abs/1712.01815) (2017)
 - Schrittwieser et al., [*Mastering Atari, Go, Chess and Shogi by Planning with a Learned Model (MuZero)*](https://arxiv.org/abs/1911.08265) (2019)
 - Wu, [*Accelerating Self-Play Learning in Go (KataGo)*](https://arxiv.org/abs/1902.10565) (2019)
-- [Leela Chess Zero](https://lczero.org) — the distill-then-RL recipe this project follows
+- [Leela Chess Zero](https://lczero.org) — self-play AlphaZero engine; the prior-plus-self-play idea this project adapts (we build the prior by distilling Stockfish, not by self-play)
 
 Comparison pages on the site: [vs AlphaZero](https://shehio.github.io/world-models/vs-alphazero/) · [vs Lc0](https://shehio.github.io/world-models/vs-leela/) · [vs MuZero](https://shehio.github.io/world-models/vs-muzero/)

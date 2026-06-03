@@ -1,6 +1,6 @@
 ---
 title: "Vs Leela Chess Zero"
-subtitle: "running Leela's distill-then-RL recipe at 10⁵× less compute — and finding what breaks"
+subtitle: "putting self-play on a distilled prior at ~10⁵× less compute than Leela's all-time training — and finding what breaks"
 next: "/next/"
 aliases:
   - /leela/
@@ -11,7 +11,7 @@ aliases:
 
 | | Leela Chess Zero (Lc0) | this project |
 |---|---|---|
-| approach | supervised pre-training + tabula-rasa self-play RL (hybrid) | supervised distillation from Stockfish + self-play attempt on top |
+| approach | self-play RL (AlphaZero-style), accelerated by supervised warm-starts | supervised distillation from Stockfish + self-play attempt on top |
 | network | same AlphaZero family: ResNet, 19-plane history. Production T80 = 384×30 blocks (~120M params) | 20×256 (~24M params) or 40×256 (~50M); same architectural family |
 | training compute | thousands of community GPUs over **months** (millions of GPU-hours) | 1 GPU per run, ~5–100 GPU-hours |
 | self-play data | hundreds of billions of positions | ~hundreds–thousands of games (six spot-evicted attempts; attempt #7 currently running on OD) |
@@ -21,16 +21,19 @@ aliases:
 
 ## What's the Same
 
-The recipe shape. **Leela's actual training story is "distill first,
-RL second."** Early Lc0 networks were warm-started from supervised
-training on human / Stockfish games before self-play kicked in;
-modern Lc0 nets re-bootstrap from prior generations' self-play data,
-which is itself a form of distillation. Either way: nobody seriously
-trains a strong AlphaZero-style chess net from genuinely random
-weights anymore — the warm start is too valuable.
+The shared shape: **a strong prior, then self-play.** Lc0 is
+fundamentally a *self-play* (AlphaZero-style) engine — its strength
+came from years of community self-play, **not** from distilling a
+classical engine. But it leans on warm-starts as accelerants: some
+early nets were bootstrapped from human / Stockfish games, and modern
+nets re-bootstrap from prior generations' self-play data (a form of
+self-distillation). Either way, nobody seriously trains a strong
+AlphaZero-style net from genuinely random weights anymore — the warm
+start is too valuable.
 
-That's the recipe we're running here. We just stop after the warm
-start.
+**Where we differ:** our prior comes from distilling a *classical*
+engine (Stockfish), not from self-play. We build that warm start, then
+*try* the self-play half on top — and (so far) stop there.
 
 The architecture family is also the same — ResNet trunk with a policy
 head producing 4,672 move logits and a scalar value head. Lc0's
@@ -41,9 +44,10 @@ but the *shape* is identical.
 
 ### Stopping point — and what we learned by *trying* the self-play half
 
-Lc0 runs distill → self-play → distill → self-play indefinitely. The
-self-play half is what closes the gap to engines like Stockfish, and
-it requires thousands of GPUs to do meaningfully. The original
+Lc0 runs self-play → train → self-play indefinitely (each generation
+re-bootstrapping from its own prior games). The self-play half is what
+closes the gap to engines like Stockfish, and it requires thousands of
+GPUs to do meaningfully. The original
 write-up of this page said we *planned* a self-play phase but hadn't
 run it. We've now run it seven times — six chess attempts on spot
 (all evicted before iter 1 finished — see the
@@ -62,7 +66,7 @@ have that compute. The honest headline is that the distilled prior
 is the practical ceiling on a single GPU: 2,301 Elo (wide CI) /
 2,153 (tight CI) for chess, ≥2,366 Go-scale for the 9×9 Go net.
 Lc0's 3,600 is exclusively what years of community self-play on top
-of the same starting recipe buys.
+of a strong prior buys.
 
 ### Scale
 
@@ -222,9 +226,9 @@ KataGo efficiency tricks layered on top.
   but the eviction window in a given AZ was shorter than one iter,
   so iter 1 never completed across six tries before we moved to OD.
 
-The story is consistent: **the recipe Lc0 actually shipped (distill
-+ self-play) is the right one, and the gap to their headline is
-overwhelmingly the self-play half running at compute we don't have.
+The story is consistent: **a strong prior + self-play is the right
+recipe, and the gap to Lc0's headline is overwhelmingly the self-play
+half running at compute we don't have.
 What's interesting at our scale is the *distill ceiling*, which we
 get to publish numbers for, and the *failure modes* of single-GPU
 self-play, which we can document.**
