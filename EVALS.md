@@ -57,10 +57,11 @@ its full evaluation engine but introduces blunders proportional to a
 strength target validated against community-tested matches.
 
 So Stockfish-N is a **calibrated opponent**: if our model scores 0.5
-against it, the model ≈ N Elo. The build accepts UCI_Elo in
-[1350, 3190] (the older 1320 minimum got bumped to 1350 in newer
-Stockfish releases — which is why our first eval launch crashed before
-we patched the daemon).
+against it, the model ≈ N Elo. The build accepts UCI_Elo up to 3190;
+Stockfish's documented minimum is **1320** (it was *lowered* from 1350
+to 1320 in 2023 via PR #4341, not raised — the reverse of what we first
+assumed). We standardized the daemon on a **1350 floor** anyway, after
+an early eval launch crashed on a too-low value.
 
 ## The two sub-tests the daemon runs
 

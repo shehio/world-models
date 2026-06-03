@@ -177,7 +177,7 @@ if [ "${RUN_EVAL:-1}" != "0" ]; then
         : "${EVAL_WORKERS:=4}"
         : "${EVAL_GAMES_PER_WORKER:=25}"
         : "${EVAL_SIMS:=800}"
-        : "${STOCKFISH_ELO:=1350}"  # Stockfish 17+ rejects values below 1350
+        : "${STOCKFISH_ELO:=1350}"  # 1350 floor; Stockfish's documented UCI_Elo min is 1320 (SF16+), 1350 is a safe margin
         EVAL_LOG="$CKPT_DIR/eval_results.txt"
         echo "=== eval vs Stockfish elo=$STOCKFISH_ELO on $LATEST_CKPT ==="
         cd /work/experiments/distill-soft
