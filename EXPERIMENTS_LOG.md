@@ -589,6 +589,7 @@ does with cosine. Strongest checkpoint to date:
 epoch 14 with sims=4,000 (CI [2,190, 2,601]) — and the 95% CI lower
 bound strictly clears the prior peak (d10 ep 15 = 2,189). Wider-CI
 sibling at the same anchor: **2,285** (R2 v2 ep 4, CI [2,177, 2,554]).
+40×256 cosine variant best: **2,209** (R1 v2 ep 7, CI [2,115, 2,389]).
 
 ## Self-play & MuZero — Negative Results at Fixed Compute <a id="selfplay-muzero-negative"></a>
 
@@ -654,7 +655,6 @@ teacher: from scratch it caps ~700–900 (MuZero), and from a strong init it
 the **strength of the self-play signal at this data scale** (~1.3k recorded
 samples/iter), not infrastructure or LR. Distillation reached 2,101/2,301;
 self-play cannot improve on it here.
-40×256 cosine variant best: **2,209** (R1 v2 ep 7, CI [2,115, 2,389]).
 
 R1 v2 and R2 v2 trainers were
 [killed at 2026-05-26 17:15 UTC](#cosine-killed) once the cosine peaks
