@@ -15,7 +15,7 @@ ACCOUNT_ID=594561963943
 IMAGE_REGION=us-east-2
 LAUNCH_REGION=us-east-1
 AMI=ami-027c3ae8019fc0d3a
-SUBNET=subnet-00be06b9c01d8b036
+SUBNET=${SUBNET:-subnet-042fb3c497e2631a7}  # us-east-1b default; 1c+1d often out of g6 spot
 INSTANCE_TYPE=g6.xlarge
 INSTANCE_PROFILE=wm-chess-merge-instance-profile
 ECR=$ACCOUNT_ID.dkr.ecr.$IMAGE_REGION.amazonaws.com
@@ -100,9 +100,8 @@ aws ec2 run-instances --region $LAUNCH_REGION \
     --iam-instance-profile Name=$INSTANCE_PROFILE \
     --block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=80,VolumeType=gp3,DeleteOnTermination=true}' \
     --instance-initiated-shutdown-behavior terminate \
-    --instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}' \
     --user-data "$USER_DATA" \
-    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-go-calibrate-chain-${STAMP}-spot},{Key=role,Value=wm-go-calibration}]" \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=wm-go-calibrate-chain-${STAMP}-od},{Key=role,Value=wm-go-calibration}]" \
     --query 'Instances[0].[InstanceId,State.Name,InstanceLifecycle]' --output text
 
 echo ""
