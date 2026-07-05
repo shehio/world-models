@@ -6,7 +6,7 @@
 > different question: **given good targets, how strong can our same
 > network architecture get?**
 >
-> The "real" AlphaZero implementation is in [`../02-alphazero-chess/`](../02-alphazero-chess/).
+> The "real" AlphaZero implementation is in [`../selfplay/`](../selfplay/).
 > This 02b is an experimental sibling on a separate branch
 > (`stockfish-distill`) so it doesn't muddy the AZ main line.
 
@@ -45,10 +45,10 @@ quality, not the network. If no: the network itself is the limit.
 ## Layout
 
 ```
-src/azdistill/
-    board.py, network.py, mcts.py, arena.py, config.py  — copied from 02 (read-only)
+src/distill_hard/
     stockfish_data.py                                    — game generation
     train_supervised.py                                  — supervised training step
+(board, network, mcts, arena, config — imported from ../../wm_chess/, the shared core)
 scripts/
     generate_data.py                                     — Stockfish self-play data
     train.py                                             — train on the data
@@ -80,7 +80,7 @@ better play.
 ## Run
 
 ```bash
-cd 02b-alphazero-stockfish-distill
+cd experiments/distill-hard
 uv sync
 
 # Tests (~30s)
