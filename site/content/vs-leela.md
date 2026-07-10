@@ -54,7 +54,7 @@ run it. We've now run it seven times — six chess attempts on spot
 [self-play postmortem](/next/#selfplay-postmortem)), one chess
 attempt on OD ([currently in flight](/next/)), plus a full 24-hour
 Go-side run. The Go run is the cleanest data point: it completed
-~63 iterations without infrastructure failures, training loss
+103 iterations without infrastructure failures, training loss
 dropped 4.71 → 2.50, and a 40-game H2H at iter 42 vs the distilled
 prior came in at **21–19–0** — score 0.525, Elo gap +17 with a
 ±100 Elo CI. **Indistinguishable from no change.**

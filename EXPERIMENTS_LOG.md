@@ -88,8 +88,8 @@ The soft version is what every other experiment on this page uses.
 
 | recipe | weak teacher (d10, ~2,200 Elo) | strong teacher (d15, ~2,500 Elo) |
 |---|---:|---:|
-| hard one-hot | ~1,315 | (not measured) |
-| **soft multipv** | **~1,185** (−130) | **1,807** |
+| hard one-hot | ~1,185 | (not measured) |
+| **soft multipv** | **~1,086** (−130 anchor-normalized) | **1,807** |
 
 At a weak teacher, soft targets actually *underperform* one-hot by
 ~130 Elo — the student learns to hedge between moves the teacher
@@ -406,7 +406,7 @@ strength beyond d10's ceiling — but it also didn't underperform.
 | 11 | 1,945 | 1,937 |
 | 12 | **2,044** | 1,933 |
 | 13 | (daemon offline) | 2,004 |
-| **14** | — | **2,055** ← highest R2 v2 sims=800; sims=4,000 eval in flight |
+| **14** | — | **2,055** ← highest R2 v2 sims=800; sims=4,000 deep-read below |
 | 15 | — | 2,029 |
 | 16 | — | 1,995 |
 | 17 | — | 2,004 |
@@ -429,7 +429,7 @@ launched (`i-0b24ea8a7fdd7d149`).
 | R2 v2 ep 10 | 1,937 | 2,090 [2,011, 2,205] | +153 |
 | R2 v2 ep 6 | 2,009 | 2,078 [2,000, 2,189] | +69 |
 | R2 v2 ep 9 | 1,949 | 2,024 [1,951, 2,119] | +75 |
-| R2 v2 ep 4 | 2,004 | (eval in flight, sims=8,000 vs UCI=2,000) | TBD |
+| R2 v2 ep 4 | 2,004 | 2,153 [2,084, 2,235] (sims=8,000 vs UCI=2,000) | +149 |
 
 **The 2,300 line is broken.** R2 v2 ep 14 at sims=4,000 vs UCI=1,800
 scored 94/9/1 (score=0.947), and its 95% lower-CI bound (2,190) is
@@ -445,11 +445,11 @@ there). The one-off `eval-r2v2-ep14-sims4000.sh` launcher
 re-evaluated it after the trainer was already terminated — turning a
 "missed it" into the project's strongest measurement.
 
-The remaining in-flight eval (R2 v2 ep 4 at sims=8,000 vs UCI=2,000)
-will give the tightest single CI of any measurement to date (UCI=2,000
-keeps the score nearer 0.5 than UCI=1,800).
+The follow-up eval (R2 v2 ep 4 at sims=8,000 vs UCI=2,000) landed at
+**2,153** [2,084, 2,235] — the tightest single CI of any measurement
+to date (UCI=2,000 keeps the score nearer 0.5 than UCI=1,800).
 
-### Verdict and what's still in flight
+### Verdict and the follow-up evals
 
 **The cosine LR schedule is working** — both R1 v2 and R2 v2 produce
 ckpts that meet or beat the d10-30M peak (2,189) at sims=4,000. The
@@ -465,13 +465,13 @@ further — see
 [`h2h-d10-vs-d15.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/h2h-d10-vs-d15.sh)
 for the launcher template.
 
-**In flight as of 2026-05-26 17:30 UTC** — two cheap follow-up evals
-designed to confirm whether the project has actually crossed 2,300 Elo:
+**Both follow-up evals landed** — two cheap evals designed to confirm
+whether the project had actually crossed 2,300 Elo:
 
-| Eval | Instance | Purpose |
-|---|---|---|
-| sims=8,000 vs UCI=2,000 on R2 v2 ep 4 | us-east-1 g6.4xlarge OD `i-04f84755196ee0163` | Tests the "+100-200 Elo from deeper search on a distilled prior" hypothesis on the project's top ckpt. UCI=2,000 anchor keeps the score near 0.5 → tightest Elo CI. |
-| sims=4,000 vs UCI=1,800 on R2 v2 ep 14 | us-east-1 g6.2xlarge OD `i-0b24ea8a7fdd7d149` | R2 v2 ep 14 was the highest sims=800 ckpt of the run (2,055) but the deep-eval daemon went offline before it could fire. Direct comparison to ep 4 at the same sims/anchor. |
+| Eval | Instance | Purpose | Result |
+|---|---|---|---|
+| sims=8,000 vs UCI=2,000 on R2 v2 ep 4 | us-east-1 g6.4xlarge OD `i-04f84755196ee0163` | Tests the "+100-200 Elo from deeper search on a distilled prior" hypothesis on the project's top ckpt. UCI=2,000 anchor keeps the score near 0.5 → tightest Elo CI. | **2,153** [2,084, 2,235] — tightest CI in the project |
+| sims=4,000 vs UCI=1,800 on R2 v2 ep 14 | us-east-1 g6.2xlarge OD `i-0b24ea8a7fdd7d149` | R2 v2 ep 14 was the highest sims=800 ckpt of the run (2,055) but the deep-eval daemon went offline before it could fire. Direct comparison to ep 4 at the same sims/anchor. | **2,301** [2,190, 2,601] — project high |
 
 R1 v2 and R2 v2 trainers were killed at 17:15 UTC — see
 [#cosine-killed](#cosine-killed) above for the rationale.
@@ -659,9 +659,10 @@ self-play cannot improve on it here.
 R1 v2 and R2 v2 trainers were
 [killed at 2026-05-26 17:15 UTC](#cosine-killed) once the cosine peaks
 were in hand — late-epoch cosine convergence wasn't worth the OD G burn
-rate, especially with the autoeval daemon offline. Two cheap follow-up
-evals (sims=8,000 on R2 v2 ep 4 and sims=4,000 on R2 v2 ep 14) are in
-flight to confirm whether the project has crossed 2,300 Elo.
+rate, especially with the autoeval daemon offline. The two cheap
+follow-up evals both landed: sims=4,000 on R2 v2 ep 14 = **2,301**
+[2,190, 2,601] (the 2,300 line, wide CI) and sims=8,000 on R2 v2 ep 4 =
+**2,153** [2,084, 2,235] (the tightest CI in the project).
 
 Self-play RL on top of the strongest distilled prior has been
 [attempted six times](https://shehio.github.io/world-models/next/#selfplay-postmortem) on spot and

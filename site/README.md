@@ -21,19 +21,24 @@ site/
 │   │   └── single.html         per-page template (detail pages)
 │   └── partials/
 │       ├── head.html           meta + font + css
-│       ├── nav.html            top nav with 5 section links
+│       ├── nav.html            top nav with 8 section links
 │       ├── footer.html         repo link
 │       ├── architecture-svg.html   inline SVG: 20×256 ResNet sketch
 │       ├── mcts-svg.html           inline SVG: a small MCTS tree
-│       └── search-curve-svg.html   inline SVG: Elo vs MCTS sims chart
+│       ├── search-curve-svg.html   inline SVG: Elo vs MCTS sims chart
+│       ├── capacity-chart-svg.html inline SVG: Elo vs epoch, 20×256 vs 40×256
+│       └── data-scale-chart-svg.html inline SVG: Elo vs epoch at 5M vs 30M positions
 ├── content/
 │   ├── _index.md               root stub (content lives in layouts/index.html)
-│   ├── findings.md             the three ablations: capacity, search, data
+│   ├── experiments.md          the experiments log (source for EXPERIMENTS_LOG.md): ablations, d15-46M campaign, negative results
 │   ├── method.md               distillation loss, eval anchors, elo-bisect
 │   ├── vs-alphazero.md         full comparison + "what's literally identical"
+│   ├── vs-leela.md             comparison vs Leela Chess Zero
+│   ├── vs-muzero.md            comparison vs MuZero + the learned-dynamics leg
+│   ├── go.md                   9×9 Go distillation: 8×128 net, KataGo parity, ≥2,366 anchored Elo
 │   ├── next.md                 self-play loop status + roadmap
 │   ├── infra.md                EKS + bare-EC2 + multi-region quota
-│   └── failures.md             nine concrete bugs and their fixes
+│   └── failures.md             18 concrete bugs and their fixes
 └── static/
     └── css/main.css            the entire stylesheet
 ```

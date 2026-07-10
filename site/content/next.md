@@ -177,9 +177,9 @@ noise, not a trajectory. Same verdict as the MVP above, now with a full run
 behind it.
 
 **Go says the same thing, more cleanly.** The 9×9 self-play run (`20260526T1947Z`,
-seeded from the 8×128 KataGo-parity teacher, 103 ungated iters) ended at **parity**
-with its teacher — head-to-head **21–19 over 40 games, Elo gap +17, 95% CI
-[−89, +124]**: statistically indistinguishable. Go neither beat the teacher nor
+seeded from the 8×128 KataGo-parity teacher, 103 ungated iters) held **parity**
+with its teacher — the 40-game head-to-head (iter-42 ckpt vs the prior) came in
+**21–19, Elo gap +17, 95% CI [−89, +124]**: statistically indistinguishable. Go neither beat the teacher nor
 regressed. Across both games, on correct search: **distillation ≥ self-play at
 fixed compute** — "≫" for chess, "≈" for 9×9 Go.
 

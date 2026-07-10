@@ -9,12 +9,30 @@ Full Go distillation pipeline. Mirrors the chess pipeline component-for-componen
 | `wm_chess.network`             | `distill_go.network` (param. by board)  |
 | `wm_chess.mcts`                | `distill_go.mcts`                       |
 | `distill_soft.train_supervised`| `distill_go.train`                      |
-| `experiments/selfplay/eval.py` | `distill-go/scripts/eval.py`            |
+| `distill-soft/scripts/eval.py` | `distill-go/scripts/eval.py`            |
 
 The on-disk `.npz` schema is byte-identical to chess, so the chess
 `merge_chunks.py` and S3 partial-sync entrypoint apply unchanged.
 This package promotes the spike at `experiments/distill-go-spike/` to a real
 pipeline with rules-aware MCTS, training, and an Elo gauntlet.
+
+## Results
+
+- **Distillation (9×9, 8×128 ResNet, 1.236M positions).** The full cloud
+  run (32K KataGo self-play games, multipv=8 v400 teacher, 20 epochs)
+  reached **parity with KataGo @v=200 at epoch 15** (15/30 wins, Elo gap
+  0 [−122, +122]) and stayed there. Anchored through GnuGo L10,
+  that puts the student at **≥ 2,366 absolute Go Elo** on the
+  GnuGo-anchored scale (anchor caveats on the
+  [site's Go page](https://shehio.github.io/world-models/go/)).
+- **Self-play on top of the prior (`scripts/selfplay_loop.py`).** Run
+  `20260526T1947Z`: 103 ungated iterations seeded from the
+  KataGo-parity teacher — the project's first completed multi-iteration
+  self-play run. The 40-game head-to-head at iter 42 vs the prior came
+  in **21–19, Elo gap +17, 95% CI [−89, +124]** — statistically
+  indistinguishable from no change.
+
+Full tables in [results.md](./results.md).
 
 ## Components built (top to bottom of dependency tree)
 
@@ -37,6 +55,15 @@ pipeline with rules-aware MCTS, training, and an Elo gauntlet.
   same soft-CE-on-multipv loss as `distill_soft.train_supervised`.
 - `src/distill_go/merge.py` — concatenate worker chunks into one .npz.
 - `scripts/generate_data.py` / `scripts/train.py` / `scripts/eval.py` — CLIs.
+- `scripts/selfplay_loop.py` — AlphaZero-style self-play loop on top of a
+  distilled prior (mirrors chess `selfplay_loop_mp.py`, specialized for Go).
+- `scripts/h2h.py` — head-to-head match between two Go checkpoints,
+  MCTS at the same `--sims` on both sides, colors alternating.
+- `scripts/calibrate.py` — calibration match (KataGo@N vs GnuGo/Pachi
+  anchor) to derive KataGo's absolute Elo.
+- `scripts/merge_cloud.py` — concatenate worker chunks from a multi-pod
+  `shards_partial/` tree (worker indices repeat across pods, so the
+  single-dir `distill_go.merge` can't be used).
 
 ## End-to-end demo (9×9, single Mac)
 
@@ -92,12 +119,16 @@ already O(board points) per move — fine for 19×19.
 uv run pytest tests/ -v
 ```
 
-21 tests cover the rules engine (capture, suicide, ko, scoring, mask) and
-network/MCTS shape smoke tests. No KataGo binary required for tests.
+56 tests cover the rules engine (capture, suicide, ko, scoring, mask),
+network/MCTS shape smoke tests, the head-to-head runner, and the
+self-play loop. No KataGo binary required for tests.
 
 ## Status (relative to chess pipeline parity)
 
 - Pipeline: datagen + train + MCTS + eval all built and run end-to-end.
-- Demo result: see `results.md` for the 9×9 Elo number.
-- Infra scaffolding for 19×19 (Dockerfile, EKS Job, cluster) **not** built
-  in this round — see "19×19 scale-up" above for the lift.
+- Results: see [Results](#results) above and `results.md` for the tables.
+- Cloud infra is built and was used for the 1.236M-position 9×9 run:
+  `infra-eks/Dockerfile.wm-go` / `Dockerfile.wm-go-gpu`,
+  `k8s/job-gen-go.yaml` / `k8s/job-gen-go-gpu.yaml`, `entrypoint-go.sh`,
+  and the `cluster-gen-go-*.yaml` specs. 19×19 still needs the scale
+  changes described in "19×19 scale-up" above.

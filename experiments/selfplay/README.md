@@ -3,6 +3,15 @@
 A small-scale, learning-first AlphaZero implementation. Self-play,
 PUCT-MCTS, ResNet policy/value head.
 
+**Where this landed.** From random init the loop works: v4 reaches
+**+368 Elo vs random** (see [Results](#results)). From the strongest
+*distilled* teacher (~2,101 Elo on the standard eval harness at
+sims=800), self-play RL is a negative result at one-GPU compute: the
+ungated loop **regresses to ~1,730** [1,656, 1,797], and the gated loop
+(AlphaGo-Zero arena gating) **holds ~2,101 but doesn't climb** — no
+candidate clears the promotion threshold. Full numbers in the repo-root
+[`EXPERIMENTS_LOG.md`](../../EXPERIMENTS_LOG.md).
+
 ## What AlphaZero is
 
 One neural network `f_θ(s) → (π_θ, v_θ)` is trained to imitate the
@@ -277,7 +286,7 @@ src/selfplay/
     ckpt.py         checkpoint save/load
 scripts/
     selfplay_loop.py        single-process self-play loop (v1/v2)
-    selfplay_loop_mp.py     multi-process self-play (v3a/b/c, v4); supports --pcr, --optimizer sgd, --lr-decay-iters
+    selfplay_loop_mp.py     multi-process self-play (v3a/b/c, v4); supports --pcr, --optimizer sgd, --lr-decay-iters, arena gating (--gate-*)
     eval_vs_random.py       sequential eval against random
     eval_vs_random_mp.py    parallel (5-worker) eval against random
     eval_high_sims.py       parallel eval vs Stockfish at high sim counts
@@ -298,19 +307,22 @@ tests/
 cd experiments/selfplay
 uv sync
 
-# Tests (~10s, all 28 pass)
-uv run python tests/test_board.py
-uv run python tests/test_network.py
-uv run python tests/test_mcts.py
-uv run python tests/test_mcts_batched.py
-uv run python tests/test_selfplay.py
-uv run python tests/test_arena.py
+# Tests (~10s, all 57 pass)
+uv run python -m pytest tests/
 
 # Training loop with batched MCTS (--batch-size 8)
 uv run python scripts/selfplay_loop.py \
     --iters 30 --games-per-iter 8 --sims 150 --train-steps 200 \
     --batch-size 8 --eval-games 6 --eval-sims 80 --eval-every 2 \
     --max-plies 200 --device cpu
+
+# Arena gating (selfplay_loop_mp.py only — the AlphaGo-Zero evaluator
+# used for the distill-then-RL runs). Workers self-play from a frozen
+# champion; a candidate is promoted only if it beats the champion:
+#   --gate-every N       gate a candidate vs the champion every N iters (0 = off, the default)
+#   --gate-games G       games in the gating match (default 60)
+#   --gate-sims S        MCTS sims per move during the gating match (default 200)
+#   --gate-threshold T   promote only if candidate score vs champion >= T (default 0.55)
 
 # Eval (after training)
 uv run python scripts/eval_vs_random.py --ckpt checkpoints/net_iter029.pt --games 50
@@ -352,9 +364,9 @@ after the second): see [results.md](./results.md).
 
 ## Open questions / decisions deferred
 
-- **MCTS batching.** Single-leaf inference is the bottleneck. Real AZ
-  parallelizes via virtual loss + batched leaf eval. Worth doing if you
-  want >50 sims at reasonable speed.
+- **MCTS batching.** Done — `run_mcts_batched` collects K leaves per
+  network call with virtual loss (see the batched-MCTS section above);
+  measured ~1.9× wall-clock speedup at K=8.
 - **Symmetry augmentation.** Chess has no rotational symmetry — no flips.
 - **Resignation threshold.** Skip for v1; play to termination.
 - **8-step history.** Without it, threefold repetition is invisible to
