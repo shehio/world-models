@@ -264,15 +264,17 @@ just dressed up with a tree search.
 ## Layout
 
 ```
-src/alphazero/
+../../wm_chess/src/wm_chess/   (shared core — this experiment imports it)
     board.py        chess.Board ↔ planes; move ↔ 4672-index; legal mask
     network.py      ResNet trunk + policy head + value head
     mcts.py         PUCT MCTS — `run_mcts` (sequential reference) + `run_mcts_batched` (K leaves per network call, with virtual loss)
+    arena.py        head-to-head matches, random/network/stockfish policies
+    config.py       hyperparameters
+src/selfplay/
     selfplay.py     plays a game, yields (state, π, z) per ply
     replay.py       fixed-size deque, samples to torch tensors
     train.py        one SGD step: CE(π) + MSE(z)
-    arena.py        head-to-head matches, random/network/stockfish policies
-    config.py       hyperparameters
+    ckpt.py         checkpoint save/load
 scripts/
     selfplay_loop.py        single-process self-play loop (v1/v2)
     selfplay_loop_mp.py     multi-process self-play (v3a/b/c, v4); supports --pcr, --optimizer sgd, --lr-decay-iters
@@ -293,7 +295,7 @@ tests/
 ## Run
 
 ```bash
-cd 02-alphazero-chess
+cd experiments/selfplay
 uv sync
 
 # Tests (~10s, all 28 pass)

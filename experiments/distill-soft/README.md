@@ -375,10 +375,11 @@ in-progress sim budget — the other one survived.
 ## Layout
 
 ```
-src/azdistill_scaled/
-    board.py, network.py, mcts.py, arena.py, config.py  — copied from 02b
+src/distill_soft/
     stockfish_data.py    — NEW: multipv-aware data generation
     train_supervised.py  — NEW: soft-CE loss against multipv distribution
+    ckpt.py              — checkpoint save/load
+(board, network, mcts, arena, config — imported from ../../wm_chess/, the shared core)
 scripts/
     generate_data.py     — CLI wrapper for data gen
     train.py             — CLI wrapper for training
@@ -430,7 +431,7 @@ training loss masks these out by construction (exp(-inf) = 0).
 ## Run
 
 ```bash
-cd 02c-distill-scaled
+cd experiments/distill-soft
 uv sync
 
 # Phase 1: data gen — depth-15 SF, multipv-8 soft targets, 4000 games

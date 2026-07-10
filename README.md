@@ -20,11 +20,12 @@ site: **[shehio.github.io/world-models](https://shehio.github.io/world-models/)*
 |---|---|---|
 | Chess · soft distillation | [`experiments/distill-soft/`](./experiments/distill-soft/) | **2,301 Elo** vs UCI=1,800 at sims=4,000 — R2 v2 ep 14, 95% CI [2,190, 2,601] |
 | Chess · hard distillation | [`experiments/distill-hard/`](./experiments/distill-hard/) | ~1,185 Elo · soft-vs-hard ablation comparison point |
-| Chess · self-play RL | [`experiments/selfplay/`](./experiments/selfplay/) | Faithful AlphaZero v1–v4 (+368 Elo vs random); **attempt #7 in flight** on top of R2 v2 ep 14 — first 6 evicted on spot before iter 1 |
+| Chess · self-play RL | [`experiments/selfplay/`](./experiments/selfplay/) | Faithful AlphaZero v1–v4 (+368 Elo vs random); from the distilled teacher, ungated **regresses ~370 Elo**, gated **holds but doesn't climb** ([postmortem](https://shehio.github.io/world-models/next/#selfplay-postmortem)) |
 | Go (9×9) · distillation | [`experiments/distill-go/`](./experiments/distill-go/) | **≥ 2,366 Go Elo** (anchored to GnuGo L10) · 8×128 net on 1.236M KataGo-labeled positions |
 | Go (9×9) · self-play RL | [`experiments/distill-go/scripts/selfplay_loop.py`](./experiments/distill-go/scripts/selfplay_loop.py) | First completed multi-iter self-play in the project · iter 42 H2H vs prior = 21W/19L (Elo Δ +17 ± 100, no improvement) |
+| Chess · MuZero (learned dynamics) | [`experiments/muzero-chess/`](./experiments/muzero-chess/) | Negative result at 1-GPU compute: from-scratch caps ~700–900 Elo; distill-init ~1,700 after the MCTS sign-bug fix ([postmortem](https://shehio.github.io/world-models/next/#selfplay-gated-final)) |
 
-All five share `wm_chess/` (board, network, MCTS, arena, catalog,
+All six share `wm_chess/` (board, network, MCTS, arena, catalog,
 merge tools), the same on-disk `.npz` schema, and the same datagen +
 training infrastructure (`infra-eks/`).
 
@@ -37,6 +38,7 @@ training infrastructure (`infra-eks/`).
 │   ├── selfplay/             Faithful AlphaZero (v1–v4 self-play, PUCT-MCTS, ResNet)
 │   ├── distill-hard/         Hard-target distillation from Stockfish d6/d10
 │   ├── distill-soft/         Soft multipv distillation — the headline pipeline
+│   ├── muzero-chess/         MuZero on chess — learned dynamics, K-step unroll
 │   ├── distill-go/           9×9 Go distilled from KataGo (+ selfplay_loop.py)
 │   └── distill-go-spike/     The one-day go spike that motivated distill-go
 ├── infra-eks/                EKS manifests · Dockerfiles · daemons · bare-EC2 launchers
@@ -49,7 +51,7 @@ training infrastructure (`infra-eks/`).
 └── README.md                 you are here
 ```
 
-The four chess packages (`wm_chess/` + 3 in `experiments/`) share one
+The five chess packages (`wm_chess/` + 4 in `experiments/`) share one
 `uv` workspace with a single `uv.lock` at root. The Go packages
 (`experiments/distill-go`, `experiments/distill-go-spike`) are
 standalone — they each have their own `uv.lock` and `uv sync` from
@@ -81,7 +83,7 @@ single experiment on a bare EC2 box; the EKS Indexed Jobs in
 |---|---|---|
 | Chess · best point estimate | **2,301 Elo** (CI [2,190, 2,601]) | R2 v2 ep 14, sims=4,000, vs UCI=1,800 |
 | Chess · tightest-CI measurement | 2,153 Elo (CI [2,084, 2,235]) | R2 v2 ep 4, sims=8,000, vs UCI=2,000 |
-| Chess · self-play improvement so far | indistinguishable from zero on attempts 1–6 (all spot-evicted before iter 1) | [postmortem](https://shehio.github.io/world-models/next/#selfplay-postmortem) |
+| Chess · self-play improvement so far | none — ungated (attempt #7) regressed to ~1,730; gated holds the teacher's ~2,101 with no candidate promoted | [postmortem](https://shehio.github.io/world-models/next/#selfplay-postmortem) |
 | Go · 9×9 distillation lower-bound Elo | **≥ 2,366** (Go-Elo, GnuGo-anchored — *not* the AlphaGo-paper scale; [caveat](https://shehio.github.io/world-models/go/)) | 8×128 ep 15 = parity with KataGo @v200, anchored to GnuGo L10 |
 | Go · self-play improvement | +17 ± 100 Elo over prior at iter 42 (24h, one L4 GPU) | h2h, 40 games, alternating colors |
 
@@ -97,10 +99,11 @@ two stay in sync by construction.
 | `wm_chess` (shared core) | 84 |
 | `experiments/selfplay` | 57 |
 | `experiments/distill-hard` | 6 |
-| `experiments/distill-soft` | 101 |
-| `experiments/distill-go` | 47 |
+| `experiments/distill-soft` | 104 |
+| `experiments/muzero-chess` | 48 |
+| `experiments/distill-go` | 56 |
 | `scripts/` (sync tooling) | 14 |
-| **Total** | **~309** |
+| **Total** | **~369** |
 
 ## References
 
