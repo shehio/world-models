@@ -1,10 +1,11 @@
 # Training-side daemons
 
-Two long-running shell daemons that run on the operator's laptop (or any
+Six long-running shell daemons that run on the operator's laptop (or any
 machine with `aws` + `kubectl --context wm-train-us`) and provide
-crash-safe checkpoints + per-checkpoint Elo measurement.
+crash-safe checkpoints, per-checkpoint Elo measurement, eviction
+recovery, and pipeline-stage handoffs.
 
-Both are idempotent — safe to restart, will not double-process work.
+All are idempotent — safe to restart, will not double-process work.
 
 ## `wm-pod-sync-daemon.sh`
 
@@ -102,3 +103,51 @@ nohup bash infra-eks/daemons/wm-autoeval-daemon.sh >/dev/null 2>&1 &
   ECR-read on `wm-chess-gpu`.
 - **Subnets**: `subnet-042fb3c497e2631a7` (us-east-1a default VPC
   public subnet), `subnet-0a4bed60` (eu-central-1a default).
+
+## `wm-deep-eval-daemon.sh`
+
+Second-stage eval daemon. Polls S3 for the sims=800 eval results the
+autoeval daemon writes; when a checkpoint's sims=800 Elo crosses
+`ELO_THRESHOLD` (default 1950), it fires a one-shot sims=4,000 eval EC2
+(g6.4xlarge, same multi-region fallback order) for a sharper
+measurement. Rationale: sims=800 systematically under-reports strength
+vs sims=4,000 (+277 Elo measured on d15 ep 20), so the cheap sims=800
+curve is used to pick *which* ckpts deserve the expensive deep read.
+Idempotent via an `eval_results-<ckpt>-sims4000.txt` sibling (permanent
+skip) and a `.claimed-sims4000-<ckpt>` marker (no double-launch).
+
+```
+nohup bash infra-eks/daemons/wm-deep-eval-daemon.sh >/dev/null 2>&1 &
+```
+
+## `wm-d15-run1-watcher.sh`
+
+Eviction watcher for the d15 Run 1 (40×256) spot training instance.
+Polls the instance state every 5 min; if the spot is evicted, re-fires
+`infra-eks/launchers/d15-full30m.sh`, which launches a fresh spot
+g6e.8xlarge and auto-resumes from the latest S3 checkpoint (the
+launcher pins `RUN_ID`). Tracks the current instance id in
+`/tmp/wm-d15-run1.id`; if the instance is still running it does
+nothing. Start it with the instance id to watch:
+
+```
+nohup bash infra-eks/daemons/wm-d15-run1-watcher.sh <instance-id> >/dev/null 2>&1 &
+```
+
+## `wm-go-gpu-handoff-daemon.sh`
+
+Go-pipeline sibling of `wm-d15-30m-handoff-daemon.sh`. Walks the three
+stages of the Go 9×9 GPU pipeline so the boundaries don't need
+babysitting: (1) polls the `wm-go-gpu-9x9` datagen Job until all
+completions succeed, (2) merges the per-pod
+`shards_partial/pod-*/worker_*_chunk_*.npz` chunks into one
+`merged/data.npz` on S3 using the Go-native merge (the chess streaming
+`merge_chunks.py` expects a different on-disk layout), then (3) fires
+the Go training launcher on the merged dataset. Idempotent and
+crash-safe via per-step marker files under
+`/tmp/wm-go-gpu-handoff.state`; `echo stop > /tmp/wm-go-gpu-handoff.stop`
+to exit cleanly.
+
+```
+nohup bash infra-eks/daemons/wm-go-gpu-handoff-daemon.sh > /tmp/wm-go-gpu-handoff.log 2>&1 &
+```

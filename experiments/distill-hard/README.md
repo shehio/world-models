@@ -7,8 +7,8 @@
 > network architecture get?**
 >
 > The "real" AlphaZero implementation is in [`../selfplay/`](../selfplay/).
-> This 02b is an experimental sibling on a separate branch
-> (`stockfish-distill`) so it doesn't muddy the AZ main line.
+> This 02b is an experimental sibling kept in its own experiment
+> directory so it doesn't muddy the AZ main line.
 
 ## What this does
 

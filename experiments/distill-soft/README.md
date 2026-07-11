@@ -480,3 +480,14 @@ the teacher (≈2500). The remaining gap is mostly the "search at training
 time" lever we're NOT pulling here (that would be AZ-style self-play
 fine-tune on top of the distilled prior, multi-day GPU job — see plan
 in main repo README).
+
+## Outcome (the prediction, resolved)
+
+The prediction was slightly pessimistic. The d15 5M baseline landed at
+**1,807 Elo** (ep 19 ckpt, 100 games vs SF UCI=1350 at 800 sims) — just
+above the ~1500-1700 band. The subsequent campaign on this same
+pipeline (more data, cosine LR, deeper eval-time search) peaked at
+**2,301 Elo** (R2 v2 ep 14 at sims=4,000 vs UCI=1,800, 95% CI
+[2,190, 2,601]) — the project high. Full per-run tables and analysis in
+[results.md](./results.md) and the repo-root
+[`EXPERIMENTS_LOG.md`](../../EXPERIMENTS_LOG.md).

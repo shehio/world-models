@@ -63,9 +63,10 @@ src/distill_go_spike/
                     # analysis-response → soft-policy converter +
                     # play_one_game() orchestrator
 scripts/
-  run_spike.py      # Entry point: one game, writes one .npz
+  run_spike.py            # Entry point: one game, writes one .npz
+  run_spike_parallel.py   # N workers × M games each, per-worker chunked .npz output
 tests/
-  test_distill_go_spike.py   # ~20 unit tests, KataGo-binary-free
+  test_distill_go_spike.py   # 26 unit tests, KataGo-binary-free
 ```
 
 ## Running the tests (no KataGo needed)
@@ -115,7 +116,7 @@ for k in d.files: print(k, d[k].shape, d[k].dtype)
    network pre-baked, push to ECR as `wm-go`.
 4. **EKS gen Job.** Copy `infra-eks/k8s/job-gen-d15-250k.yaml` →
    `job-gen-go-N.yaml`, swap image + entrypoint args, run it.
-5. **Training.** Point `experiments/distill-soft/scripts/train_supervised.py`
+5. **Training.** Point `experiments/distill-soft/src/distill_soft/train_supervised.py`
    at a Go dataset (or fork to `experiments/distill-go/`). The network's
    first conv layer needs `n_input_planes` bumped from 19 → 4 (or 17 with
    history); everything else carries over.
