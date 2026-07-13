@@ -8,14 +8,14 @@ next: "/failures/"
 
 Everything runs on AWS. The pipeline has three roles:
 
-1. **Datagen** — EKS Indexed Job, 8 spot-CPU pods × N games each.
+1. **Datagen**: EKS Indexed Job, 8 spot-CPU pods × N games each.
    Each pod writes a shard to S3; a second Job merges shards into a
    single `data.npz`. Cluster spec:
    [`cluster.yaml`](https://github.com/shehio/world-models/blob/main/infra-eks/cluster.yaml).
-2. **Training** — EKS single-pod Job on a GPU node, or a bare-EC2
+2. **Training**: EKS single-pod Job on a GPU node, or a bare-EC2
    self-terminating launcher when EKS can't get the instance type.
    Cluster spec: [`cluster-train-us.yaml`](https://github.com/shehio/world-models/blob/main/infra-eks/cluster-train-us.yaml).
-3. **Eval + self-play** — per-checkpoint auto-eval EC2s
+3. **Eval + self-play**: per-checkpoint auto-eval EC2s
    ([`daemons/wm-autoeval-daemon.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/daemons/wm-autoeval-daemon.sh)),
    and a self-play loop in its own EKS cluster
    ([`cluster-selfplay-us.yaml`](https://github.com/shehio/world-models/blob/main/infra-eks/cluster-selfplay-us.yaml)).
@@ -68,7 +68,7 @@ managedNodeGroups:
     maxSize: 1
     volumeSize: 100   # bump to 300 if extracting the full 30M dataset
     labels: { role: gpu-* }
-    # NO TAINT — see failures/ for what happens otherwise
+    # NO TAINT: see failures/ for what happens otherwise
 ```
 
 Bring up: `eksctl create cluster -f <spec>` (~15-20 min).
@@ -102,8 +102,8 @@ Catalog of existing launchers
 `entrypoint-train.sh` honors two env vars for explicit cross-run
 resume:
 
-- `INIT_FROM_S3=s3://…/distilled_epochNNN.pt` — initial weights.
-- `START_EPOCH=N` — number of epochs to skip in the loop. The RNG
+- `INIT_FROM_S3=s3://…/distilled_epochNNN.pt`: initial weights.
+- `START_EPOCH=N`: number of epochs to skip in the loop. The RNG
   advances N times so the data permutation matches what the original
   run would have produced.
 
@@ -119,7 +119,7 @@ directory and the auto-eval daemon picks them up).
 supervised training (`entrypoint-train.sh`) and self-play
 (`entrypoint-selfplay.sh`). Base: `pytorch/pytorch:2.5.1-cuda12.1-cudnn9`.
 Adds AWS CLI, Stockfish 17, and our editable packages via
-`pip install --no-deps -e .` (the `--no-deps` is critical — without
+`pip install --no-deps -e .` (the `--no-deps` is critical; without
 it, pip reinstalls torch as a CPU wheel from PyPI and the CUDA image
 becomes useless). Build via CodeBuild:
 

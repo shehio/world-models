@@ -7,7 +7,7 @@ Reading this catalog before a fresh training run is much faster than
 rediscovering each one in real time. Each entry: **symptom**, **root
 cause**, **fix**.
 
-## 1 — NPZ Extraction Filled the Volume
+## 1: NPZ Extraction Filled the Volume
 
 **Symptom.** Training pod's epoch 1 stalled with no progress. The
 container's `/work-tmp` filled up; the OS killed extraction silently.
@@ -20,7 +20,7 @@ extracts to ~145 GB. The default training volume was 100–150 GB.
 `MAX_POSITIONS`). 5M → ~25 GB. Bumped the bare-EC2 volume to 300 GB
 for the full 30M run.
 
-## 2 — Bare-EC2 Launcher Used the Wrong Entrypoint Path
+## 2: Bare-EC2 Launcher Used the Wrong Entrypoint Path
 
 **Symptom.** d10-l40s launcher v1:
 
@@ -37,7 +37,7 @@ EC2 self-terminated within minutes; no checkpoints produced.
 **Fix.** All launchers in `infra-eks/launchers/` now use the
 in-container path. `bash -n <launcher.sh>` lint runs before commit.
 
-## 3 — SAVE_EVERY=5 Cost Epochs 6–9 on Every Reclaim
+## 3: SAVE_EVERY=5 Cost Epochs 6–9 on Every Reclaim
 
 **Symptom.** A reclaim or manual termination at epoch 9 of a 20-epoch
 run loses ckpts 6/7/8/9 even though they were computed; only ep 5 is
@@ -47,9 +47,9 @@ in S3.
 Any interruption between save points is wasted compute.
 
 **Fix.** For long runs, set `SAVE_EVERY=1`. Each save is ~1 GB to S3,
-~30 s — essentially free at this scale.
+~30 s, essentially free at this scale.
 
-## 4 — Eval EC2 `docker run --gpus all` Failed on Plain AL2023
+## 4: Eval EC2 `docker run --gpus all` Failed on Plain AL2023
 
 **Symptom.**
 
@@ -68,7 +68,7 @@ docker: Error response from daemon: could not select device driver
 
 Wired into the auto-eval daemon's `region_config`.
 
-## 5 — Stockfish UCI_Elo=1320 Rejected
+## 5: Stockfish UCI_Elo=1320 Rejected
 
 **Symptom.** Eval pod died with `value 1320 less than minimum 1350`.
 An auto-eval crashed: the image's Stockfish enforced a 1350 `UCI_Elo`
@@ -77,13 +77,13 @@ minimum while the eval code targeted 1320 (02b's anchor).
 **Root cause.** A 1350 minimum is the *historical* floor. Stockfish
 actually **lowered** the minimum from 1350 → 1320 in 2023 (PR #4341,
 first shipped in SF16), so the crashing binary was SF ≤ 15.1 (the
-version `apt` ships on Debian/Ubuntu stable) — not the "17" we'd
+version `apt` ships on Debian/Ubuntu stable), not the "17" we'd
 assumed. We originally recorded this backwards (as "SF17 raised it").
 
-**Fix.** Daemon default is now 1,350 — safe across every version. Old
+**Fix.** Daemon default is now 1,350, safe across every version. Old
 1,185-Elo 02b numbers are normalized in the experiment's `results.md`.
 
-## 6 — Repeated VcpuLimitExceeded in us-east-1
+## 6: Repeated VcpuLimitExceeded in us-east-1
 
 **Symptom.** Two concurrent eval EC2s + one training EC2 → next
 launch fails with the 32 vCPU G/VT quota message.
@@ -93,7 +93,7 @@ launch fails with the 32 vCPU G/VT quota message.
 **Fix.** Daemon walks `REGION_ORDER=(us-east-1 eu-central-1)` per
 launch. Cross-region pull/read just works. See [infra](/infra/).
 
-## 7 — EKS GPU Taint Broke CoreDNS
+## 7: EKS GPU Taint Broke CoreDNS
 
 **Symptom.** Training pod couldn't reach
 `sts.us-east-1.amazonaws.com` → `aws s3 cp` failed with
@@ -109,7 +109,7 @@ DNS resolution.
 **Fix.** Removed the taint from both `cluster-train-{us,eu}.yaml`.
 Single-purpose clusters don't need it.
 
-## 8 — Finalize / Merge OOM on Small Instances
+## 8: Finalize / Merge OOM on Small Instances
 
 **Symptom.** Salvage pods OOM-killed silently while finalizing
 per-pod data.
@@ -126,16 +126,16 @@ Holds every chunk in RAM, then `np.concatenate` doubles peak. For
 the d10 pods, ~5 GB raw → ~11 GB peak → exceeds the 8 GB on an
 `m6i.large`.
 
-**Fix.** `wm_chess/scripts/merge_chunks.py` — a streaming script
+**Fix.** `wm_chess/scripts/merge_chunks.py`, a streaming script
 that bypasses both finalize and merge. For each array key, it opens
 one zip entry, writes the npy header, then streams each chunk's
 `tobytes()` directly into the deflate stream. Peak RAM ~100 MB
 regardless of dataset size.
 
-## 9 — Depth=1 Secondary Eval Was Unreliable
+## 9: Depth=1 Secondary Eval Was Unreliable
 
 **Symptom.** The "depth=1 top-skill" secondary eval gave wildly
-different W/D/L across nearby checkpoints — d15 ep 15 was 8/8/88,
+different W/D/L across nearby checkpoints: d15 ep 15 was 8/8/88,
 ep 20 was 93/11/0. Inconsistent with the otherwise-monotonic UCI=1350
 trajectory.
 
@@ -147,12 +147,12 @@ Stockfish blunders into. High variance, no Elo calibration.
 current model strength. CI is now tightest where the model is
 well-matched.
 
-## 10 — d15 R1 (40×256) Plateaued at Constant LR=1e-3
+## 10: d15 R1 (40×256) Plateaued at Constant LR=1e-3
 
 **Symptom.** R1's `train_history.json` showed loss / top-1 / top-K
 essentially frozen across epochs 7–13: loss moved 0.0013 across 6
 epochs, top-1 changed by 0.4 pp. sims=800 evals confirmed: ckpts
-ep 7–11 all sat in the 1,864–1,910 band — no upward trend after the
+ep 7–11 all sat in the 1,864–1,910 band, no upward trend after the
 ep 6 spike to 1,941.
 
 **Root cause.** Bigger net (50M params) + constant Adam LR=1e-3 +
@@ -171,11 +171,11 @@ R1 v1's 1,941 ceiling, cosine was the missing piece.
 (g6e.8xlarge spot, us-east-1a) before eviction, then 13h resume on
 `i-058bea691f419c69c` (us-east-1d) before manual kill. ~45h × ~$1.74/h
 spot = **~$78 in compute, with ep 6's 2,146 sims=4000 as the keep-able
-output**. The "discovery via observability" pattern paid for itself —
+output**. The "discovery via observability" pattern paid for itself;
 without per-epoch `train_history.json` syncs we'd have thrown the
 whole run at it longer.
 
-## 11 — Docker `$ECR` Escaped in Heredoc Killed the First R1 v2 Launch
+## 11: Docker `$ECR` Escaped in Heredoc Killed the First R1 v2 Launch
 
 **Symptom.** R1 v2's first instance produced no checkpoints. The
 host-launch log showed:
@@ -188,7 +188,7 @@ docker: invalid reference format.
 escaped the dollar, so the heredoc emitted a literal `$ECR/wm-chess-gpu:latest`
 into the EC2's bash script. `$ECR` wasn't defined in the EC2's
 environment (only in the launcher script's environment), so the
-image arg resolved to `/wm-chess-gpu:latest` — no registry prefix.
+image arg resolved to `/wm-chess-gpu:latest`, no registry prefix.
 
 **Fix.** Drop the backslash so the launcher-script heredoc interpolates
 `$ECR` at user-data generation time, giving the EC2 the full
@@ -200,7 +200,7 @@ g6e.8xlarge spot, manual launch) and `i-0874256bc9a24d7b1`
 before the cleanup trap fired and self-terminated. **~$0.20 in EC2
 time + ~30 min of debugging.**
 
-## 12 — Baked Docker Image Was Stale for h2h_mp.py
+## 12: Baked Docker Image Was Stale for h2h_mp.py
 
 **Symptom.** The d10-vs-d15 head-to-head EC2 immediately errored:
 ```
@@ -214,7 +214,7 @@ shipped the older argparser that didn't know the new flags.
 **Fix.** Have the launcher `curl` the latest `h2h_mp.py` from `main`
 at runtime *before* invoking it. Cleaner than rebuilding the image
 for a one-script change. Same pattern works for any script the image
-ships pre-baked but main has since modified — used again for the
+ships pre-baked but main has since modified, used again for the
 cosine-LR `train.py` patch.
 
 **Damage.** First h2h instance `i-096d1209fdb836a99` (g6.4xlarge OD
@@ -223,18 +223,18 @@ the curl trampoline as `i-05a66aaaf5c27cffb` (g6.4xlarge OD us-east-1),
 which produced the actual 0/104/0 result in 6h 24min.
 **~$0.20 wasted + 6h delay on the headline H2H number.**
 
-## 13 — Spot Eviction at ep 6 with No Optimizer Resume
+## 13: Spot Eviction at ep 6 with No Optimizer Resume
 
 **Symptom.** R1 v1 was spot-evicted in us-east-1a around ep 6 with
 "no Spot capacity available." The watcher daemon re-launched and
-the entrypoint auto-resumed from the latest S3 ckpt — but the new
+the entrypoint auto-resumed from the latest S3 ckpt, but the new
 process started training again at LR=1e-3 from scratch in
 optimizer-state terms, just with the ep 6 weights pre-loaded.
 
 **Root cause.** `train.py` saves model weights but not optimizer
 state. Adam's per-parameter momentum / variance estimates rebuild
 from zero, which biases the first few post-resume steps. With a
-*scheduled* LR this would also mean the schedule resets — handled
+*scheduled* LR this would also mean the schedule resets, handled
 in the cosine update via `scheduler.step()` matching `--start-epoch`.
 
 **Fix.** Pin `RUN_ID` in the launcher so a relaunch lands in the
@@ -248,7 +248,7 @@ Watcher fired the resume as `i-058bea691f419c69c` (us-east-1d spot)
 which trained ep 7–11 before manual kill. **~1h dataset reload =
 ~$1.74**, the post-resume training itself was productive.
 
-## 14 — Cancelled Spot Request Didn't Free Quota Immediately
+## 14: Cancelled Spot Request Didn't Free Quota Immediately
 
 **Symptom.** After terminating R1 v1, every `RunInstances` call
 returned `MaxSpotInstanceCountExceeded` for ~5 minutes. AWS still
@@ -269,12 +269,12 @@ terminated) blocked R1 v2 cosine launch for ~10 min. **No $ cost,
 but a wasted 10-minute debug cycle and three "MaxSpotInstanceCountExceeded"
 errors that looked like a quota problem before we realized.**
 
-## 15 — eu-central-1c Lost g6e.8xlarge Spot Capacity Mid-Run
+## 15: eu-central-1c Lost g6e.8xlarge Spot Capacity Mid-Run
 
 **Symptom.** R1 v2 successfully launched in eu-central-1c spot,
 then the watcher's relaunch attempt 6h later (after the docker bug
 failure) returned `InsufficientInstanceCapacity` from the same AZ.
-AWS suggested 1a or 1b instead — but earlier we'd tried 1a (out)
+AWS suggested 1a or 1b instead, but earlier we'd tried 1a (out)
 and 1b (out) before settling on 1c.
 
 **Root cause.** Spot capacity in g6e.8xlarge is *highly* AZ-local
@@ -285,7 +285,7 @@ have capacity 6h later.
 try other AZs in the region before falling back regions. The
 deep-eval daemon also got a third tier (eu-central-1 spot) added
 to its `REGION_ORDER` for the same reason. A real fix would be
-spot-rover-style proactive placement scoring — already exists at
+spot-rover-style proactive placement scoring, already exists at
 `infra-eks/spot-rover/`, just not wired into the training launchers
 yet.
 
@@ -300,7 +300,7 @@ ckpts produced across all attempts. ~$15 in spot wastage** before
 giving up and switching to OD as `i-0a4c27118ff4e62ba`
 (eu-central-1 OD) the next morning.
 
-## 16 — Autoeval Queue Stuck When Both OD Quotas Were Full
+## 16: Autoeval Queue Stuck When Both OD Quotas Were Full
 
 **Symptom.** Run 2 ckpts ep 2/3/4 didn't get sims=800 evals for
 hours. The autoeval daemon kept logging `LAUNCH eval EC2 for ...`
@@ -322,10 +322,10 @@ the queue overnight.
 **Damage.** ~2h of stuck-queue while the patch was being written
 and shipped. R2 ep 2/3/4 evals delayed but eventually drained;
 **no $ cost** beyond the daemon's S3 list calls. The lesson
-was-cheap, the patch was-cheap, the consequence-was-cheap — a
+was-cheap, the patch was-cheap, the consequence-was-cheap, a
 nice cluster of "just plumbing" wins.
 
-## 17 — One Run 2 ckpt (ep 2) Never Got Evaluated
+## 17: One Run 2 ckpt (ep 2) Never Got Evaluated
 
 **Symptom.** Run 2's `eval_results-distilled_epoch002.txt` is the
 only file missing from an otherwise contiguous ep0–ep12 sims=800
@@ -345,15 +345,15 @@ daemon distinguish "permanently failed to claim" from "released
 on launch failure" and aggressively re-try the latter set.
 
 **Damage.** One missing data point in the R2 ep 0–29 sims=800
-trajectory. No $ cost — the daemon's S3 calls are negligible. The
+trajectory. No $ cost: the daemon's S3 calls are negligible. The
 hole is visible in the R2 trajectory table on the
 [experiments page](/experiments/#d15-46m).
 
-## 18 — Parallelizing the Self-Play Gate onto CPU Workers Was Slower
+## 18: Parallelizing the Self-Play Gate onto CPU Workers Was Slower
 
 **Symptom.** The gated self-play loop's candidate-vs-champion gate
 match (60 games) + Stockfish yardstick, after being "parallelized"
-across the 14 CPU self-play workers, ran **~110 min+** — *slower* than
+across the 14 CPU self-play workers, ran **~110 min+**, *slower* than
 the original single-threaded gate (~45 min).
 
 **Root cause.** The original gate ran in the trainer process on the
@@ -363,11 +363,11 @@ net, CPU batch-1 MCTS is ~tens-of-times slower *per game* than the GPU,
 so 14× worker parallelism didn't come close to offsetting it. Self-play
 uses CPU workers because *many concurrent* full games amortize, and the
 net was historically small (10×128, where "batch-1 is faster on CPU"
-held) — false for 20×256.
+held), false for 20×256.
 
 **Fix.** Reverted (commit `67335fc`): gate match + Stockfish eval run
 single-threaded in the trainer on the GPU. The gate was never the
-bottleneck — self-play dominates at ~2.7h/iter, so a 45-min GPU gate is
+bottleneck; self-play dominates at ~2.7h/iter, so a 45-min GPU gate is
 ~13% overhead. If gate time matters, cut `gate_games` / `gate_sims`, not
 CPU parallelism. Rule: before parallelizing GPU-bound MCTS onto CPU
 workers, check the per-game device cost first.
@@ -409,7 +409,7 @@ overhaul this thorough.**
    clusters.
 6. **Pick a calibrated sub-test opponent**, not `depth=1`.
 7. **Use cosine LR + warmup for nets >30M params**. Constant LR
-   converges 20×256 fine but plateaus 40×256 — see #10.
+   converges 20×256 fine but plateaus 40×256. See #10.
 8. **Pin `RUN_ID` + auto-resume + a watcher daemon** turns spot
    eviction from "lose a day's training" into "lose 1 hour of
    dataset reload." See #13.

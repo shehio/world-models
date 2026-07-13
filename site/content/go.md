@@ -1,5 +1,5 @@
 ---
-title: "Go — 9x9 Distillation from KataGo"
+title: "Go: 9x9 Distillation from KataGo"
 subtitle: "8x128 ResNet, 1.236M positions, parity with KataGo@v200 in 15 epochs"
 next: "/experiments/"
 aliases:
@@ -12,7 +12,7 @@ aliases:
 A 9×9 Go agent distilled from KataGo (multipv=8 at v=400, ~1.236M
 positions) reaches **parity with KataGo at 200 visits** in 15 epochs.
 Anchored against GnuGo L10 (assumed ≈1,800 Elo on a conventional
-Go-Elo scale — see the anchor caveat below), the KataGo @v=200 opponent
+Go-Elo scale; see the anchor caveat below), the KataGo @v=200 opponent
 sits at **≥ 2,366 absolute Elo**, so the student does too *on that scale*.
 
 | ckpt | sims | opponent | win rate | Elo gap |
@@ -24,7 +24,7 @@ sits at **≥ 2,366 absolute Elo**, so the student does too *on that scale*.
 | ep 19 | 800 | KataGo @ v200 | 15/30 = 50% | 0 [−122, +122] |
 
 **+325 Elo from ep 5 to ep 15.** Then a clean plateau. The
-distillation training reached its natural ceiling — matching what the
+distillation training reached its natural ceiling: matching what the
 teacher gave it, then stopping.
 
 The earlier spike (4×64 net, 5K positions, KataGo @ v100 teacher)
@@ -38,15 +38,15 @@ absolute number, we need to anchor KataGo @v=200 itself against a
 calibrated opponent. Run 2026-05-26 18:21 UTC (`i-07a0f9582d96fcd9a`,
 g6.xlarge OD): **100 games KataGo @v=200 vs GnuGo L10 on 9×9, komi 7.5,
 anchor GnuGo = 1,800 Elo** (assumed; a conventional single-digit-kyu
-Go-Elo estimate — *not* the AlphaGo-paper scale, see caveat below).
+Go-Elo estimate, *not* the AlphaGo-paper scale, see caveat below).
 
 ```
 KataGo @v=200  vs  GnuGo L10  (100 games, 9×9):  100 W / 0 D / 0 L
 Score 1.000, 95% CI [0.963, 1.000]
 Elo gap (KataGo − GnuGo) ≥ +566  (lower 95% bound; upper bound
-                                   uninformative — score saturation)
+                                   uninformative: score saturation)
 → KataGo @v=200 absolute Elo  ≥  2,366  (lower 95% CI)
-→ Point estimate  ≈  5,400 — clamped, ignore
+→ Point estimate  ≈  5,400: clamped, ignore
 ```
 
 The lower bound is real (gnugo competently lost 100 games in 640 sec
@@ -62,7 +62,7 @@ candidate but deadlocks in non-TTY containers regardless of playout
 count; CrazyStone / Aya / Lc0 would each need new docker integration.
 
 **Anchor caveat.** The ≈1,800 GnuGo figure is an *assumption* on a
-conventional Go-Elo scale — it is **not** from the AlphaGo paper. That
+conventional Go-Elo scale; it is **not** from the AlphaGo paper. That
 paper (Silver et al., Nature 2016, Extended Data Table 6) actually rates
 GnuGo 3.8 (level 10) at **431 Elo** on its own compressed BayesElo scale
 (anchored to Fan Hui = 2,908; the ~1,800–1,900 entries there are Zen and
@@ -101,7 +101,7 @@ Between ep 11 and ep 15 we gain another +23. After ep 15, no
 further improvement. **The agent saturated at "match the teacher's
 shape at moderate search depth."**
 
-## Sims Sweep — Does More Search Help?
+## Sims Sweep: Does More Search Help?
 
 | ckpt | sims | opponent | Elo gap |
 |---|---:|---|---:|
@@ -120,22 +120,22 @@ plausible reasons:
    can't push it past the teacher's ceiling.
 
 If we want significantly more Elo from this agent, the lever isn't
-"more sims at eval" — it's "more capacity / more data / self-play."
+"more sims at eval"; it's "more capacity / more data / self-play."
 
 ## What Failed Mode Did *Not* Trigger
 
 The 250K-positions MPS chess distillation famously **regressed**
 to the small-network baseline because of soft-target dilution
 ([results.md §3](https://github.com/shehio/world-models/blob/main/experiments/distill-soft/results.md)).
-Go *did not* regress — went from −325 to 0 cleanly. The difference:
+Go *did not* regress, went from −325 to 0 cleanly. The difference:
 
 - Go uses 8 multipv at the KataGo teacher's softmax, but Go's
   policy distribution is naturally less peaked than chess (more
   candidate moves are nearly equivalent in many positions). So
   the "soft targets dilute signal" failure mode is less acute.
 - Go training had **30× more positions than the 250K MPS chess
-  run** (1.236M vs 250K) — proportional to the network size jump
-  (8×128 vs 20×256) — so positions-per-parameter was healthier.
+  run** (1.236M vs 250K), proportional to the network size jump
+  (8×128 vs 20×256), so positions-per-parameter was healthier.
 
 ## Comparing to Chess
 
@@ -155,8 +155,8 @@ Going beyond requires self-play (the [next-step](/next/)).
 
 ## Code
 
-- [`experiments/distill-go/`](https://github.com/shehio/world-models/tree/main/experiments/distill-go) — datagen, training, eval
-- [`infra-eks/launchers/eval-go-9x9-8x128.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-go-9x9-8x128.sh) — EC2 eval launcher (used for all the v200 numbers above)
+- [`experiments/distill-go/`](https://github.com/shehio/world-models/tree/main/experiments/distill-go): datagen, training, eval
+- [`infra-eks/launchers/eval-go-9x9-8x128.sh`](https://github.com/shehio/world-models/blob/main/infra-eks/launchers/eval-go-9x9-8x128.sh): EC2 eval launcher (used for all the v200 numbers above)
 - Checkpoints in S3:
   `s3://wm-chess-library-594561963943/go-9x9-mpv8-gpu-v400-20260521T1230Z/checkpoints/9x9-8x128-20260522T0625Z/`
 
@@ -164,13 +164,13 @@ Going beyond requires self-play (the [next-step](/next/)).
 
 In rough order of expected information per dollar:
 
-1. **Higher KataGo visits** (v400, v800) — does the plateau hold
+1. **Higher KataGo visits** (v400, v800): does the plateau hold
    when the opponent gets stronger? Will tell us where the agent
    sits on the absolute scale. ~$1, ~40 min. **Running now.**
-2. **Self-play RL on top of ep 15** — Go is where AlphaZero-style
+2. **Self-play RL on top of ep 15**: Go is where AlphaZero-style
    self-play *really* shines (KataGo's whole training was self-play,
    no teacher). Bootstrap from the matched-with-KataGo@v200 ckpt
    and let it diverge into something better. ~$50-100.
 3. More data (5M+ positions) + retrain at same architecture.
 4. Bigger network (12×128 or 8×256) at the current data.
-5. Scale to 13×13 or 19×19 board — different experiment entirely.
+5. Scale to 13×13 or 19×19 board: different experiment entirely.

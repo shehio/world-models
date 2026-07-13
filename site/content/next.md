@@ -1,6 +1,6 @@
 ---
 title: "What's next"
-subtitle: "distill-then-RL — a distilled prior plus self-play, running on an EKS pod right now"
+subtitle: "distill-then-RL: a distilled prior plus self-play, running on an EKS pod right now"
 next: "/infra/"
 aliases:
   - /selfplay/
@@ -14,10 +14,10 @@ counts during self-play, not from Stockfish. Once you stop needing
 Stockfish to label every position, the data flywheel is
 self-sustaining and the only ceiling is compute.
 
-A single GPU can't reproduce AlphaZero from scratch — it would take
+A single GPU can't reproduce AlphaZero from scratch; it would take
 wall-weeks to reach 1,500 Elo from random init. But it *can* run the
-realistic path: **distill-then-RL** — warm-start a strong prior, then
-self-play. That prior-plus-self-play shape is how Leela Chess Zero
+realistic path: **distill-then-RL** (warm-start a strong prior, then
+self-play). That prior-plus-self-play shape is how Leela Chess Zero
 reached grandmaster level on volunteer hardware (Lc0 built its prior
 from self-play; we build ours by distilling Stockfish).
 
@@ -29,7 +29,7 @@ from self-play; we build ours by distilling Stockfish).
    position.
 3. Record `(state, π = MCTS visit distribution, z = game outcome)`
    for every position the loop kept (KataGo's playout-cap
-   randomization keeps ~25% of positions — the ones where MCTS ran
+   randomization keeps ~25% of positions, the ones where MCTS ran
    at full depth).
 4. Train the network to predict `π` (cross-entropy) and `z` (MSE on
    `[-1, +1]`).
@@ -38,21 +38,21 @@ from self-play; we build ours by distilling Stockfish).
 The loss is exactly the AlphaZero loss; the only difference from
 "tabula-rasa AZ" is that the starting weights aren't random.
 
-## Self-Play Postmortem — Six Attempts, No Progress {#selfplay-postmortem}
+## Self-Play Postmortem: Six Attempts, No Progress {#selfplay-postmortem}
 
 Self-play *should* be the next +200 to +500 Elo on top of the
 distilled prior (self-play on a strong prior is how Lc0 reached engine
-strength — though Lc0's prior came from self-play, not a Stockfish distill).
+strength, though Lc0's prior came from self-play, not a Stockfish distill).
 We've launched the loop six times since 2026-05-25 and not yet gotten
 past iteration 1. Two distinct failure modes, both fixed in code, but
 the *infrastructure* turned out to be the binding constraint.
 
-### Failure mode #1 — catastrophic forgetting at LR=1e-3 / 1e-4
+### Failure mode #1: catastrophic forgetting at LR=1e-3 / 1e-4
 
 The first attempts trained on top of the distilled prior with the
 same Adam LR=1e-3 used during supervised distillation. Self-play
 generates ~30× less data per iter than supervised training, so the
-gradient updates were 30× too large relative to the new signal —
+gradient updates were 30× too large relative to the new signal;
 the network *forgot the prior* on the first iter:
 
 | Run | LR | Iters | Best sims=800 Elo @ UCI=1,800 |
@@ -60,7 +60,7 @@ the network *forgot the prior* on the first iter:
 | selfplay v3 (`20260525T1331Z`) | **1e-4** | 0 → 3 | iter 0 = **1,643** [1561, 1712], iter 2 = 1,704 [1630, 1771] |
 
 The prior (d10 ep 15) at sims=800 sits around 2,000 Elo. Iter 0 came
-in at 1,643. That's **~−350 Elo from the prior in 200 SGD steps** —
+in at 1,643. That's **~−350 Elo from the prior in 200 SGD steps**:
 the canonical catastrophic-forgetting signature.
 
 Fix: commit
@@ -70,10 +70,10 @@ dropped the self-play default to LR=1e-5 (100× smaller). Commit
 confirmed even LR=1e-4 was still too aggressive and reverted to 1e-5
 from a clean d10 ep 15 seed.
 
-### Failure mode #2 — spot evictions kill iter 0 before it finishes
+### Failure mode #2: spot evictions kill iter 0 before it finishes
 
 With LR=1e-5 the network *stays at* the prior's strength on iter 0
-(no progress, no regression — exactly as expected for one iter at a
+(no progress, no regression: exactly as expected for one iter at a
 gentle LR). But every run we've launched on spot has been **evicted
 before iter 1 finishes**:
 
@@ -89,7 +89,7 @@ One iter of 32 games × 16 workers takes **~90 min** on a g6e.8xlarge.
 The us-east-1 spot eviction window for g6e is hitting at < 90 min in
 the AZs we've tried, so iter 1 never starts. The runs that did finish
 iter 0 produced an iter-0 ckpt that's *the prior with one SGD pass on
-800 fresh self-play positions* — nothing to learn from.
+800 fresh self-play positions*: nothing to learn from.
 
 Why spot at all: the OD G/VT vCPU quota in us-east-1 was saturated by
 the deep-eval boxes (autoeval daemon fires per-ckpt evals on the same
@@ -115,33 +115,33 @@ In rough order of "would fix it":
    self-play games on the floor (state.pt is uploaded but starting
    from a fresh trainer + fresh buffer wastes ~10% of the budget on
    warmup). Add a `--resume` path that pulls `state.pt` from S3 and
-   continues from the last iter — would let us amortize evictions
+   continues from the last iter, would let us amortize evictions
    instead of restart from scratch each time.
 
 The algorithm is *not* the bottleneck right now. It's the launcher
 making a bet on spot stability that doesn't hold.
 
-### Update 2026-05-29 — self-play ran on OD, and the verdict flipped {#selfplay-od-verdict}
+### Update 2026-05-29: self-play ran on OD, and the verdict flipped {#selfplay-od-verdict}
 
 The postmortem above blamed infrastructure (spot eviction). Moving to OD
-removed that — and self-play then *ran to completion*, which surfaced the real
+removed that, and self-play then *ran to completion*, which surfaced the real
 result:
 
 - **Ungated (attempt #7, OD g6.4xlarge, ~10 iters).** The iter-10 checkpoint,
   evaluated on the same harness as the teacher (**~2,101** [2,020, 2,224] @
-  sims=800), came in at **~1,730** [1,656, 1,797] — a confirmed **~370-Elo
+  sims=800), came in at **~1,730** [1,656, 1,797]: a confirmed **~370-Elo
   regression**. When the loop actually runs, the strong prior *degrades*: the
   MCTS self-play targets aren't better than what a ~2,100 net already plays,
   so the low-LR updates walk it off the supervised optimum.
 - **Gated (MVP, 2026-05-29).** Added AlphaGo-Zero arena gating (promote only
   if a candidate beats the champion ≥55% over 60 games), a KL-anchor to the
   teacher, a 50-shard replay window, and an in-loop Stockfish yardstick.
-  Gating *works* — the champion floors at the teacher's ~2,101, no regression —
+  Gating *works* (the champion floors at the teacher's ~2,101, no regression),
   but candidates keep scoring **below 55%** vs the teacher (0.542, then 0.408
   → rejected), so nothing promotes. **Self-play holds the teacher; it does not
   climb.**
 
-So the bottleneck was never the algorithm *or* the spot launcher — it's that
+So the bottleneck was never the algorithm *or* the spot launcher: it's that
 **the self-play signal is too weak to improve a ~2,100 net at one-GPU data
 scale** (~1.3k recorded samples/iter). This is the strongest confirmation yet
 of the project thesis: distillation ≫ self-play at fixed compute. Full
@@ -149,11 +149,11 @@ write-up in
 [EXPERIMENTS_LOG.md](https://github.com/shehio/world-models/blob/main/EXPERIMENTS_LOG.md#selfplay-muzero-negative).
 
 (Engineering footnote: one gated relaunch was lost to a mistaken
-"optimization" that moved the gate match onto CPU workers — ~2-3× slower for
+"optimization" that moved the gate match onto CPU workers, ~2-3× slower for
 the 20×256 net than the single-threaded GPU gate. See
 [failure-modes #18](/failures/).)
 
-### Update 2026-05-30 — the gated run finished, and the MuZero sibling was a bug {#selfplay-gated-final}
+### Update 2026-05-30: the gated run finished, and the MuZero sibling was a bug {#selfplay-gated-final}
 
 Two follow-ups closed the loop on the verdict above.
 
@@ -169,7 +169,7 @@ promoted **exactly once**:
 | 7 | 0.500 (W17 D26 L17) | rejected |
 
 The single promotion landed at **1,931** [1,862, 2,011] vs SF-1800 (100-game
-eval, 53W/30D/17L) — ~170 Elo *below* the teacher's ~2,101 [2,020, 2,224], with
+eval, 53W/30D/17L): ~170 Elo *below* the teacher's ~2,101 [2,020, 2,224], with
 the confidence intervals essentially non-overlapping (a *real* gap, not noise),
 and every later candidate scored ≤ 0.50 against it. So with gating the
 champion **floors at the teacher and never climbs**: one promotion shaped like
@@ -178,18 +178,18 @@ behind it.
 
 **Go says the same thing, more cleanly.** The 9×9 self-play run (`20260526T1947Z`,
 seeded from the 8×128 KataGo-parity teacher, 103 ungated iters) held **parity**
-with its teacher — the 40-game head-to-head (iter-42 ckpt vs the prior) came in
+with its teacher; the 40-game head-to-head (iter-42 ckpt vs the prior) came in
 **21–19, Elo gap +17, 95% CI [−89, +124]**: statistically indistinguishable. Go neither beat the teacher nor
 regressed. Across both games, on correct search: **distillation ≥ self-play at
-fixed compute** — "≫" for chess, "≈" for 9×9 Go.
+fixed compute** ("≫" for chess, "≈" for 9×9 Go).
 
-**Why "correct search" matters here.** The [MuZero leg](/vs-muzero/) — a separate,
-*learned-dynamics* experiment — had collapsed to 0/30 vs Stockfish. That turned
+**Why "correct search" matters here.** The [MuZero leg](/vs-muzero/) (a separate,
+*learned-dynamics* experiment) had collapsed to 0/30 vs Stockfish. That turned
 out to be an **inverted value-sign in its MCTS child selection**: it ranked
 children by the child's own-side-to-move value without negating to the parent's
 POV, so the search preferred the *opponent's* best reply, and more simulations
 made it worse. Fixed, the MuZero distill-init jumps from random to ~1,700 (still
-short of the teacher). Crucially the bug was **confined to the MuZero MCTS** — both
+short of the teacher). Crucially the bug was **confined to the MuZero MCTS**: both
 self-play searches above (`wm_chess.mcts` and `distill_go.mcts`) negate to the
 parent POV correctly, so the chess and Go results here stand. A clean reminder
 that a "negative result" is only as trustworthy as the harness underneath it.
@@ -198,7 +198,7 @@ that a "negative result" is only as trustworthy as the harness underneath it.
 
 Before the self-play postmortem above, this page described the
 expected single 12h spot run. The job manifest, entrypoint and
-orchestrator are all still in the repo and still correct — only the
+orchestrator are all still in the repo and still correct; only the
 "works in practice" claim needs the postmortem.
 
 Job manifest:
@@ -221,7 +221,7 @@ which is not a meaningful improvement target. At high sims, MCTS
 produces a sharply better policy than the prior. So spend the
 expensive sims on the positions whose targets you'll actually use.
 
-## d15-46M Trainers — Killed Early, Followed By Focused Evals {#d15-trainers-killed}
+## d15-46M Trainers: Killed Early, Followed By Focused Evals {#d15-trainers-killed}
 
 The data ablation said +199 Elo from a 6× larger dataset *with a weaker
 teacher* (d10). The natural next step was to combine the strongest
@@ -229,19 +229,19 @@ teacher (d15) with the same data scale, which became the d15 46M
 2×2 ablation: R1/R2 (network capacity) × v1/v2 (LR schedule). Full
 results table on the [experiments page](/experiments/#d15-46m).
 
-**Update 2026-05-26 17:15 UTC** — both cosine trainers (R1 v2 + R2 v2)
+**Update 2026-05-26 17:15 UTC**: both cosine trainers (R1 v2 + R2 v2)
 were killed early, before their nominal epoch budgets. The peaks
 landed early (R1 v2 ep 7 = 2,209; R2 v2 ep 4 = 2,285), late-epoch
 trajectories at sims=800 were not trending up, and the autoeval daemon
 was offline anyway (operator laptop closed). Three follow-on facts
 that closed the runs:
 
-- **R1 v2** — eu-central-1 OD g6e.8xlarge `i-0a6c44e043b2d241e`.
+- **R1 v2**: eu-central-1 OD g6e.8xlarge `i-0a6c44e043b2d241e`.
   Killed at ep 15 of 40. Would have cost ~$320 to finish on OD,
   with low probability of beating ep 7's 2,209.
-- **R2 v2** — ap-northeast-1 spot g6e.8xlarge `i-008f0d7d3a15974b9`.
+- **R2 v2**: ap-northeast-1 spot g6e.8xlarge `i-008f0d7d3a15974b9`.
   Killed at ep 22 of 30. Would have cost ~$5 to finish on spot;
-  killed for *information value* — ep 4 sims=4,000 was already the
+  killed for *information value*: ep 4 sims=4,000 was already the
   best deep-eval'd ckpt and later epochs were noise on sims=800.
 - **R2 v1 + R1 v1** were already complete and idle.
 
@@ -250,19 +250,19 @@ All trained checkpoints remain on S3 at
 Nothing is lost; the runs can resume from any saved epoch if a future
 hypothesis justifies it.
 
-**Update 2026-05-26 23:06 UTC — the 2,300 line is broken.** The
+**Update 2026-05-26 23:06 UTC: the 2,300 line is broken.** The
 "ep 14 sims=800 was the run's highest but never got a deep-eval" lead
 turned into the project's strongest measurement: **R2 v2 ep 14 at
 sims=4,000 vs UCI=1,800 = 2,301 Elo** [2,190, 2,601], 95% CI lower
 bound strictly above the prior peak (d10 ep 15 = 2,189). One last
 in-flight eval (R2 v2 ep 4 at sims=8,000 vs UCI=2,000) will give the
-tightest single CI of any chess measurement to date — landing within
+tightest single CI of any chess measurement to date, landing within
 minutes. The two cheap follow-up evals were:
 
 | Eval | Instance | What it answers |
 |---|---|---|
 | sims=8,000 vs UCI=2,000 on **R2 v2 ep 4** | us-east-1 g6.4xlarge OD `i-04f84755196ee0163` (~$5) | Does deeper search on the top ckpt give a tighter CI? UCI=2,000 anchor keeps score near 0.5. _In final ~10 min as of 2026-05-26 22:30 UTC._ |
-| sims=4,000 vs UCI=1,800 on **R2 v2 ep 14** | us-east-1 g6.2xlarge OD `i-0b24ea8a7fdd7d149` (~$5) | R2 v2 ep 14 had the highest sims=800 of the run (2,055) but was never deep-eval'd. **Landed 2026-05-26 23:06 UTC: 2,301 Elo [2,190, 2,601] — first project measurement with a 95% lower CI bound above 2,300.** |
+| sims=4,000 vs UCI=1,800 on **R2 v2 ep 14** | us-east-1 g6.2xlarge OD `i-0b24ea8a7fdd7d149` (~$5) | R2 v2 ep 14 had the highest sims=800 of the run (2,055) but was never deep-eval'd. **Landed 2026-05-26 23:06 UTC: 2,301 Elo [2,190, 2,601], first project measurement with a 95% lower CI bound above 2,300.** |
 
 Per-ckpt sims=800 evals normally fire via the
 [autoeval daemon](https://github.com/shehio/world-models/blob/main/infra-eks/daemons/wm-autoeval-daemon.sh)
@@ -272,7 +272,7 @@ sims=4,000 deep-read via the
 With the laptop currently offline, the two evals above were launched
 as one-shot scripts.
 
-## The 2,500 Ceiling — What's in the Way and Why
+## The 2,500 Ceiling: What's in the Way and Why
 
 **Verdict: with cosine LR, distillation has *not* saturated yet.** The
 2026-05-26 cosine numbers (R1 v2 ep 7 = 2,209 [2115, 2389]; R2 v2
@@ -286,25 +286,25 @@ have evidence we're climbing toward it, not stuck below it.
 
 | # | Lever | Estimated Δ Elo | Effort | Status |
 |---|---|---|---|---|
-| 1 | **Self-play RL** on top of distilled prior (self-play on a prior, à la Lc0/AlphaZero) | +200 to +500+ | Weeks of GPU + careful LR tuning | Ran on OD + gated (2026-05-29): **regresses ungated (→~1,730), holds but does NOT climb gated (~2,101)**. Signal too weak at 1-GPU data scale — see the [verdict update](#selfplay-od-verdict). |
+| 1 | **Self-play RL** on top of distilled prior (self-play on a prior, à la Lc0/AlphaZero) | +200 to +500+ | Weeks of GPU + careful LR tuning | Ran on OD + gated (2026-05-29): **regresses ungated (→~1,730), holds but does NOT climb gated (~2,101)**. Signal too weak at 1-GPU data scale. See the [verdict update](#selfplay-od-verdict). |
 | 2 | **Higher eval sim count** (sims=16,000+) | +100 to +200 | $0 retraining, ~4× per-game time at eval | Untested above sims=4,000 |
 | 3 | **Finish R1 v2 (cosine d15)** | +0 to +100 | Currently 15/40 epochs; ~5 more days wallclock | In flight. Best so far = 2,209 at ep 7; could climb further. |
 | 4 | **Re-eval R2 v2 ep 4 at 400-game count** | tightens CI (currently ±200 Elo) | One ~4h eval run (~$5) | Open. 2,285 point estimate is the project high but the CI is too wide to publish confidently. |
 | 5 | **Sharper teacher targets** (multipv=1 hard, or T=0.3 soft) | +50 to +150 | One retraining run (~$80) | Tested at small scale; not at full data scale. |
-| 6 | More data (100M+ positions) | Probably +0 to +50 (saturating) | New 200K+ game datagen + 60h training (~$300) | The 30M→46M step at constant LR gave 0 Elo, but the cosine d15 result suggests we hadn't actually used the 46M well — re-evaluate after R1 v2 finishes. |
+| 6 | More data (100M+ positions) | Probably +0 to +50 (saturating) | New 200K+ game datagen + 60h training (~$300) | The 30M→46M step at constant LR gave 0 Elo, but the cosine d15 result suggests we hadn't actually used the 46M well; re-evaluate after R1 v2 finishes. |
 | 7 | Bigger net (60×384, ~100M params) | Probably +0 to +50 | Major training cost (~$400) | Capacity rejected at 5M; partially re-tested at 46M. |
-| 8 | Stronger teacher (Stockfish d20+) | Uncertain (+30 to +100 maybe) | New datagen at higher depth (~$500 — d depth doubles datagen cost) | Untested. |
+| 8 | Stronger teacher (Stockfish d20+) | Uncertain (+30 to +100 maybe) | New datagen at higher depth (~$500: d depth doubles datagen cost) | Untested. |
 
 **Lever #1 (self-play) is still the only one in this list that can
 plausibly hit 2,500.** Everything else is incremental. Self-play
 replaces "match the teacher's policy" with "find moves the teacher
-missed via search, then train on those" — which is *also* what carried
+missed via search, then train on those", which is *also* what carried
 Leela to ~3,600 over years of community self-play.
 
 **Update 2026-05-29:** this ranking predates *actually running* self-play. On
 OD it ran to completion and **regressed** (→~1,730); gated, it **holds** at
 ~2,101 but doesn't climb (see the [verdict update](#selfplay-od-verdict)). At
-one-GPU data scale, self-play is no longer the clear path to 2,500 — the
+one-GPU data scale, self-play is no longer the clear path to 2,500; the
 distillation levers (cosine LR, deeper eval-side search) remain the reliable
 ones. The honest current ceiling is the distilled **~2,301**.
 

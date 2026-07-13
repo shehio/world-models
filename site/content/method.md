@@ -35,7 +35,7 @@ moves: `multipv_indices[i, j] = -1` and `multipv_logprobs[i, j] = -inf`,
 masked out by `exp(-inf) = 0`.
 
 The choice of *soft* multipv targets vs *hard* one-hot targets is its
-own ablation — see
+own ablation. See
 [Experiments → Soft vs Hard Targets](/experiments/#soft-vs-hard).
 
 ## Why The Student Can't Exceed The Teacher
@@ -54,7 +54,7 @@ or self-play RL on top (the Lc0 path, [running now](/next/)).
 
 ## How We Measure Elo
 
-The default for milestone checkpoints is **Elo bisection** — a binary
+The default for milestone checkpoints is **Elo bisection**, a binary
 search over Stockfish's `UCI_Elo` setting that converges to the score
 near 0.5, where the Elo conversion is most accurate. The legacy
 "fixed-anchor" approach (a single 100-game match against UCI=1,350)
@@ -114,7 +114,7 @@ Before bisection we used a simpler protocol: play 100 games at each of
 two fixed `UCI_Elo` anchors (1,350 and 1,800) and report both
 absolute Elos. This is what the [auto-eval
 daemon](https://github.com/shehio/world-models/blob/main/infra-eks/daemons/wm-autoeval-daemon.sh)
-still runs on every new checkpoint — fast, comparable across the
+still runs on every new checkpoint: fast, comparable across the
 whole training run, but the Elo CI can be wide when the score is far
 from 0.5. The bisection is the authoritative number for milestones.
 
