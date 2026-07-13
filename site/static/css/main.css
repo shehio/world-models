@@ -1,100 +1,159 @@
+/* =====================================================================
+   world-models — "Engine Room"
+   A dark scientific broadsheet: chess-engine readout meets typeset paper.
+   Three voices — Fraunces (display), Newsreader (prose), JetBrains Mono
+   (data/formulas/tables). Teal = structure & navigation. Phosphor mint =
+   the headline result and confirmed findings. Red = the one alert (rejected).
+   Every SVG diagram/chart is styled through these variables, so the
+   whole site re-skins from :root.
+   ===================================================================== */
+
 :root {
-  --bg: #0a0a0a;
-  --surface: #111;
-  --card: #161616;
-  --card-hi: #1a1a1a;
-  --border: #1e1e1e;
-  --border-hi: #2a2a2a;
-  --text: #e2e2e2;
-  --text-soft: #c8c8c8;
-  --dim: #7a7a7a;
-  --dim-soft: #888;
-  --accent: #00d4aa;
-  --accent-hi: #1bf2c4;
-  --accent-soft: rgba(0, 212, 170, 0.12);
-  --red: #e84057;
-  --warn: #f0c040;
-  --font: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  --content-max: 1140px;
-  --reading-max: 760px;
+  --bg:        #0a0b0d;
+  --bg-deep:   #070809;
+  --surface:   #0e1114;
+  --card:      #12161b;
+  --card-hi:   #171d23;
+  --border:    #222a32;
+  --border-hi: #323c47;
+  --text:      #ece9e1;   /* warm bone */
+  --text-soft: #cbccc7;
+  --dim:       #7c8794;   /* cool slate */
+  --dim-soft:  #98a0aa;
 
-  /* type scale — every font-size in this file should reference one of
-     these. Mobile values are remapped inside the media queries.
-     Lede is collapsed into fs-body so every "running paragraph" on
-     the site renders at the same size. */
-  --fs-display: 3.4rem;  /* result-num */
-  --fs-hero:    2.6rem;  /* hero h1 */
-  --fs-h1:      1.85rem; /* detail-page h1 */
-  --fs-stat:    1.45rem; /* hypothesis stat value */
-  --fs-h3:      1.15rem; /* card / hypothesis title */
-  --fs-h2:      1.05rem; /* section h2 */
-  --fs-lede:    0.95rem; /* section lede (same as body) */
-  --fs-body:    0.95rem; /* default body paragraph */
-  --fs-aux:     0.85rem; /* dim / secondary body */
-  --fs-small:   0.78rem; /* tagline, captions, page subtitle */
-  --fs-micro:   0.62rem; /* tags, badges, micro labels */
-  --fs-table:   0.86rem; /* table data cells */
-  --fs-th:      0.74rem; /* table headers */
+  --accent:      #35ddc0; /* signal teal — structure, links, data */
+  --accent-hi:   #63f2d8;
+  --accent-soft: rgba(53, 221, 192, 0.12);
 
-  /* every body-text block on the site shares this line-height so the
-     "bigger font" perception that comes from a heavier line-height
-     can't drift between blocks. */
-  --lh-body: 1.75;
+  --hot:      #5ff0d6;    /* bright phosphor mint — the result, confirmed */
+  --hot-hi:   #9dfce9;
+  --hot-soft: rgba(95, 240, 214, 0.14);
+
+  --red:  #ff5d6c;        /* the one alert colour — rejected only */
+  --warn: #ffcf5c;
+
+  --grid-line: rgba(122, 205, 192, 0.045); /* instrument-panel backdrop grid */
+
+  /* three type voices */
+  --display: 'Fraunces', 'Times New Roman', Georgia, serif;
+  --serif:   'Newsreader', Georgia, 'Times New Roman', serif;
+  --font:    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --content-max: 1180px;
+  --reading-max: 720px;
+
+  --fs-display: 3.9rem;  /* result-num */
+  --fs-hero:    4.4rem;  /* hero h1 */
+  --fs-h1:      2.5rem;  /* detail-page h1 */
+  --fs-stat:    1.75rem; /* hypothesis stat value */
+  --fs-h3:      1.28rem; /* card / hypothesis title */
+  --fs-h2:      1.55rem; /* section h2 */
+  --fs-lede:    1.06rem; /* section lede */
+  --fs-body:    1.02rem; /* default body paragraph */
+  --fs-aux:     0.88rem; /* dim / secondary body */
+  --fs-small:   0.8rem;  /* tagline, captions */
+  --fs-micro:   0.64rem; /* tags, badges, micro labels */
+  --fs-table:   0.87rem; /* table data cells */
+  --fs-th:      0.72rem; /* table headers */
+
+  --lh-body: 1.72;
 }
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
 html {
   scroll-behavior: smooth;
-  /* The body-level <nav> is position: sticky at the top, ~3.6rem tall.
-     Without this padding, clicking a TOC anchor scrolls the target
-     heading behind the nav and the user sees only 2 lines of content
-     under the nav. Match the nav height + a bit of breathing room. */
-  scroll-padding-top: 5rem;
+  scroll-padding-top: 5.5rem;
 }
 
 body {
-  background: var(--bg);
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(1100px 560px at 50% -6%, rgba(95, 240, 214, 0.085), transparent 60%),
+    radial-gradient(900px 640px at 85% 3%, rgba(53, 221, 192, 0.05), transparent 55%),
+    radial-gradient(820px 720px at 6% 34%, rgba(53, 221, 192, 0.038), transparent 60%),
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(180deg, #0c0f13 0%, #090a0c 58%, #070809 100%);
+  background-size: auto, auto, auto, 48px 48px, 48px 48px, auto;
+  background-position: center top;
+  background-attachment: fixed;
   color: var(--text);
-  font-family: var(--font);
-  font-size: 15px;
+  font-family: var(--serif);
+  font-size: 17px;
   line-height: var(--lh-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-feature-settings: "calt" 1, "liga" 1;
+  font-feature-settings: "calt" 1, "liga" 1, "onum" 1;
+  overflow-x: hidden;
 }
+
+/* fixed film grain over the whole page */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.4;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+}
+
+/* vignette — darkens the edges so the grid + glow read as a lit panel */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(130% 105% at 50% -5%, transparent 52%, rgba(0, 0, 0, 0.5) 100%),
+    radial-gradient(100% 60% at 50% 108%, rgba(0, 0, 0, 0.4), transparent 60%);
+}
+
+main, body > nav, footer { position: relative; z-index: 1; }
+
+::selection { background: var(--hot-soft); color: var(--hot-hi); }
+
+a { color: var(--accent); }
+
+/* thin custom scrollbar */
+* { scrollbar-width: thin; scrollbar-color: var(--border-hi) transparent; }
+*::-webkit-scrollbar { height: 8px; width: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 4px; }
 
 /* ── nav ──────────────────────────────────────────────────────── */
 
-/* Scope to the body-level site nav only. The in-page <nav class="page-toc">
-   used on the experiments page is a different element and must not pick
-   up the sticky / blur / border / padding from the site nav. */
 body > nav {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.1rem 2rem;
+  padding: 1rem 2.2rem;
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
-  background: rgba(10, 10, 10, 0.93);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
   z-index: 100;
+  font-family: var(--font);
 }
 
 .nav-logo {
-  color: var(--accent);
+  color: var(--text);
   text-decoration: none;
   font-weight: 700;
-  font-size: 1rem;
-  letter-spacing: 2px;
+  font-size: 0.95rem;
+  letter-spacing: 1px;
   flex-shrink: 0;
+  transition: color 0.15s;
 }
+
+.nav-logo:hover { color: var(--accent); }
 
 .nav-links {
   display: flex;
-  gap: 2rem;
+  gap: 1.7rem;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -103,103 +162,258 @@ body > nav {
   color: var(--dim-soft);
   text-decoration: none;
   font-size: var(--fs-small);
-  letter-spacing: 0.8px;
+  letter-spacing: 0.5px;
   transition: color 0.15s;
   white-space: nowrap;
+  position: relative;
+}
+
+.nav-links a::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 100%; bottom: -4px;
+  height: 1px;
+  background: var(--accent);
+  transition: right 0.22s ease;
 }
 
 .nav-links a:hover { color: var(--accent); }
+.nav-links a:hover::after { right: 0; }
 
 /* ── hero ─────────────────────────────────────────────────────── */
 
 .hero {
+  position: relative;
   text-align: center;
-  padding: 5.5rem 2rem 1.5rem;
+  padding: 6.5rem 2rem 2rem;
+  overflow: hidden;
 }
 
-.hero h1 {
-  font-size: var(--fs-hero);
-  font-weight: 300;
+/* faint chessboard behind the wordmark */
+.hero .board-grid {
+  position: absolute;
+  inset: -20% 0 auto 0;
+  height: 150%;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.015) 25%, transparent 25%) 0 0 / 84px 84px,
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.015) 25%, transparent 25%) 0 42px / 84px 84px;
+  -webkit-mask-image: radial-gradient(70% 80% at 50% 30%, #000 15%, transparent 72%);
+          mask-image: radial-gradient(70% 80% at 50% 30%, #000 15%, transparent 72%);
+}
+
+/* soft phosphor bloom behind the wordmark */
+.hero::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 33%;
+  width: 720px;
+  max-width: 92vw;
+  height: 440px;
+  transform: translate(-50%, -50%);
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgba(95, 240, 214, 0.11), transparent 72%);
+  filter: blur(12px);
+}
+
+.hero > * { position: relative; z-index: 1; }
+
+.hero-kicker {
+  font-family: var(--font);
+  font-size: var(--fs-micro);
   letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 1.6rem;
+}
+
+.hero-kicker::before,
+.hero-kicker::after {
+  content: "";
+  display: inline-block;
+  width: 26px;
+  height: 1px;
+  vertical-align: middle;
+  margin: 0 0.9rem;
+  background: linear-gradient(90deg, transparent, var(--accent));
+}
+.hero-kicker::after { transform: scaleX(-1); }
+
+.hero h1 {
+  font-family: var(--display);
+  font-optical-sizing: auto;
+  font-size: var(--fs-hero);
+  font-weight: 500;
+  letter-spacing: -1.5px;
   color: var(--text);
-  line-height: 1.1;
+  line-height: 0.98;
+  text-wrap: balance;
 }
 
 .tagline {
-  color: var(--dim);
-  font-size: var(--fs-body);
-  letter-spacing: 1.5px;
-  margin-top: 1.1rem;
+  font-family: var(--font);
+  color: var(--dim-soft);
+  font-size: var(--fs-small);
+  letter-spacing: 1px;
+  margin-top: 1.3rem;
 }
 
 /* ── result strip (the big number + context) ──────────────────── */
 
 .result-strip {
   max-width: var(--content-max);
-  margin: 1.5rem auto 5rem;
-  padding: 0 2rem;
+  margin: 2.5rem auto 6rem;
+  padding: 0 2.2rem;
   display: grid;
-  grid-template-columns: minmax(240px, 340px) 1fr;
-  gap: 3.5rem;
+  grid-template-columns: minmax(280px, 360px) 1fr;
+  gap: 4rem;
   align-items: center;
 }
 
 .result-box {
-  background: var(--card);
+  position: relative;
+  background:
+    radial-gradient(140% 80% at 50% 0%, rgba(53, 221, 192, 0.045), transparent 60%),
+    var(--card);
   border: 1px solid var(--border-hi);
-  padding: 2.2rem 1.5rem;
+  padding: 2.4rem 1.6rem 2rem;
   text-align: center;
-  border-radius: 2px;
+  border-radius: 3px;
+  box-shadow: 0 24px 60px -34px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+/* corner ticks — instrument-panel feel */
+.result-box::before,
+.result-box::after {
+  content: "";
+  position: absolute;
+  width: 12px; height: 12px;
+  border: 1px solid var(--accent);
+  opacity: 0.3;
+}
+.result-box::before { top: 8px; left: 8px; border-right: 0; border-bottom: 0; }
+.result-box::after  { bottom: 8px; right: 8px; border-left: 0; border-top: 0; }
+
+.result-label {
+  font-family: var(--font);
+  font-size: var(--fs-micro);
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 0.7rem;
 }
 
 .result-num {
+  font-family: var(--font);
   color: var(--accent);
   font-size: var(--fs-display);
-  font-weight: 300;
-  letter-spacing: 2px;
+  font-weight: 500;
+  letter-spacing: -1px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 16px rgba(53, 221, 192, 0.18);
 }
 
 .result-unit {
+  font-family: var(--font);
   color: var(--text);
   font-size: var(--fs-small);
-  letter-spacing: 3.5px;
-  margin-top: 0.55rem;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  margin-top: 0.5rem;
+}
+
+/* CI visualization bar under the number */
+.ci-bar {
+  position: relative;
+  height: 30px;
+  margin: 1.5rem 0.4rem 0.3rem;
+}
+.ci-track {
+  position: absolute;
+  left: 0; right: 0; top: 14px;
+  height: 2px;
+  background: var(--border-hi);
+}
+.ci-range {
+  position: absolute;
+  top: 11px;
+  height: 8px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+}
+.ci-thresh {
+  position: absolute;
+  top: 3px;
+  height: 24px;
+  width: 1px;
+  background: repeating-linear-gradient(var(--dim-soft) 0 3px, transparent 3px 6px);
+}
+.ci-thresh span {
+  position: absolute;
+  top: -13px; left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font);
+  font-size: 0.56rem;
+  letter-spacing: 1px;
+  color: var(--dim-soft);
+  white-space: nowrap;
+}
+.ci-point {
+  position: absolute;
+  top: 8px;
+  width: 12px; height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--bg), 0 0 8px 1px rgba(53, 221, 192, 0.35);
 }
 
 .result-context {
+  font-family: var(--font);
   color: var(--dim);
   font-size: var(--fs-small);
-  letter-spacing: 0.8px;
-  margin-top: 1.2rem;
-  line-height: 1.65;
+  letter-spacing: 0.3px;
+  margin-top: 1.3rem;
+  line-height: 1.6;
 }
+.result-context a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); }
 
 .result-context-block p {
-  color: var(--text);
+  font-family: var(--serif);
+  color: var(--text-soft);
   font-size: var(--fs-body);
   line-height: var(--lh-body);
-  margin-bottom: 0.95rem;
+  margin-bottom: 1rem;
+}
+.result-context-block p:first-child::first-letter {
+  font-family: var(--display);
+  font-size: 3.1rem;
+  font-weight: 500;
+  float: left;
+  line-height: 0.82;
+  padding: 0.2rem 0.7rem 0 0;
+  color: var(--accent);
 }
 
 .result-context-block em {
   color: var(--text);
-  font-style: normal;
-  border-bottom: 1px dotted var(--dim);
+  font-style: italic;
+  font-family: var(--display);
 }
 
-.result-context-block strong {
-  color: var(--accent);
-  font-weight: 500;
-}
-
-.result-context-block .dim {
-  color: var(--dim-soft);
-  font-size: var(--fs-aux);
-}
+.result-context-block strong { color: var(--accent-hi); font-weight: 500; font-family: var(--font); font-size: 0.94em; }
+.result-context-block a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); }
+.result-context-block a:hover { border-bottom-style: solid; }
+.result-context-block .dim { color: var(--dim-soft); font-size: var(--fs-aux); }
 
 /* ── generic section ─────────────────────────────────────────── */
+
+main { counter-reset: sec; }
 
 section.diagram-section,
 section.method-section,
@@ -207,44 +421,68 @@ section.experiments,
 section.findings,
 section.mcts-section,
 section.vs-az,
+section.results-matrix,
 section.next,
 section.links {
   max-width: var(--content-max);
-  margin: 0 auto 5rem;
-  padding: 0 2rem;
+  margin: 0 auto 6rem;
+  padding: 0 2.2rem;
 }
 
 section h2 {
-  color: var(--accent);
+  font-family: var(--display);
+  color: var(--text);
   font-size: var(--fs-h2);
   font-weight: 500;
-  letter-spacing: 2.5px;
-  padding-bottom: 0.6rem;
+  letter-spacing: -0.4px;
+  padding-bottom: 0.7rem;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.8rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+}
+
+section h2::before {
+  counter-increment: sec;
+  content: counter(sec, decimal-leading-zero);
+  font-family: var(--font);
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 1px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 0.15rem 0.5rem;
+  flex-shrink: 0;
+  align-self: center;
+  box-shadow: 0 0 18px -6px var(--accent);
 }
 
 .lede {
+  font-family: var(--serif);
   color: var(--text-soft);
   font-size: var(--fs-lede);
   max-width: var(--reading-max);
-  margin-bottom: 1.75rem;
+  margin-bottom: 2rem;
   line-height: var(--lh-body);
 }
 
 .lede em {
-  color: var(--accent);
-  font-style: normal;
+  color: var(--accent-hi);
+  font-style: italic;
+  font-family: var(--display);
 }
 
 /* method section on the home page */
 .method-section h3.sub {
-  font-size: var(--fs-body);
+  font-family: var(--display);
+  font-size: var(--fs-h3);
   font-weight: 500;
-  letter-spacing: 1.2px;
+  letter-spacing: -0.2px;
   color: var(--text);
-  margin: 2.2rem 0 0.75rem;
-  padding-bottom: 0.35rem;
+  margin: 2.6rem 0 0.9rem;
+  padding-bottom: 0.4rem;
   border-bottom: 1px solid var(--border);
 }
 
@@ -252,69 +490,69 @@ section h2 {
   list-style: none;
   counter-reset: step;
   padding: 0;
-  margin: 0.5rem 0 1.25rem;
+  margin: 0.6rem 0 1.5rem;
 }
 
 .method-section ol.steps li {
   counter-increment: step;
-  padding: 0.55rem 0 0.55rem 2.5rem;
+  padding: 0.6rem 0 0.7rem 3rem;
   position: relative;
+  font-family: var(--serif);
   font-size: var(--fs-body);
   line-height: var(--lh-body);
 }
 
 .method-section ol.steps li::before {
-  content: counter(step);
+  content: counter(step, decimal-leading-zero);
   position: absolute;
   left: 0;
-  top: 0.6rem;
-  width: 1.7rem;
-  height: 1.7rem;
+  top: 0.75rem;
+  width: 2rem;
+  height: 2rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--border-hi);
+  background: var(--surface);
   color: var(--accent);
-  font-size: var(--fs-small);
+  font-family: var(--font);
+  font-size: 0.72rem;
   border-radius: 50%;
   font-weight: 500;
 }
 
-.method-section ol.steps li strong { color: var(--accent); font-weight: 500; }
-.method-section ol.steps li em { color: var(--text); font-style: normal; border-bottom: 1px dotted var(--dim); }
+.method-section ol.steps li strong { color: var(--accent-hi); font-weight: 500; font-family: var(--font); font-size: 0.92em; }
+.method-section ol.steps li em { color: var(--text); font-style: italic; font-family: var(--display); }
 .method-section ol.steps li code,
 .method-section p code {
-  color: var(--text);
-  background: var(--surface);
-  padding: 0.1rem 0.35rem;
-  border-radius: 2px;
+  font-family: var(--font);
+  color: var(--text-soft);
+  background: var(--bg-deep);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
   border: 1px solid var(--border);
-  font-size: 0.86em;
+  font-size: 0.82em;
 }
 
 .method-section pre {
-  background: var(--surface);
+  background: var(--bg-deep);
   border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
   padding: 1rem 1.15rem;
   overflow-x: auto;
+  font-family: var(--font);
   font-size: var(--fs-aux);
   line-height: 1.7;
   margin: 0.5rem 0 1.5rem;
-  border-radius: 2px;
+  border-radius: 3px;
 }
 
-.method-section pre code {
-  background: none;
-  border: none;
-  padding: 0;
-  font-size: inherit;
-  color: var(--text);
-}
+.method-section pre code { background: none; border: none; padding: 0; font-size: inherit; color: var(--text); }
 
-.method-section p { font-size: var(--fs-body); line-height: var(--lh-body); margin-bottom: 1rem; }
-.method-section p strong { color: var(--accent); font-weight: 500; }
-.method-section p em { color: var(--text); font-style: normal; border-bottom: 1px dotted var(--dim); }
-.method-section p.dim { font-size: var(--fs-aux); color: var(--dim-soft); }
+.method-section p { font-family: var(--serif); font-size: var(--fs-body); line-height: var(--lh-body); margin-bottom: 1rem; }
+.method-section p strong { color: var(--accent-hi); font-weight: 500; font-family: var(--font); font-size: 0.92em; }
+.method-section p em { color: var(--text); font-style: italic; font-family: var(--display); }
+.method-section p.dim { font-family: var(--font); font-size: var(--fs-aux); color: var(--dim-soft); letter-spacing: 0.2px; line-height: 1.6; }
 .method-section p a {
   color: var(--accent);
   text-decoration: none;
@@ -325,17 +563,19 @@ section h2 {
 /* ── architecture / mcts / chart frame ─────────────────────────── */
 
 .svg-frame {
-  background: var(--surface);
+  background:
+    radial-gradient(100% 100% at 50% 0%, rgba(53, 221, 192, 0.04), transparent 70%),
+    var(--surface);
   border: 1px solid var(--border);
-  padding: 1.4rem 1.1rem;
-  margin: 0.5rem 0 1.5rem;
+  padding: 1.5rem 1.2rem;
+  margin: 0.8rem 0 1.6rem;
   overflow-x: auto;
-  border-radius: 2px;
+  border-radius: 3px;
 }
 
 .diagram { width: 100%; height: auto; display: block; }
 
-/* common SVG primitives */
+/* common SVG primitives (unchanged class hooks; new palette) */
 .diagram text { font-family: var(--font); font-size: 12px; fill: var(--text); }
 .diagram text.sub { fill: var(--dim); font-size: 10.5px; }
 .diagram text.annot { font-size: 10.5px; fill: var(--dim-soft); }
@@ -343,44 +583,20 @@ section h2 {
 .diagram text.annot.dim { fill: var(--dim); opacity: 0.85; }
 .diagram text.small { font-size: 10px; }
 .diagram text.big { font-size: 14px; fill: var(--text); font-weight: 500; }
-.diagram text.huge { font-size: 22px; fill: var(--accent); font-weight: 500; }
+.diagram text.huge { font-size: 22px; fill: var(--hot); font-weight: 500; }
 
 /* architecture */
-.arch-block rect {
-  fill: var(--card);
-  stroke: var(--accent);
-  stroke-width: 1.2;
-}
+.arch-block rect { fill: var(--card); stroke: var(--accent); stroke-width: 1.2; }
 .arch-block.stacked .trail  { stroke: var(--accent); opacity: 0.5; }
 .arch-block.stacked .trail2 { stroke: var(--accent); opacity: 0.25; }
 .arch-block.head rect { stroke-dasharray: none; }
 
 /* mcts */
-.tree .edge {
-  stroke: var(--dim);
-  stroke-width: 1;
-  opacity: 0.55;
-}
-.tree .edge.primary {
-  stroke: var(--accent);
-  stroke-width: 2;
-  opacity: 1;
-}
-.tree .node circle {
-  fill: var(--card);
-  stroke: var(--dim);
-  stroke-width: 1;
-}
-.tree .node.primary circle {
-  fill: rgba(0, 212, 170, 0.10);
-  stroke: var(--accent);
-  stroke-width: 1.5;
-}
-.tree .node.root circle {
-  fill: var(--surface);
-  stroke: var(--accent);
-  stroke-width: 1.5;
-}
+.tree .edge { stroke: var(--dim); stroke-width: 1; opacity: 0.5; }
+.tree .edge.primary { stroke: var(--hot); stroke-width: 2; opacity: 1; }
+.tree .node circle { fill: var(--card); stroke: var(--dim); stroke-width: 1; }
+.tree .node.primary circle { fill: var(--hot-soft); stroke: var(--hot); stroke-width: 1.5; }
+.tree .node.root circle { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; }
 .tree .legend text { font-size: 10.5px; }
 
 /* chart */
@@ -389,164 +605,127 @@ section h2 {
 .chart .tick text { fill: var(--dim-soft); font-size: 10.5px; }
 .chart .axis-label { fill: var(--dim-soft); font-size: 10.5px; letter-spacing: 1px; }
 .chart .grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 4; opacity: 0.5; }
-.chart .curve-dashed {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 1.2;
-  stroke-dasharray: 4 4;
-  opacity: 0.55;
-}
-.chart .curve-solid {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 1.6;
-}
+.chart .curve-dashed { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 4 4; opacity: 0.55; }
+.chart .curve-solid { fill: none; stroke: var(--accent); stroke-width: 1.8; }
 .chart .point.baseline circle { fill: var(--card); stroke: var(--dim); stroke-width: 1.5; }
-.chart .point.primary circle  { fill: var(--accent); stroke: var(--accent-hi); stroke-width: 1.5; }
+.chart .point.primary circle  { fill: var(--hot); stroke: var(--hot-hi); stroke-width: 1.5; }
 .chart .point.measured circle { fill: var(--accent); stroke: var(--accent-hi); stroke-width: 1.5; }
-.chart .delta { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.75; }
+.chart .delta { stroke: var(--hot); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.8; }
 .chart .bar { fill: var(--accent); }
 .chart .bar.dim { fill: var(--dim); }
 .chart .bar.label { fill: var(--text); }
 .chart .baseline-line { stroke: var(--dim); stroke-width: 1; stroke-dasharray: 3 3; }
 
-/* ── experiments / hypothesis cards (new) ─────────────────────── */
+/* ── experiments / hypothesis cards ───────────────────────────── */
 
 .hypothesis-grid {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 1.5rem;
   margin-bottom: 1.5rem;
 }
 
 .hypothesis {
+  position: relative;
   background: var(--card);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  padding: 1.75rem 2rem 1.5rem;
-  border-radius: 2px;
+  border-top: 2px solid var(--accent);
+  padding: 1.8rem 2rem 1.6rem;
+  border-radius: 3px;
+  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+
+.hypothesis:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 22px 46px -30px rgba(0, 0, 0, 0.9);
 }
 
 .hypothesis .head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.7rem;
-  margin-bottom: 0.9rem;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
 }
 
 .tag {
+  font-family: var(--font);
   font-size: var(--fs-micro);
-  letter-spacing: 1.8px;
-  color: var(--dim);
+  letter-spacing: 1.6px;
+  color: var(--dim-soft);
   text-transform: uppercase;
-  padding: 0.2rem 0.55rem;
+  padding: 0.24rem 0.6rem;
   border: 1px solid var(--border-hi);
-  border-radius: 2px;
+  border-radius: 3px;
 }
 
 .badge {
+  font-family: var(--font);
   font-size: var(--fs-micro);
-  letter-spacing: 1.8px;
+  letter-spacing: 1.6px;
   text-transform: uppercase;
-  padding: 0.2rem 0.6rem;
-  border-radius: 2px;
+  padding: 0.24rem 0.65rem;
+  border-radius: 3px;
   font-weight: 600;
 }
 
-.badge.confirmed {
-  background: var(--accent-soft);
-  color: var(--accent-hi);
-  border: 1px solid var(--accent);
-}
-
-.badge.rejected {
-  background: rgba(232, 64, 87, 0.10);
-  color: var(--red);
-  border: 1px solid rgba(232, 64, 87, 0.55);
-}
-
-.badge.partial {
-  background: rgba(240, 192, 64, 0.10);
-  color: var(--warn);
-  border: 1px solid rgba(240, 192, 64, 0.5);
-}
+.badge.confirmed { background: var(--hot-soft); color: var(--hot-hi); border: 1px solid var(--hot); }
+.badge.rejected  { background: rgba(255, 93, 108, 0.1); color: var(--red); border: 1px solid rgba(255, 93, 108, 0.55); }
+.badge.partial   { background: rgba(255, 207, 92, 0.1); color: var(--warn); border: 1px solid rgba(255, 207, 92, 0.5); }
 
 .hypothesis h3 {
+  font-family: var(--display);
   font-size: var(--fs-h3);
-  font-weight: 400;
+  font-weight: 500;
   color: var(--text);
-  letter-spacing: 0.3px;
+  letter-spacing: -0.2px;
   text-transform: none;
-  line-height: 1.35;
-  margin: 0.2rem 0 0.6rem;
+  line-height: 1.28;
+  margin: 0.3rem 0 0.7rem;
 }
 
 .hypothesis .hyp-line {
+  font-family: var(--serif);
   color: var(--dim-soft);
   font-size: var(--fs-aux);
   margin-bottom: 1rem;
-  padding-left: 0.9rem;
+  padding-left: 0.95rem;
   border-left: 1px solid var(--border-hi);
   line-height: var(--lh-body);
 }
 
-.hypothesis .hyp-line strong {
-  color: var(--text);
-  font-weight: 500;
-}
+.hypothesis .hyp-line strong { color: var(--text); font-weight: 500; }
 
-.hypothesis .body p {
-  font-size: var(--fs-body);
-  margin-bottom: 0.9rem;
-  line-height: var(--lh-body);
-}
-
+.hypothesis .body p { font-family: var(--serif); font-size: var(--fs-body); margin-bottom: 0.9rem; line-height: var(--lh-body); }
 .hypothesis .body p:last-child { margin-bottom: 0; }
 
-/* teaser variant — used on the home page so the cards are short
-   summaries that link out to the experiments page for the deep dive */
-.hypothesis.teaser {
-  padding: 1.4rem 1.6rem 1.3rem;
-}
-
-.hypothesis.teaser h3 {
-  font-size: var(--fs-h3);
-  margin: 0.15rem 0 0.6rem;
-}
-
+/* teaser variant — home page short cards */
+.hypothesis.teaser { padding: 1.6rem 1.7rem 1.4rem; }
+.hypothesis.teaser h3 { font-size: var(--fs-h3); margin: 0.2rem 0 0.65rem; }
 .hypothesis.teaser .hyp-line {
   padding-left: 0;
   border-left: none;
   color: var(--text-soft);
-  font-size: var(--fs-body);
-  margin-bottom: 0.85rem;
+  font-size: var(--fs-aux);
+  margin-bottom: 0.9rem;
 }
-
-.hypothesis.teaser .result-row {
-  padding: 0.75rem 0 0.9rem;
-  margin: 0;
-  gap: 1.6rem;
-}
-
-.hypothesis.teaser .card-link {
-  margin: 0.6rem 0 0;
-  font-size: var(--fs-small);
-}
-
+.hypothesis.teaser .result-row { padding: 0.9rem 0 1rem; margin: 0; gap: 1.4rem; }
+.hypothesis.teaser .card-link { margin: 0.7rem 0 0; font-size: var(--fs-small); }
 .hypothesis.teaser .card-link a {
+  font-family: var(--font);
   color: var(--accent);
   text-decoration: none;
   border-bottom: 1px dotted var(--accent);
 }
-
 .hypothesis.teaser .card-link a:hover { border-bottom-style: solid; }
 
-/* horizontal link clusters used on the home page */
+/* horizontal link clusters */
 .quick-links, .cluster-links {
   display: flex;
   flex-wrap: wrap;
   gap: 0.85rem 1.6rem;
-  margin: 1rem 0 0;
+  margin: 1.2rem 0 0;
+  font-family: var(--font);
   font-size: var(--fs-small);
 }
 
@@ -554,105 +733,83 @@ section h2 {
   color: var(--accent);
   text-decoration: none;
   border-bottom: 1px dotted var(--accent);
+  transition: color 0.15s;
 }
-
-.quick-links a:hover, .cluster-links a:hover { border-bottom-style: solid; }
+.quick-links a:hover, .cluster-links a:hover { border-bottom-style: solid; color: var(--accent-hi); }
 
 .cluster-links {
-  margin-top: 1.5rem;
-  padding-top: 1rem;
+  margin-top: 1.75rem;
+  padding-top: 1.1rem;
   border-top: 1px solid var(--border);
 }
 
-.hypothesis strong { color: var(--accent); font-weight: 500; }
-.hypothesis em { color: var(--text); font-style: normal; border-bottom: 1px dotted var(--dim); }
+.hypothesis strong { color: var(--accent-hi); font-weight: 500; }
+.hypothesis em { color: var(--text); font-style: italic; font-family: var(--display); }
 .hypothesis .dim { color: var(--dim-soft); font-size: var(--fs-aux); }
 
 .hypothesis .result-row {
   display: flex;
   flex-wrap: wrap;
   gap: 1.8rem;
-  padding: 0.9rem 0 1.1rem;
-  margin: 0.4rem 0 1.1rem;
+  padding: 1rem 0 1.1rem;
+  margin: 0.5rem 0 1.1rem;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
 
-.hypothesis .stat {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
+.hypothesis .stat { display: flex; flex-direction: column; gap: 0.35rem; }
 
 .hypothesis .stat .label {
+  font-family: var(--font);
   font-size: var(--fs-micro);
   color: var(--dim);
-  letter-spacing: 1.5px;
+  letter-spacing: 1.4px;
   text-transform: uppercase;
 }
 
 .hypothesis .stat .value {
-  color: var(--accent);
+  font-family: var(--font);
+  color: var(--text);
   font-size: var(--fs-stat);
   font-weight: 500;
-  letter-spacing: 1px;
+  letter-spacing: -0.5px;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
-.hypothesis .stat .value.dim {
-  color: var(--dim);
-  font-size: var(--fs-stat);
-}
+/* the delta cell is the hero of each card */
+.hypothesis .stat:last-child .value { color: var(--hot); text-shadow: 0 0 22px rgba(95, 240, 214, 0.4); }
+.hypothesis .stat .value.dim { color: var(--dim); font-size: var(--fs-stat); text-shadow: none; }
 
-.hypothesis .stat .delta {
-  color: var(--accent);
-  font-size: var(--fs-small);
-  letter-spacing: 0.5px;
-}
+.hypothesis .stat .delta { font-family: var(--font); color: var(--hot); font-size: var(--fs-small); letter-spacing: 0.5px; }
+.hypothesis .stat .delta.neg { color: var(--red); }
 
-.hypothesis .stat .delta.neg {
-  color: var(--red);
-}
-
-/* legacy .finding kept for any straggling refs */
+/* legacy .finding */
 .finding {
   background: var(--card);
   border: 1px solid var(--border);
   border-left: 2px solid var(--accent);
-  padding: 1.5rem 1.75rem;
+  padding: 1.6rem 1.8rem;
   margin-bottom: 1.5rem;
-  border-radius: 2px;
+  border-radius: 3px;
 }
-
 .finding-tag {
   display: inline-block;
+  font-family: var(--font);
   font-size: var(--fs-micro);
-  letter-spacing: 1.8px;
+  letter-spacing: 1.6px;
   color: var(--accent);
   text-transform: uppercase;
-  padding: 0.18rem 0.55rem;
+  padding: 0.2rem 0.6rem;
   border: 1px solid var(--accent);
-  margin-bottom: 0.7rem;
-  border-radius: 2px;
+  margin-bottom: 0.8rem;
+  border-radius: 3px;
 }
-
-.finding h3 {
-  font-size: var(--fs-h3);
-  font-weight: 400;
-  color: var(--text);
-  margin-bottom: 0.65rem;
-  letter-spacing: 0.3px;
-}
-
-.finding p {
-  font-size: var(--fs-body);
-  margin-bottom: 0.9rem;
-}
-
+.finding h3 { font-family: var(--display); font-size: var(--fs-h3); font-weight: 500; color: var(--text); margin-bottom: 0.7rem; letter-spacing: -0.2px; }
+.finding p { font-family: var(--serif); font-size: var(--fs-body); margin-bottom: 0.9rem; }
 .finding p:last-child { margin-bottom: 0; }
-
-.finding strong { color: var(--accent); font-weight: 500; }
-.finding em { color: var(--text); font-style: normal; border-bottom: 1px dotted var(--dim); }
+.finding strong { color: var(--accent-hi); font-weight: 500; }
+.finding em { color: var(--text); font-style: italic; font-family: var(--display); }
 .finding .dim { color: var(--dim-soft); font-size: var(--fs-aux); }
 
 .findings > p a,
@@ -660,37 +817,34 @@ section h2 {
 .mcts-section > p a,
 .vs-az > p a,
 .next > p a {
+  font-family: var(--font);
   color: var(--accent);
   text-decoration: none;
   font-size: var(--fs-aux);
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
   border-bottom: 1px dotted var(--accent);
 }
 
-/* ── vs alphazero table ───────────────────────────────────────── */
+/* ── tables — the "readout" ────────────────────────────────────── */
 
-/* unified table styling: applies to both `table.compact` (vs-AZ on home)
-   and `.content table` (markdown tables on detail pages). Same font
-   sizes, same paddings, same header treatment everywhere. */
 table.compact,
 .content table {
-  /* width: auto lets a 2-column table (epoch / Elo) size to its content
-     instead of stretching across the full reading column. max-width: 100%
-     caps wider tables (vs-AZ) at the container width. */
   width: auto;
   max-width: 100%;
   border-collapse: collapse;
-  margin: 1rem 0;
+  margin: 1.3rem 0;
+  font-family: var(--font);
   font-size: var(--fs-aux);
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 2px;
+  border-radius: 3px;
+  overflow: hidden;
 }
 
 table.compact th, table.compact td,
 .content th, .content td {
   text-align: left;
-  padding: 0.7rem 1rem;
+  padding: 0.72rem 1.05rem;
   border-bottom: 1px solid var(--border);
   font-size: var(--fs-aux);
   font-variant-numeric: tabular-nums;
@@ -700,321 +854,294 @@ table.compact th,
 .content th {
   color: var(--accent);
   font-weight: 500;
-  letter-spacing: 1.2px;
-  background: var(--surface);
+  letter-spacing: 1px;
+  background: var(--bg-deep);
   font-size: var(--fs-th);
+  text-transform: uppercase;
+  position: sticky;
+  top: 0;
 }
 
 table.compact td:first-child,
 .content td:first-child {
-  color: var(--dim-soft);
-  letter-spacing: 0.5px;
-  text-transform: lowercase;
+  color: var(--text-soft);
+  letter-spacing: 0.3px;
 }
 
-/* matrix-style tables intentionally fill the reading column —
-   they're the summary view, not data points inside prose. */
 table.matrix {
   width: 100%;
   max-width: var(--content-max);
-  margin: 1rem 0 1.25rem;
+  margin: 1.3rem 0 1.5rem;
 }
 table.matrix td { font-size: var(--fs-table); }
-table.matrix td:first-child { font-size: var(--fs-aux); }
+table.matrix td:first-child { font-size: var(--fs-aux); color: var(--dim-soft); }
 
+/* bold cells = a highlighted result: amber + faint glow */
 table.compact strong,
-.content strong { color: var(--accent); font-weight: 500; }
+.content table strong {
+  color: var(--hot);
+  font-weight: 500;
+  text-shadow: 0 0 16px rgba(95, 240, 214, 0.35);
+}
 
+table.compact tbody tr:nth-child(even) td,
+.content table tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.014); }
 table.compact tbody tr:last-child td,
 .content tbody tr:last-child td { border-bottom: 0; }
 table.compact tbody tr:hover td,
-.content tbody tr:hover td { background: rgba(0, 212, 170, 0.03); }
+.content table tbody tr:hover td { background: var(--accent-soft); }
 
 /* ── next section ─────────────────────────────────────────────── */
 
-.next p {
-  font-size: var(--fs-body);
-  margin-bottom: 0.85rem;
-}
-.next strong { color: var(--accent); font-weight: 500; }
+.next p { font-family: var(--serif); font-size: var(--fs-body); margin-bottom: 0.9rem; line-height: var(--lh-body); }
+.next strong { color: var(--accent-hi); font-weight: 500; font-family: var(--font); font-size: 0.92em; }
+.next em { color: var(--text); font-style: italic; font-family: var(--display); }
+.next p.dim { font-family: var(--font); font-size: var(--fs-aux); color: var(--dim-soft); letter-spacing: 0.2px; }
 
 /* ── links / card grid ────────────────────────────────────────── */
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
 }
 
-.grid-3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.grid-3 { grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); }
 
 .card {
+  position: relative;
   background: var(--card);
-  border: 1px solid var(--border);
-  padding: 1.9rem 1.85rem;
+  padding: 1.9rem 1.9rem;
   text-decoration: none;
   color: var(--text);
-  transition: border-color 0.2s, background 0.2s, transform 0.2s;
+  transition: background 0.2s;
+  overflow: hidden;
 }
 
-.card:hover {
-  border-color: var(--accent);
-  background: var(--card-hi);
-  transform: translateY(-1px);
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 120% at 100% 0%, var(--accent-soft), transparent 55%);
+  opacity: 0;
+  transition: opacity 0.25s;
 }
+
+.card:hover { background: var(--card-hi); }
+.card:hover::after { opacity: 1; }
+
+.card-icon {
+  position: relative;
+  display: block;
+  font-family: var(--font);
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--accent);
+  opacity: 0.8;
+  margin-bottom: 1rem;
+  transition: color 0.2s, transform 0.2s, opacity 0.2s;
+}
+.card:hover .card-icon { color: var(--accent-hi); opacity: 1; transform: translateY(-2px); }
 
 .card h3 {
+  font-family: var(--display);
   font-weight: 500;
-  font-size: var(--fs-lede);
-  margin-bottom: 0.45rem;
-  color: var(--accent);
-  letter-spacing: 0.5px;
+  font-size: var(--fs-h3);
+  margin-bottom: 0.5rem;
+  color: var(--text);
+  letter-spacing: -0.2px;
+  transition: color 0.2s;
 }
+.card:hover h3 { color: var(--accent-hi); }
 
-.card p {
-  font-size: var(--fs-aux);
-  color: var(--dim-soft);
-  line-height: var(--lh-body);
-}
+.card p { font-family: var(--font); font-size: var(--fs-aux); color: var(--dim-soft); line-height: 1.65; letter-spacing: 0.1px; }
 
 /* ── per-page (detail pages) ──────────────────────────────────── */
 
-.page {
-  max-width: 840px;
-  margin: 0 auto;
-  padding: 3rem 1.85rem 5rem;
-}
+.page { max-width: 860px; margin: 0 auto; padding: 3.5rem 1.9rem 5rem; }
 
 .page header {
-  margin-bottom: 2.5rem;
-  padding-bottom: 1.3rem;
+  margin-bottom: 2.8rem;
+  padding-bottom: 1.4rem;
   border-bottom: 1px solid var(--border);
 }
 
 .page h1 {
+  font-family: var(--display);
   font-size: var(--fs-h1);
-  font-weight: 300;
-  letter-spacing: 2.5px;
+  font-weight: 500;
+  letter-spacing: -1px;
   color: var(--text);
-  line-height: 1.15;
+  line-height: 1.06;
+  text-wrap: balance;
 }
 
 .page .subtitle {
+  font-family: var(--font);
   color: var(--dim-soft);
   font-size: var(--fs-aux);
-  margin-top: 0.6rem;
-  letter-spacing: 0.8px;
+  margin-top: 0.8rem;
+  letter-spacing: 0.4px;
 }
 
 .content h2 {
+  font-family: var(--display);
   font-size: var(--fs-h2);
   font-weight: 500;
-  letter-spacing: 2.2px;
-  color: var(--accent);
-  margin: 2.85rem 0 0.9rem;
-  padding-bottom: 0.45rem;
+  letter-spacing: -0.4px;
+  color: var(--text);
+  margin: 3rem 0 1rem;
+  padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--border);
+}
+.content h2::before {
+  content: "";
+  display: inline-block;
+  width: 0.55rem; height: 0.55rem;
+  margin-right: 0.7rem;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+  vertical-align: middle;
 }
 
 .content h3 {
+  font-family: var(--display);
   font-size: var(--fs-h3);
   font-weight: 500;
-  letter-spacing: 0.8px;
+  letter-spacing: -0.2px;
   color: var(--text);
   text-transform: none;
-  margin: 1.7rem 0 0.55rem;
+  margin: 1.9rem 0 0.6rem;
 }
 
 .content p, .content ul, .content ol {
+  font-family: var(--serif);
   color: var(--text);
   font-size: var(--fs-body);
   line-height: var(--lh-body);
-  margin-bottom: 1rem;
+  margin-bottom: 1.1rem;
 }
 
-.content ul, .content ol { padding-left: 1.5rem; }
+.content ul, .content ol { padding-left: 1.6rem; }
+.content li { margin-bottom: 0.45rem; }
+.content li::marker { color: var(--accent); }
 
-.content li { margin-bottom: 0.4rem; }
-
-.content a {
-  color: var(--accent);
-  text-decoration: none;
-  border-bottom: 1px dotted var(--accent);
-}
-
+.content a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); }
 .content a:hover { border-bottom-style: solid; }
-
-.content strong { color: var(--accent); font-weight: 500; }
-
-.content em { color: var(--text); font-style: normal; border-bottom: 1px dotted var(--dim); }
+.content strong { color: var(--accent-hi); font-weight: 500; font-family: var(--font); font-size: 0.9em; }
+.content em { color: var(--text); font-style: italic; font-family: var(--display); }
 
 .content code {
-  color: var(--text);
-  background: var(--surface);
-  font-size: var(--fs-aux);
-  padding: 0.13rem 0.38rem;
-  border-radius: 2px;
+  font-family: var(--font);
+  color: var(--text-soft);
+  background: var(--bg-deep);
+  font-size: 0.82em;
+  padding: 0.13rem 0.4rem;
+  border-radius: 3px;
   border: 1px solid var(--border);
 }
 
 .content pre {
-  background: var(--surface);
+  background: var(--bg-deep);
   border: 1px solid var(--border);
-  padding: 1rem 1.15rem;
+  border-left: 2px solid var(--accent);
+  padding: 1rem 1.2rem;
   overflow-x: auto;
+  font-family: var(--font);
   font-size: var(--fs-aux);
-  margin-bottom: 1.3rem;
+  margin-bottom: 1.4rem;
   line-height: 1.72;
-  border-radius: 2px;
+  border-radius: 3px;
 }
-
-.content pre code {
-  background: none;
-  border: none;
-  padding: 0;
-  font-size: inherit;
-}
-
-/* .content table styling moved up into the unified block above */
+.content pre code { background: none; border: none; padding: 0; font-size: inherit; color: var(--text); }
 
 .content blockquote {
-  border-left: 2px solid var(--accent);
-  padding-left: 1.1rem;
-  margin: 1.2rem 0;
-  color: var(--dim-soft);
-  font-size: var(--fs-aux);
+  border-left: 2px solid var(--hot);
+  padding: 0.3rem 0 0.3rem 1.2rem;
+  margin: 1.4rem 0;
+  color: var(--text-soft);
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 1.12rem;
 }
 
-/* sticky sidebar TOC on long detail pages */
+/* sticky sidebar TOC */
 .page-with-toc {
   display: grid;
   grid-template-columns: 220px 1fr;
-  gap: 3rem;
-  max-width: 1080px;
+  gap: 3.5rem;
+  max-width: 1120px;
   margin: 0 auto;
-  padding: 3rem 1.85rem 5rem;
+  padding: 3.5rem 1.9rem 5rem;
 }
-
-.page-with-toc .page-body {
-  min-width: 0; /* lets long pre/code lines wrap inside the grid track */
-}
+.page-with-toc .page-body { min-width: 0; }
 
 .page-side-toc {
   position: sticky;
-  top: 5rem;
+  top: 5.5rem;
   align-self: start;
-  max-height: calc(100vh - 6rem);
+  max-height: calc(100vh - 6.5rem);
   overflow-y: auto;
   padding: 0;
+  font-family: var(--font);
   font-size: var(--fs-small);
   line-height: 1.6;
 }
 
-.page-side-toc-inner {
-  border-left: 1px solid var(--border);
-  padding: 0.2rem 0 0.2rem 0.9rem;
-}
+.page-side-toc-inner { border-left: 1px solid var(--border); padding: 0.2rem 0 0.2rem 0.9rem; }
 
 .page-side-toc-label {
   font-size: var(--fs-micro);
   color: var(--dim);
   letter-spacing: 2px;
   text-transform: uppercase;
-  margin-bottom: 0.65rem;
+  margin-bottom: 0.7rem;
   font-weight: 500;
 }
 
-.page-side-toc ul,
-.page-side-toc ol {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.page-side-toc li { margin: 0.18rem 0; }
-
-.page-side-toc ul ul {
-  padding-left: 0.85rem;
-  margin: 0.18rem 0;
-  border-left: 1px solid var(--border);
-}
+.page-side-toc ul, .page-side-toc ol { list-style: none; padding: 0; margin: 0; }
+.page-side-toc li { margin: 0.2rem 0; }
+.page-side-toc ul ul { padding-left: 0.85rem; margin: 0.2rem 0; border-left: 1px solid var(--border); }
 
 .page-side-toc a {
   display: block;
   color: var(--dim-soft);
   text-decoration: none;
-  padding: 0.18rem 0.5rem 0.18rem 0.6rem;
+  padding: 0.2rem 0.5rem 0.2rem 0.6rem;
   border-left: 2px solid transparent;
   margin-left: -1px;
   transition: color 0.15s, border-color 0.15s;
 }
-
 .page-side-toc a:hover { color: var(--text); }
+.page-side-toc a.active { color: var(--accent); border-left-color: var(--accent); font-weight: 500; }
 
-.page-side-toc a.active {
-  color: var(--accent);
-  border-left-color: var(--accent);
-  font-weight: 500;
-}
-
-/* fallback inline TOC (legacy, kept in case any older markdown still uses it) */
 .page-toc {
   margin: 0 0 2rem;
-  padding: 0.9rem 1.1rem;
+  padding: 1rem 1.15rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-left: 2px solid var(--accent);
-  border-radius: 2px;
+  border-radius: 3px;
+  font-family: var(--font);
   font-size: var(--fs-aux);
 }
-
-.page-toc ul, .page-toc ol {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem 1.4rem;
-}
-
+.page-toc ul, .page-toc ol { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem; }
 .page-toc li { margin: 0; }
-
-.page-toc li::before {
-  content: "›";
-  color: var(--dim);
-  margin-right: 0.4rem;
-}
-
-.page-toc a {
-  color: var(--accent);
-  text-decoration: none;
-  border-bottom: 1px dotted transparent;
-}
-
+.page-toc li::before { content: "›"; color: var(--dim); margin-right: 0.4rem; }
+.page-toc a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted transparent; }
 .page-toc a:hover { border-bottom-color: var(--accent); }
 
-.page-next {
-  margin-top: 3rem;
-  padding-top: 1.1rem;
-  border-top: 1px solid var(--border);
-}
-
-.page-next a {
-  color: var(--accent);
-  text-decoration: none;
-  font-size: var(--fs-aux);
-  letter-spacing: 0.8px;
-}
-
+.page-next { margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid var(--border); }
+.page-next a { font-family: var(--font); color: var(--accent); text-decoration: none; font-size: var(--fs-aux); letter-spacing: 0.6px; }
 .page-next a:hover { text-decoration: underline; }
 
 /* ── footer ────────────────────────────────────────────────── */
 
-footer {
-  border-top: 1px solid var(--border);
-  margin-top: 4rem;
-  padding: 1.85rem 2rem;
-}
+footer { border-top: 1px solid var(--border); margin-top: 5rem; padding: 2rem 2.2rem; }
 
 .footer-inner {
   max-width: var(--content-max);
@@ -1022,51 +1149,75 @@ footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  font-family: var(--font);
   font-size: var(--fs-small);
   color: var(--dim);
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
 }
-
 footer a { color: var(--accent); text-decoration: none; }
 footer a:hover { text-decoration: underline; }
 
 .dim { color: var(--dim); }
 
+/* ── motion: entrance reveals + hero glow (opt-in only) ────────── */
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: none; }
+  }
+  .hero-kicker { opacity: 0; animation: rise 0.7s ease 0.05s forwards; }
+  .hero h1     { opacity: 0; animation: rise 0.8s ease 0.16s forwards; }
+  .tagline     { opacity: 0; animation: rise 0.8s ease 0.3s forwards; }
+  .result-box  { opacity: 0; animation: rise 0.9s ease 0.42s forwards; }
+  .result-context-block { opacity: 0; animation: rise 0.9s ease 0.55s forwards; }
+
+  @keyframes breathe {
+    0%, 100% { opacity: 0.55; transform: translate(-50%, -50%) scale(1); }
+    50%      { opacity: 1;    transform: translate(-50%, -50%) scale(1.09); }
+  }
+  .hero::after { animation: breathe 9s ease-in-out infinite; }
+}
+
 /* ── responsive ───────────────────────────────────────────────── */
 
+@media (max-width: 900px) {
+  :root { --fs-hero: 3.3rem; --fs-display: 3.2rem; }
+  .result-strip { grid-template-columns: 1fr; gap: 2rem; }
+  .result-box { max-width: 420px; margin: 0 auto; }
+}
+
 @media (max-width: 760px) {
-  /* Re-map the global type scale once → every rule using var() picks
-     up the smaller size automatically. No per-rule overrides needed. */
   :root {
-    --fs-display: 2.6rem;
-    --fs-hero:    1.7rem;
-    --fs-h1:      1.55rem;
-    --fs-stat:    1.15rem;
-    --fs-h3:      1rem;
-    --fs-h2:      0.9rem;
-    --fs-lede:    0.92rem;
-    --fs-body:    0.88rem;
-    --fs-aux:     0.8rem;
-    --fs-small:   0.72rem;
-    --fs-micro:   0.58rem;
-    --fs-table:   0.78rem;
+    --fs-display: 2.9rem;
+    --fs-hero:    2.6rem;
+    --fs-h1:      1.9rem;
+    --fs-stat:    1.45rem;
+    --fs-h3:      1.12rem;
+    --fs-h2:      1.25rem;
+    --fs-lede:    1rem;
+    --fs-body:    0.98rem;
+    --fs-aux:     0.86rem;
+    --fs-small:   0.76rem;
+    --fs-micro:   0.6rem;
+    --fs-table:   0.8rem;
     --fs-th:      0.66rem;
   }
 
-  body { font-size: 13.5px; line-height: 1.68; }
+  body { font-size: 16px; line-height: 1.68; }
 
-  /* Layout-only mobile overrides (padding, gap, structure). */
-  nav { padding: 0.7rem 0.8rem; gap: 0.7rem; }
-  .nav-logo { letter-spacing: 1px; }
-  .nav-links { gap: 0.85rem; }
-  .nav-links a { letter-spacing: 0.4px; }
+  body > nav { padding: 0.7rem 1rem; gap: 0.7rem; }
+  .nav-logo { letter-spacing: 0.5px; }
+  .nav-links { gap: 1rem; }
+  .nav-links a { letter-spacing: 0.2px; }
 
-  .hero { padding: 2.5rem 1rem 0.4rem; }
-  .hero h1 { letter-spacing: 0.4px; word-spacing: 0.15em; }
-  .tagline { letter-spacing: 0.3px; line-height: 1.55; }
+  .hero { padding: 3.5rem 1rem 1rem; }
+  .hero-kicker { letter-spacing: 2.5px; }
+  .hero-kicker::before, .hero-kicker::after { width: 16px; margin: 0 0.5rem; }
+  .hero h1 { letter-spacing: -0.8px; }
 
-  .result-strip { grid-template-columns: 1fr; gap: 1.5rem; margin-bottom: 2.5rem; padding: 0 1rem; }
-  .result-box { padding: 1.6rem 1.2rem; }
+  .result-strip { margin: 1.5rem auto 3.5rem; padding: 0 1.1rem; }
+  .result-context-block p:first-child::first-letter { font-size: 2.6rem; }
 
   section.diagram-section,
   section.method-section,
@@ -1074,42 +1225,21 @@ footer a:hover { text-decoration: underline; }
   section.findings,
   section.mcts-section,
   section.vs-az,
+  section.results-matrix,
   section.next,
-  section.links { padding: 0 1rem; margin-bottom: 2.75rem; }
+  section.links { padding: 0 1.1rem; margin-bottom: 3.5rem; }
 
-  section h2 { letter-spacing: 1.6px; }
+  section h2 { gap: 0.7rem; }
 
-  /* Hypothesis cards: stack the stat row vertically so values don't
-     overflow narrow phones. */
-  .hypothesis { padding: 1.15rem 1.1rem 1rem; }
-  .hypothesis h3 { line-height: 1.3; }
-  .hypothesis .hyp-line { padding-left: 0.65rem; }
+  .hypothesis { padding: 1.3rem 1.2rem 1.1rem; }
   .hypothesis .head { gap: 0.4rem; }
-  .hypothesis .tag, .hypothesis .badge { padding: 0.16rem 0.45rem; }
-  .hypothesis .result-row {
-    flex-direction: column;
-    gap: 0.6rem;
-    padding: 0.8rem 0 0.9rem;
-  }
-  .hypothesis .stat {
-    flex-direction: row;
-    align-items: baseline;
-    gap: 0.6rem;
-    flex-wrap: wrap;
-  }
+  .hypothesis .tag, .hypothesis .badge { padding: 0.18rem 0.5rem; }
+  .hypothesis .result-row { flex-direction: column; gap: 0.7rem; padding: 0.9rem 0 1rem; }
+  .hypothesis .stat { flex-direction: row; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
   .hypothesis .stat .label { min-width: 7rem; }
-  .hypothesis .stat .delta, .hypothesis .stat .dim {
-    width: 100%;
-    margin-top: -0.1rem;
-    padding-left: 7.6rem;
-  }
 
-  .finding { padding: 1.15rem 1.1rem; }
+  .finding { padding: 1.2rem 1.2rem; }
 
-  /* Tables: display:block + width:max-content lets narrow tables stay
-     narrow AND wide tables scroll horizontally inside their own box
-     instead of stretching the page. max-width caps any table at the
-     screen. */
   table.compact, .content table {
     display: block;
     width: max-content;
@@ -1117,20 +1247,13 @@ footer a:hover { text-decoration: underline; }
     overflow-x: auto;
   }
   table.compact th, table.compact td,
-  .content th, .content td {
-    padding: 0.5rem 0.7rem;
-    white-space: nowrap;
-  }
+  .content th, .content td { padding: 0.52rem 0.72rem; white-space: nowrap; }
 
-  .card { padding: 1.4rem 1.4rem; }
+  .card { padding: 1.5rem 1.4rem; }
   .footer-inner { flex-direction: column; gap: 0.5rem; text-align: center; }
 
-  .page { padding: 2rem 1.1rem 3.5rem; }
-  .page-with-toc {
-    grid-template-columns: 1fr;
-    gap: 0;
-    padding: 2rem 1.1rem 3.5rem;
-  }
+  .page { padding: 2.2rem 1.1rem 3.5rem; }
+  .page-with-toc { grid-template-columns: 1fr; gap: 0; padding: 2.2rem 1.1rem 3.5rem; }
   .page-side-toc {
     position: static;
     max-height: none;
@@ -1138,36 +1261,15 @@ footer a:hover { text-decoration: underline; }
     padding-bottom: 1rem;
     border-bottom: 1px solid var(--border);
   }
-  .page-side-toc-inner {
-    border-left: none;
-    padding: 0;
-  }
+  .page-side-toc-inner { border-left: none; padding: 0; }
   .page-side-toc ul ul { padding-left: 1rem; }
-  .page h1 { letter-spacing: 1px; }
-  .content h2 { letter-spacing: 1.8px; margin-top: 2rem; }
+  .content h2 { margin-top: 2.2rem; }
   .content pre { padding: 0.8rem 0.9rem; }
 }
 
-/* extra-tight breakpoint for very narrow phones (≤ 380px) */
 @media (max-width: 380px) {
-  :root {
-    --fs-display: 2.2rem;
-    --fs-hero:    1.45rem;
-    --fs-h1:      1.4rem;
-    --fs-stat:    1.05rem;
-    --fs-h3:      0.92rem;
-    --fs-h2:      0.84rem;
-    --fs-lede:    0.86rem;
-    --fs-body:    0.82rem;
-    --fs-aux:     0.76rem;
-    --fs-small:   0.68rem;
-    --fs-micro:   0.54rem;
-    --fs-table:   0.72rem;
-    --fs-th:      0.62rem;
-  }
-  body { font-size: 13px; }
-  .hero h1 { letter-spacing: 0; }
-  .nav-links { gap: 0.6rem; }
+  :root { --fs-hero: 2.15rem; --fs-display: 2.5rem; --fs-h1: 1.6rem; }
+  body { font-size: 15px; }
+  .nav-links { gap: 0.7rem; }
   .hypothesis .stat .label { min-width: 6rem; }
-  .hypothesis .stat .delta, .hypothesis .stat .dim { padding-left: 6.6rem; }
 }
