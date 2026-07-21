@@ -9,5 +9,21 @@
     <a href="{{ "/go/" | relURL }}">go (9×9)</a>
     <a href="{{ "/next/" | relURL }}">what's next</a>
     <a href="{{ "/infra/" | relURL }}">infra</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle light or dark theme">theme</button>
   </div>
 </nav>
+<script>
+(function () {
+  var btn = document.querySelector('.theme-toggle');
+  if (!btn) return;
+  function current() {
+    return document.documentElement.getAttribute('data-theme')
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  }
+  btn.addEventListener('click', function () {
+    var next = current() === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('wm-theme', next); } catch (e) {}
+  });
+})();
+</script>
