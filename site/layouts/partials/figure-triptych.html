@@ -1,0 +1,49 @@
+<figure class="figure rv anim" data-fig>
+  <div class="ftitle">Three Quick Experiments</div>
+  <div class="fsub">one variable each &middot; agent Elo vs calibrated Stockfish</div>
+  <div class="triptych">
+    <div class="cell">
+      <div class="ct">Capacity <span class="tag no">rejected</span></div>
+      <div class="cv">40 blocks vs 20 &middot; 5M positions</div>
+      <svg viewBox="0 0 200 130" role="img" aria-label="Two equal bars, both 1,810 Elo">
+        <line class="sax" x1="30" y1="112" x2="190" y2="112"></line>
+        <rect class="bar f-muted" x="52" y="40" width="42" height="72" style="--d:.05s"></rect>
+        <rect class="bar f-muted" x="122" y="40" width="42" height="72" style="--d:.15s"></rect>
+        <text class="sv" x="73" y="32" text-anchor="middle">1,810</text>
+        <text class="sv" x="143" y="32" text-anchor="middle">1,810</text>
+        <text class="sl" x="73" y="126" text-anchor="middle">24M</text>
+        <text class="sl" x="143" y="126" text-anchor="middle">48M</text>
+      </svg>
+      <div class="cv" style="margin:.5rem 0 0;color:var(--ink)">More params bought nothing.</div>
+    </div>
+    <div class="cell">
+      <div class="ct">Search <span class="tag ok">+277</span></div>
+      <div class="cv">4,000 vs 800 sims &middot; same net</div>
+      <svg viewBox="0 0 200 130" role="img" aria-label="Two points, 800 sims at 1,807 and 4,000 sims at 2,084">
+        <line class="sax" x1="30" y1="112" x2="190" y2="112"></line>
+        <path class="draw k-faint" d="M55 92 Q110 70 160 40" fill="none" stroke-width="2" stroke-dasharray="5 5" pathLength="1" style="--d:.1s"></path>
+        <circle class="dot f-muted" cx="55" cy="92" r="6" style="--d:.2s"></circle>
+        <circle class="dot f-accent k-surface" cx="160" cy="40" r="8" stroke-width="2" style="--d:.5s"></circle>
+        <text class="sv f-accentink" x="160" y="30" text-anchor="middle">2,084</text>
+        <text class="sl" x="45" y="106" text-anchor="start">800</text>
+        <text class="sl" x="170" y="60" text-anchor="middle">4k</text>
+      </svg>
+      <div class="cv" style="margin:.5rem 0 0;color:var(--ink)">Think longer, no retraining.</div>
+    </div>
+    <div class="cell">
+      <div class="ct">Data <span class="tag ok">+199</span></div>
+      <div class="cv">30M vs 5M positions</div>
+      <svg viewBox="0 0 200 130" role="img" aria-label="Two bars, 5M at 1,810 and 30M at 2,009">
+        <line class="sax" x1="30" y1="112" x2="190" y2="112"></line>
+        <rect class="bar f-muted" x="52" y="58" width="42" height="54" style="--d:.05s"></rect>
+        <rect class="bar f-accent" x="122" y="34" width="42" height="78" style="--d:.2s"></rect>
+        <text class="sv" x="73" y="50" text-anchor="middle">1,810</text>
+        <text class="sv f-accentink" x="143" y="26" text-anchor="middle">2,009</text>
+        <text class="sl" x="73" y="126" text-anchor="middle">5M</text>
+        <text class="sl" x="143" y="126" text-anchor="middle">30M</text>
+      </svg>
+      <div class="cv" style="margin:.5rem 0 0;color:var(--ink)">Baseline was starving.</div>
+    </div>
+  </div>
+  <figcaption>Doubling the network changed nothing. The two levers that <em>did</em> move Elo were deeper search at eval time and six times more data, and the bigger dataset won even with a <em>weaker</em> teacher (depth 10, not 15). The bottleneck was never the network.</figcaption>
+</figure>

@@ -21,6 +21,8 @@ constant, and states the hypothesis it was meant to test, the result,
 and the verdict. Code links land directly on the launcher / training
 script for each.
 
+{{< figure-triptych >}}
+
 ## The Baseline Trajectory {#baseline}
 
 100-game evals vs Stockfish `UCI=1350`, 800 MCTS sims/move, 20-block

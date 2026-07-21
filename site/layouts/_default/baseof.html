@@ -9,5 +9,31 @@
     {{ block "main" . }}{{ end }}
   </main>
   {{ partial "footer.html" . }}
+  <script>
+  // Reveal-on-scroll: a plain scroll sweep, deliberately not IntersectionObserver.
+  // It reveals anything whose top has crossed 90% of the viewport, so nothing can
+  // ever get stuck hidden (fast scrolls, throttled/occluded tabs, no-IO browsers).
+  (function () {
+    var els = [].slice.call(document.querySelectorAll('.rv,[data-fig]'));
+    if (!els.length) return;
+    function sweep() {
+      var vh = window.innerHeight || document.documentElement.clientHeight;
+      for (var i = els.length - 1; i >= 0; i--) {
+        if (els[i].getBoundingClientRect().top < vh * 0.9) {
+          els[i].classList.add('in');
+          els.splice(i, 1);
+        }
+      }
+      if (!els.length) {
+        window.removeEventListener('scroll', sweep);
+        window.removeEventListener('resize', sweep);
+      }
+    }
+    window.addEventListener('scroll', sweep, { passive: true });
+    window.addEventListener('resize', sweep, { passive: true });
+    window.addEventListener('load', sweep);
+    sweep();
+  })();
+  </script>
 </body>
 </html>

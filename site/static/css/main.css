@@ -1,5 +1,5 @@
 /* =====================================================================
-   world-models — "Eval Sheet"
+   world-models - "Eval Sheet"
    A calm research readout: graph-paper ground, cobalt as the single
    accent, JetBrains Mono for every headline and datum, Newsreader for
    prose. Cobalt = structure, links, confirmed. Red = the one rejection.
@@ -13,16 +13,17 @@
   --surface:   #f3f5f0;   /* raised panel / card */
   --surface-2: #eceee7;   /* header rows, code */
   --ink:       #191b17;   /* text primary */
-  --muted:     #686c62;   /* text secondary */
-  --faint:     #8b9083;   /* text tertiary / captions */
+  --muted:     #62665e;   /* text secondary (AA on ground + surface) */
+  --faint:     #8b9083;   /* decorative hairlines/strokes only - never text */
   --line:      #d2d6cc;   /* borders */
   --line-2:    #dfe2d9;   /* grid rule, hairlines */
 
-  --accent:     #1f56d6;  /* cobalt — structure, confirmed, marks */
+  --accent:     #1f56d6;  /* cobalt - structure, confirmed, marks */
   --accent-ink: #1a4499;  /* cobalt for text on light */
   --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
-  --red:        #c33324;  /* rejected — the one alert */
-  --amber:      #b3760a;  /* partial / holds-below */
+  --red:        #c33324;  /* rejected - the one alert */
+  --amber:      #b3760a;  /* partial / holds-below - fills, borders, marks */
+  --amber-ink:  #8a5a00;  /* amber for text (AA on ground/surface/tint) */
 
   /* two type voices */
   --serif: 'Newsreader', Charter, 'Iowan Old Style', Georgia, serif;
@@ -63,6 +64,7 @@
     --accent-ink: #9fbcf8;
     --red:        #e97264;
     --amber:      #dca63c;
+    --amber-ink:  #dca63c;
   }
 }
 /* explicit toggle always wins in both directions */
@@ -79,6 +81,7 @@
   --accent-ink: #9fbcf8;
   --red:        #e97264;
   --amber:      #dca63c;
+  --amber-ink:  #dca63c;
 }
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -325,7 +328,7 @@ body > nav {
   font-family: var(--font);
   font-size: 0.56rem;
   letter-spacing: 0.05em;
-  color: var(--faint);
+  color: var(--muted);
   white-space: nowrap;
 }
 .ci-point {
@@ -367,7 +370,7 @@ body > nav {
 .result-context-block strong { color: var(--ink); font-weight: 600; }
 .result-context-block a { color: var(--accent-ink); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
 .result-context-block a:hover { border-bottom-color: var(--accent); }
-.result-context-block .dim { color: var(--faint); font-size: var(--fs-aux); }
+.result-context-block .dim { color: var(--muted); font-size: var(--fs-aux); }
 
 /* ── generic section ─────────────────────────────────────────── */
 
@@ -400,19 +403,9 @@ section h2 {
   align-items: center;
   gap: 0.8rem;
 }
-section h2::before {
-  counter-increment: sec;
-  content: counter(sec, decimal-leading-zero);
-  font-family: var(--font);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--accent-ink);
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
-  border-radius: 2px;
-  padding: 0.16rem 0.46rem;
-  flex-shrink: 0;
-}
+/* section numbering is carried by the chess-coordinate .coord marker above
+   each heading, so the old numeric badge is retired */
+section h2::before { content: none; }
 
 .lede {
   font-family: var(--serif);
@@ -515,7 +508,7 @@ section h2::before {
 .diagram text.sub { fill: var(--muted); font-size: 10.5px; }
 .diagram text.annot { font-size: 10.5px; fill: var(--muted); }
 .diagram text.annot.accent { fill: var(--accent-ink); }
-.diagram text.annot.dim { fill: var(--faint); }
+.diagram text.annot.dim { fill: var(--muted); }
 .diagram text.small { font-size: 10px; }
 .diagram text.big { font-size: 14px; fill: var(--ink); font-weight: 700; }
 .diagram text.huge { font-size: 22px; fill: var(--accent); font-weight: 800; }
@@ -602,7 +595,7 @@ section h2::before {
 }
 .badge.confirmed { background: var(--accent-soft); color: var(--accent-ink); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
 .badge.rejected  { background: color-mix(in srgb, var(--red) 10%, transparent); color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 55%, transparent); }
-.badge.partial   { background: color-mix(in srgb, var(--amber) 12%, transparent); color: var(--amber); border: 1px solid color-mix(in srgb, var(--amber) 50%, transparent); }
+.badge.partial   { background: color-mix(in srgb, var(--amber) 12%, transparent); color: var(--amber-ink); border: 1px solid color-mix(in srgb, var(--amber) 50%, transparent); }
 
 .hypothesis h3 {
   font-family: var(--font);
@@ -629,7 +622,7 @@ section h2::before {
 .hypothesis .body p { font-family: var(--serif); font-size: var(--fs-body); margin-bottom: 0.9rem; line-height: var(--lh-body); }
 .hypothesis .body p:last-child { margin-bottom: 0; }
 
-/* teaser variant — home page short cards */
+/* teaser variant - home page short cards */
 .hypothesis.teaser { padding: 1.6rem 1.7rem 1.4rem; }
 .hypothesis.teaser h3 { font-size: var(--fs-h3); margin: 0.2rem 0 0.65rem; }
 .hypothesis.teaser .hyp-line { padding-left: 0; border-left: none; color: var(--muted); font-size: var(--fs-aux); margin-bottom: 0.9rem; }
@@ -731,7 +724,7 @@ section h2::before {
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
-/* ── tables — the "readout" ────────────────────────────────────── */
+/* ── tables - the "readout" ────────────────────────────────────── */
 
 table.compact,
 .content table {
@@ -762,8 +755,6 @@ table.compact th,
   background: var(--surface-2);
   font-size: var(--fs-th);
   text-transform: uppercase;
-  position: sticky;
-  top: 0;
 }
 table.compact td:first-child,
 .content td:first-child { color: var(--ink); letter-spacing: 0.01em; }
@@ -991,7 +982,7 @@ table.compact tbody tr:hover td,
 }
 .page-toc ul, .page-toc ol { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem; }
 .page-toc li { margin: 0; }
-.page-toc li::before { content: "›"; color: var(--faint); margin-right: 0.4rem; }
+.page-toc li::before { content: "›"; color: var(--muted); margin-right: 0.4rem; }
 .page-toc a { color: var(--accent-ink); text-decoration: none; border-bottom: 1px solid transparent; }
 .page-toc a:hover { border-bottom-color: var(--accent); }
 
@@ -1027,6 +1018,7 @@ footer a:hover { text-decoration: underline; }
   .hero-kicker { opacity: 0; animation: rise 0.7s ease 0.05s forwards; }
   .hero h1     { opacity: 0; animation: rise 0.8s ease 0.16s forwards; }
   .tagline     { opacity: 0; animation: rise 0.8s ease 0.3s forwards; }
+  .hero-stats  { opacity: 0; animation: rise 0.85s ease 0.42s forwards; }
   .result-box  { opacity: 0; animation: rise 0.9s ease 0.42s forwards; }
   .result-context-block { opacity: 0; animation: rise 0.9s ease 0.55s forwards; }
 }
@@ -1118,4 +1110,143 @@ footer a:hover { text-decoration: underline; }
   :root { --fs-hero: 1.95rem; --fs-display: 2.3rem; --fs-h1: 1.55rem; }
   .nav-links { gap: 0.7rem; }
   .hypothesis .stat .label { min-width: 6rem; }
+}
+
+/* =====================================================================
+   Editorial layer - ported from the world-models article:
+   hero stat strip, chess-coordinate section markers, pull-quotes,
+   framed captioned figures with animated inline SVG, reveal-on-scroll.
+   Theme-aware through the same tokens; SVG paint is class-driven so it
+   renders correctly in every browser and both themes (no var() in
+   presentation attributes).
+   ===================================================================== */
+
+/* hero stat strip */
+.hero-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  margin: 2.2rem 0 0.5rem;
+  border: 1px solid var(--line);
+  background: var(--line);
+}
+.hero-stats .stat { background: var(--surface); padding: 1.05rem 1.15rem; display: flex; flex-direction: column; gap: 0.32rem; }
+.hero-stats .stat .v {
+  font-family: var(--font);
+  font-weight: 800;
+  font-size: 1.55rem;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.hero-stats .stat .k {
+  font-family: var(--font);
+  font-weight: 500;
+  font-size: 0.63rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* chess-coordinate section marker */
+.coord {
+  font-family: var(--font);
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.85rem;
+}
+.coord::before { content: ""; width: 0.5rem; height: 0.5rem; background: var(--accent); display: inline-block; flex-shrink: 0; }
+
+/* pull-quote */
+.pq {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 1.5rem;
+  line-height: 1.34;
+  color: var(--ink);
+  margin: 2.2rem 0;
+  padding-left: 1.3rem;
+  border-left: 2px solid var(--accent);
+  text-wrap: balance;
+  max-width: var(--reading-max);
+}
+.pq b, .pq strong { font-style: normal; font-weight: 600; color: var(--accent-ink); }
+
+/* framed figure */
+.figure {
+  margin: 2.4rem 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 1.5rem 1.6rem 1.25rem;
+  border-radius: 2px;
+}
+.figure .ftitle { font-family: var(--font); font-weight: 700; font-size: 0.86rem; letter-spacing: 0.01em; margin-bottom: 0.15rem; color: var(--ink); }
+.figure .fsub { font-family: var(--font); font-weight: 500; font-size: 0.67rem; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 1.1rem; text-transform: uppercase; }
+.figure figcaption { font-family: var(--serif); font-style: italic; font-size: 0.96rem; color: var(--muted); line-height: 1.55; margin-top: 1.1rem; max-width: 62ch; }
+.figure figcaption em { color: var(--ink); font-style: italic; }
+.figure svg { width: 100%; height: auto; display: block; overflow: visible; }
+
+/* centered band for a standalone figure between sections */
+.band { max-width: var(--content-max); margin: 0 auto 4.5rem; padding: 0 2.2rem; }
+.band .figure { margin: 0; }
+
+/* triptych of mini-figures */
+.triptych { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; border: 1px solid var(--line); background: var(--line); }
+.triptych .cell { background: var(--surface); padding: 1.15rem 1.15rem 1rem; }
+.triptych .ct { font-family: var(--font); font-weight: 700; font-size: 0.78rem; margin-bottom: 0.15rem; color: var(--ink); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.triptych .cv { font-family: var(--font); font-weight: 500; font-size: 0.61rem; letter-spacing: 0.03em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.7rem; }
+.triptych .tag { border: none; padding: 0; font-size: 0.62rem; letter-spacing: 0.06em; }
+@media (max-width: 700px) { .triptych { grid-template-columns: 1fr; } }
+
+/* inline verdict tag colours (used in triptych + prose) */
+.tag.ok { color: var(--accent-ink); }
+.tag.no { color: var(--red); }
+.tag.mid { color: var(--amber-ink); }
+
+/* SVG figure text + paint (class-driven, theme-aware, cross-browser) */
+.figure .sl { font-family: var(--font); fill: var(--muted); font-size: 11px; font-weight: 500; }
+.figure .sv { font-family: var(--font); fill: var(--ink); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.figure .sax { stroke: var(--line); stroke-width: 1; }
+.figure .sgr { stroke: var(--line-2); stroke-width: 1; }
+.figure .f-accent { fill: var(--accent); }
+.figure .f-accentink { fill: var(--accent-ink); }
+.figure .f-muted { fill: var(--muted); }
+.figure .f-none { fill: none; }
+.figure .k-muted { stroke: var(--muted); }
+.figure .k-surface { stroke: var(--surface); }
+.figure .k-faint { stroke: var(--faint); }
+.figure .k-line { stroke: var(--line); }
+
+/* figure reveal / draw animations - gated on .js so no-JS shows all */
+.js .anim .bar { transform: scaleY(0); transform-box: fill-box; transform-origin: 50% 100%; transition: transform 0.85s cubic-bezier(0.16,1,0.3,1) var(--d,0s); }
+.js .anim.in .bar { transform: scaleY(1); }
+.js .anim .hbar { transform: scaleX(0); transform-box: fill-box; transform-origin: 0% 50%; transition: transform 0.9s cubic-bezier(0.16,1,0.3,1) var(--d,0s); }
+.js .anim.in .hbar { transform: scaleX(1); }
+.js .anim .dot, .js .anim .lbl { opacity: 0; transition: opacity 0.5s ease var(--d,0s); }
+.js .anim.in .dot, .js .anim.in .lbl { opacity: 1; }
+.js .anim .draw { stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset 1.1s ease var(--d,0s); }
+.js .anim.in .draw { stroke-dashoffset: 0; }
+
+/* scroll reveal */
+.js .rv { opacity: 0; transform: translateY(14px); transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.js .rv.in { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .js .rv, .js .anim .bar, .js .anim .hbar, .js .anim .dot, .js .anim .lbl, .js .anim .draw {
+    transition: none !important; transform: none !important; opacity: 1 !important; stroke-dashoffset: 0 !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .hero-stats { grid-template-columns: repeat(2, 1fr); }
+  .pq { font-size: 1.28rem; }
 }

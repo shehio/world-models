@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#e7e9e4" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#111310" media="(prefers-color-scheme: dark)">
 
-<!-- set stored theme before first paint to avoid a flash -->
-<script>(function(){try{var t=localStorage.getItem('wm-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<!-- mark JS available (gates reveal animations) + set stored theme, before first paint to avoid a flash -->
+<script>(function(){var r=document.documentElement;r.classList.add('js');try{var t=localStorage.getItem('wm-theme');if(t==='light'||t==='dark')r.setAttribute('data-theme',t);}catch(e){}})();</script>
 
 <!-- Open Graph (Facebook, LinkedIn, Slack) -->
 <meta property="og:type" content="website">

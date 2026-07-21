@@ -4,6 +4,12 @@
   <p class="hero-kicker">supervised distillation · one GPU per run</p>
   <h1>world-models</h1>
   <p class="tagline">chess &amp; go · distilled from Stockfish/KataGo · one GPU per run</p>
+  <div class="hero-stats">
+    <div class="stat"><span class="v">2,301</span><span class="k">Elo · chess vs calibrated Stockfish</span></div>
+    <div class="stat"><span class="v">parity</span><span class="k">9×9 Go vs KataGo @200 visits</span></div>
+    <div class="stat"><span class="v">~16</span><span class="k">GPU-hours per training run</span></div>
+    <div class="stat"><span class="v">~10,000×</span><span class="k">fewer FLOPs than AlphaZero</span></div>
+  </div>
 </section>
 
 <section class="result-strip">
@@ -34,9 +40,15 @@
   </div>
 </section>
 
+<section class="band">
+  {{ partial "figure-ladder.html" . }}
+</section>
+
 <section class="method-section">
-  <h2>How It Works</h2>
-  <p class="lede">Two phases. <em>Training</em> is a single supervised pass: Stockfish labels positions, the student fits those labels. <em>Inference</em> is Monte Carlo Tree Search using the trained network as its prior. The network alone never picks a move; MCTS does, and the network just guides where MCTS looks.</p>
+  <div class="coord rv">a1 &middot; how it works</div>
+  <h2 class="rv">How It Works</h2>
+  <p class="lede rv">Two phases. <em>Training</em> is a single supervised pass: Stockfish labels positions, the student fits those labels. <em>Inference</em> is Monte Carlo Tree Search using the trained network as its prior. The network alone never picks a move; MCTS does, and the network just guides where MCTS looks.</p>
+  <div class="pq rv">At fixed single-GPU compute, <b>distillation beats self-play.</b> For chess it is a rout; for Go a tie. Either way the shortcut is the teacher.</div>
 
   <h3 class="sub">1 · Training (one-shot, no self-play)</h3>
   <ol class="steps">
@@ -63,8 +75,11 @@
 </section>
 
 <section class="experiments">
-  <h2>Experiments</h2>
-  <p class="lede">Single-variable ablations on top of the distilled baseline. Each card shows the hypothesis, the verdict, and the headline numbers. Full setup + interpretation on the <a href="{{ "/experiments/" | relURL }}">experiments page</a>.</p>
+  <div class="coord rv">b2 &middot; the ablations</div>
+  <h2 class="rv">Experiments</h2>
+  <p class="lede rv">Single-variable ablations on top of the distilled baseline. Each card shows the hypothesis, the verdict, and the headline numbers. Full setup + interpretation on the <a href="{{ "/experiments/" | relURL }}">experiments page</a>.</p>
+
+  {{ partial "figure-levers.html" . }}
 
   <div class="hypothesis-grid">
 
@@ -123,7 +138,8 @@
 </section>
 
 <section class="vs-az">
-  <h2>vs AZ</h2>
+  <div class="coord rv">c3 &middot; vs alphazero</div>
+  <h2 class="rv">vs AZ</h2>
   <table class="compact">
     <thead>
       <tr><th></th><th>AlphaZero (2017)</th><th>This Project</th></tr>
@@ -140,7 +156,8 @@
 </section>
 
 <section class="results-matrix">
-  <h2>Results Matrix</h2>
+  <div class="coord rv">d4 &middot; every checkpoint</div>
+  <h2 class="rv">Results Matrix</h2>
   <p class="lede">Every checkpoint we trained, at the standard 800-sim eval. <em>UCI=1,350</em> anchor: the only one every checkpoint has been measured against, so the comparison is apples-to-apples across runs. Bold marks the canonical run's best epoch.</p>
 
   <table class="compact matrix">
@@ -188,7 +205,8 @@
 </section>
 
 <section class="next">
-  <h2>What's Next</h2>
+  <div class="coord rv">e5 &middot; what's next</div>
+  <h2 class="rv">What's Next</h2>
   <p>The largest remaining gap to AlphaZero is that AZ has <em>no teacher</em>; its targets come from its own MCTS visit counts, not from Stockfish. The Lc0 recipe (<strong>distill first, RL second</strong>) runs an AlphaZero-style self-play loop on top of the distilled prior.</p>
   <p class="dim">Self-play has been attempted six times on spot since 2026-05-25; every run was evicted before iteration 1 finished (iters take ~90 min, AZ eviction windows are shorter). The algorithm is fixed (LR=1e-5, no catastrophic forgetting); the binding constraint is moving the trainer off spot. <a href="{{ "/next/#selfplay-postmortem" | relURL }}">→ Self-play postmortem</a></p>
   <p>The d15-46M cosine trainers (<strong>R1 v2</strong> and <strong>R2 v2</strong>) were killed at 2026-05-26 17:15 UTC after producing the top-2 ckpts in the deep-search table above. Late epochs at sims=800 were not trending up, and the autoeval daemon is offline; finishing them on OD would have been ~$320 with low chance of a new peak. <a href="{{ "/next/#d15-trainers-killed" | relURL }}">→ Why we stopped</a></p>
@@ -197,7 +215,8 @@
 </section>
 
 <section class="links">
-  <h2>More</h2>
+  <div class="coord rv">f6 &middot; elsewhere</div>
+  <h2 class="rv">More</h2>
   <div class="grid grid-3">
     <a href="{{ "/experiments/" | relURL }}" class="card">
       <span class="card-icon" aria-hidden="true">▦</span>
