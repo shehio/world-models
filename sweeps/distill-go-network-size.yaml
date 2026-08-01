@@ -1,0 +1,42 @@
+# Go network-size sweep: 8x128 (the shipped net) vs a smaller 6x96 and a
+# larger 10x160, all on the same KataGo-labeled dataset.
+#
+# --arch takes the "BLOCKSxFILTERS" shorthand so depth and width move
+# together as one sweep parameter, instead of a 3x3 grid of combinations
+# nobody wants to train.
+#
+# distill-go is a standalone uv project: run the agent from
+# experiments/distill-go/ (uv sync there first).
+#
+# Every run in a sweep writes to the same --ckpt-dir, so treat that path
+# as scratch: the comparable output of a sweep is the wandb curves, not
+# the checkpoints. Give each agent its own working directory if you do
+# want to keep them.
+#
+# Usage:
+#   wandb sweep --entity shehio --project world-models sweeps/distill-go-network-size.yaml
+#   wandb agent shehio/world-models/<SWEEP_ID>
+
+program: scripts/train.py
+method: grid
+metric:
+  name: top1_acc
+  goal: maximize
+parameters:
+  data:
+    value: /work/data/go_multipv.npz
+  arch:
+    values: ["6x96", "8x128", "10x160"]
+  ckpt-dir:
+    value: /work/checkpoints/sweep
+  epochs:
+    value: 16
+  batch-size:
+    value: 256
+  lr:
+    value: 1e-3
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_boolean_flags}

@@ -128,6 +128,8 @@ def main():
                    help="device for the agent's NN inference: auto (cuda if available else cpu), cpu, cuda")
     p.add_argument("--progress-dir", default=None,
                    help="if set, each worker writes .eval_progress_wNN.json here every game (default: dir of --ckpt)")
+    p.add_argument("--no-wandb", action="store_true",
+                   help="disable Weights & Biases logging of the final result")
     args = p.parse_args()
 
     mp.set_start_method("spawn", force=True)
@@ -180,6 +182,26 @@ def main():
     if elo is not None and 0 < score < 1:
         elo_lo = elo + gap(lo); elo_hi = elo + gap(hi)
         print(f"Agent absolute Elo (anchor {elo}): {elo + g:.0f} [{elo_lo:.0f}, {elo_hi:.0f}]")
+
+    # One wandb run per eval; the result lands as summary metrics so a table
+    # of evals is comparable at a glance in the UI.
+    from wm_chess.wandb_utils import finish as wandb_finish, init_wandb, set_summary
+    wb_run = init_wandb(args, tags=["distill-soft", "eval"],
+                        name=f"eval-{os.path.basename(args.ckpt)}")
+    summary = {
+        "games": n, "wins": wins, "draws": draws, "losses": losses,
+        "score": score, "score_ci_lo": lo, "score_ci_hi": hi,
+        "elo_gap": g, "eval_minutes": dt / 60,
+    }
+    if elo is not None and 0 < score < 1:
+        summary.update({
+            "agent_elo": elo + g,
+            "agent_elo_ci_lo": elo + gap(lo),
+            "agent_elo_ci_hi": elo + gap(hi),
+            "anchor_elo": elo,
+        })
+    set_summary(wb_run, summary)
+    wandb_finish(wb_run)
 
 
 if __name__ == "__main__":

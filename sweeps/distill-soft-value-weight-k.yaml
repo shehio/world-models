@@ -1,0 +1,51 @@
+# Grid: value-loss weight x multipv K.
+#
+# value_weight trades policy accuracy against value-head calibration;
+# K is how many Stockfish lines the soft target spreads over. They
+# interact (a wider target softens the policy gradient, which changes
+# how much value loss the run can absorb), so a grid beats two
+# one-at-a-time sweeps.
+#
+# K is a property of the dataset, not a train.py flag: each K value
+# needs its own npz from scripts/generate_data.py --multipv K. Point
+# each `data` entry at the matching file before launching.
+#
+# Every run in a sweep writes to the same --ckpt-dir, so treat that path
+# as scratch: the comparable output of a sweep is the wandb curves, not
+# the checkpoints. Give each agent its own working directory if you do
+# want to keep them.
+#
+# Usage:
+#   wandb sweep --entity shehio --project world-models sweeps/distill-soft-value-weight-k.yaml
+#   wandb agent shehio/world-models/<SWEEP_ID>
+
+program: scripts/train.py
+method: grid
+metric:
+  name: top1_acc
+  goal: maximize
+parameters:
+  data:
+    values:
+      - /work/data/multipv_k4.npz
+      - /work/data/multipv_k8.npz
+      - /work/data/multipv_k16.npz
+  value-weight:
+    values: [0.25, 1.0, 4.0]
+  ckpt-dir:
+    value: /work/checkpoints/sweep
+  epochs:
+    value: 10
+  batch-size:
+    value: 256
+  lr:
+    value: 1e-3
+  n-blocks:
+    value: 20
+  n-filters:
+    value: 256
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_boolean_flags}

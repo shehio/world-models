@@ -36,6 +36,7 @@ from distill_go.board import BLACK, WHITE, GoBoard
 from distill_go.config import GoConfig
 from distill_go.mcts import run_mcts, select_move
 from distill_go.network import AlphaZeroGoNet
+from distill_go.wandb_utils import finish as wandb_finish, init_wandb, set_summary
 
 
 def _net_move(net, board: GoBoard, history: list[GoBoard], cfg: GoConfig,
@@ -162,6 +163,9 @@ def main():
 
     p.add_argument("--output", required=True,
                    help="Where to write the JSON summary (local path).")
+    p.add_argument("--no-wandb", action="store_true",
+                   help="disable Weights & Biases logging (WANDB_MODE=disabled "
+                        "works too); the JSON summary is always written")
     args = p.parse_args()
 
     # Pull s3:// ckpts if needed.
@@ -258,6 +262,19 @@ def main():
           flush=True)
     print(f"     wallclock: {elapsed/60:.1f} min · errors: {n_errors}", flush=True)
     print(f"     summary written to {args.output}", flush=True)
+
+    # The same summary lands as wandb summary metrics so a run table sorts
+    # candidates by Elo gap. List-valued CIs are flattened into scalars,
+    # which is what the wandb UI can chart.
+    wb_run = init_wandb(args, tags=["distill-go", "h2h"],
+                        name=f"h2h-{Path(args.ckpt_a).name}-vs-{Path(args.ckpt_b).name}")
+    flat = {k: v for k, v in summary.items() if not isinstance(v, list)}
+    flat.update({
+        "score_ci_lo": lo, "score_ci_hi": hi,
+        "elo_gap_ci_lo": score_to_elo(lo), "elo_gap_ci_hi": score_to_elo(hi),
+    })
+    set_summary(wb_run, flat)
+    wandb_finish(wb_run)
 
 
 if __name__ == "__main__":

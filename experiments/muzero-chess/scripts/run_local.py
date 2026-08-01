@@ -14,6 +14,8 @@ import torch
 
 from muzero_chess.config import MuZeroConfig
 from muzero_chess.driver import train_loop
+from muzero_chess.wandb_hooks import iter_record
+from wm_chess.wandb_utils import finish as wandb_finish, init_wandb
 
 
 def main() -> None:
@@ -25,6 +27,8 @@ def main() -> None:
     p.add_argument("--warmup-games", type=int, default=2)
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--unroll", type=int, default=3)
+    p.add_argument("--no-wandb", action="store_true",
+                   help="disable Weights & Biases logging (WANDB_MODE=disabled works too)")
     args = p.parse_args()
 
     cfg = MuZeroConfig(
@@ -45,13 +49,22 @@ def main() -> None:
         f"K={cfg.num_unroll_steps}  batch={cfg.batch_size}  max_plies={cfg.max_plies}",
         flush=True,
     )
+    wb_run = init_wandb(args, tags=["muzero-chess", "local"],
+                        config_extra={"config": cfg.__dict__})
+
+    def on_iter_end(it: int, network, history: dict) -> None:
+        if wb_run is not None:
+            wb_run.log(iter_record(history, it))
+
     train_loop(
         cfg,
         n_iterations=args.iterations,
         train_steps_per_iter=args.train_steps,
         warmup_games=args.warmup_games,
         device=torch.device("cpu"),
+        on_iter_end=on_iter_end,
     )
+    wandb_finish(wb_run)
 
 
 if __name__ == "__main__":

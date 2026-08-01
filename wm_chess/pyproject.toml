@@ -7,6 +7,7 @@ dependencies = [
     "torch>=2.5",
     "numpy>=1.26",
     "python-chess>=1.999",
+    "wandb>=0.19",
 ]
 
 [project.optional-dependencies]

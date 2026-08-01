@@ -19,6 +19,8 @@ import torch
 
 from muzero_chess.config import MuZeroConfig
 from muzero_chess.driver import train_loop
+from muzero_chess.wandb_hooks import iter_record
+from wm_chess.wandb_utils import finish as wandb_finish, init_wandb
 
 
 def _s3_sync(local_dir: str, s3_uri: str) -> None:
@@ -106,6 +108,13 @@ def main() -> None:
                    default=_env_default("CKPT_EVERY", 1, int))
     p.add_argument("--s3-base", default=_env_default("S3_BASE", ""))
     p.add_argument("--device", default=_env_default("DEVICE", ""))
+    # NO_WANDB=1 is the env-var form, matching how the EKS entrypoint sets
+    # every other knob here. bool() of a non-empty string is always True,
+    # so parse the truthy values explicitly rather than via _env_default.
+    p.add_argument("--no-wandb", action="store_true",
+                   default=os.environ.get("NO_WANDB", "").lower() in ("1", "true", "yes"),
+                   help="disable Weights & Biases logging (WANDB_MODE=disabled "
+                        "works too); history.json and the S3 syncs are unchanged")
     args = p.parse_args()
 
     cfg = MuZeroConfig(
@@ -142,10 +151,17 @@ def main() -> None:
 
     eval_sims = args.eval_sims if args.eval_sims > 0 else None
 
+    # Experiment tracking (additive: history.json + S3 stay authoritative).
+    wb_run = init_wandb(args, tags=["muzero-chess", "cloud"],
+                        config_extra={"config": cfg.__dict__, "device": str(device)})
+
     def on_iter_end(it: int, network, history: dict) -> None:
         # Always write the latest history JSON locally — cheap.
         with open(os.path.join(args.ckpt_dir, "history.json"), "w") as f:
             json.dump(history, f, default=float)
+        # Same rows, mirrored to wandb one iter at a time.
+        if wb_run is not None:
+            wb_run.log(iter_record(history, it))
         # Mirror checkpoint dir to S3 every ckpt_every iters.
         if args.s3_base and args.ckpt_every > 0 and (it + 1) % args.ckpt_every == 0:
             print(f"[s3] sync {args.ckpt_dir} → {args.s3_base}", flush=True)
@@ -173,6 +189,8 @@ def main() -> None:
     if args.s3_base:
         print(f"[s3] final sync {args.ckpt_dir} → {args.s3_base}", flush=True)
         _s3_sync(args.ckpt_dir, args.s3_base)
+
+    wandb_finish(wb_run)
 
 
 if __name__ == "__main__":
