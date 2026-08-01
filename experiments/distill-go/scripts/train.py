@@ -23,6 +23,7 @@ import torch
 from distill_go.config import GoConfig
 from distill_go.network import AlphaZeroGoNet, get_device
 from distill_go.train import GoMultipvDataset, train_step
+from distill_go.wandb_utils import finish as wandb_finish, init_wandb
 
 
 def main() -> int:
@@ -42,7 +43,17 @@ def main() -> int:
     p.add_argument("--save-every", type=int, default=2)
     p.add_argument("--max-positions", type=int, default=None)
     p.add_argument("--hard-targets", action="store_true")
+    p.add_argument("--arch", default=None,
+                   help="shorthand 'BLOCKSxFILTERS' (e.g. 8x128) that overrides "
+                        "--n-blocks/--n-filters; lets a wandb sweep vary network "
+                        "size as one parameter instead of a depth-width grid")
+    p.add_argument("--no-wandb", action="store_true",
+                   help="disable Weights & Biases logging (WANDB_MODE=disabled "
+                        "works too); train_history.json is always written")
     args = p.parse_args()
+    if args.arch:
+        blocks, filters = args.arch.lower().split("x")
+        args.n_blocks, args.n_filters = int(blocks), int(filters)
 
     cfg = GoConfig(
         board_size=args.board_size,
@@ -90,6 +101,12 @@ def main() -> int:
     history: list[dict] = []
     history_path = os.path.join(args.ckpt_dir, "train_history.json")
 
+    # Experiment tracking (additive: train_history.json stays authoritative).
+    wb_run = init_wandb(
+        args, tags=["distill-go", "train"],
+        config_extra={"n_params": n_params, "n_positions": n, "multipv_k": K},
+    )
+
     overall_t0 = time.time()
     for epoch in range(args.epochs):
         t0 = time.time()
@@ -136,6 +153,9 @@ def main() -> int:
         history.append(epoch_summary)
         with open(history_path, "w") as f:
             json.dump(history, f, indent=2)
+        # Mirror the exact train_history.json record to wandb (keys map 1:1).
+        if wb_run is not None:
+            wb_run.log(epoch_summary)
         print(
             f"epoch {epoch:02d} ({dt:.1f}s): "
             f"loss={epoch_summary['loss']:.3f} "
@@ -150,6 +170,7 @@ def main() -> int:
             ckpt = os.path.join(args.ckpt_dir, f"distilled_epoch{epoch:03d}.pt")
             torch.save(network.state_dict(), ckpt)
             print(f"  saved {ckpt}", flush=True)
+    wandb_finish(wb_run)
     return 0
 
 

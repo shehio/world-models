@@ -39,6 +39,9 @@ videos/
 library/games/
 library/runs/
 
+# Weights & Biases local run cache (the run of record lives on wandb.ai)
+wandb/
+
 # Hugo site build output
 site/public/
 site/resources/

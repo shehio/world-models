@@ -20,6 +20,7 @@ import torch
 from wm_chess.arena import network_policy, play_match, random_policy
 from wm_chess.config import Config
 from wm_chess.network import AlphaZeroNet, get_device
+from wm_chess.wandb_utils import finish as wandb_finish, init_wandb
 from selfplay.replay import ReplayBuffer
 from selfplay.selfplay import play_game
 from selfplay.train import train_step
@@ -43,6 +44,8 @@ def main():
     p.add_argument("--ckpt-dir", default="checkpoints")
     p.add_argument("--device", default=None, help="cpu | mps | cuda; default auto")
     p.add_argument("--resume", default=None, help="path to a .pt file to resume from")
+    p.add_argument("--no-wandb", action="store_true",
+                   help="disable Weights & Biases logging (WANDB_MODE=disabled works too)")
     args = p.parse_args()
 
     cfg = replace(Config(),
@@ -61,6 +64,9 @@ def main():
 
     os.makedirs(args.ckpt_dir, exist_ok=True)
 
+    # Experiment tracking (additive: stdout stays authoritative).
+    wb_run = init_wandb(args, tags=["selfplay", "chess"])
+
     for it in range(args.iters):
         # --- Self-play ---
         t0 = time.time()
@@ -72,6 +78,14 @@ def main():
             results.append((z, ply))
             print(f"  iter {it} game {g}: z={z:+.0f} plies={ply}  buffer={len(replay)}")
         sp_dt = time.time() - t0
+        iter_summary = {
+            "iter": it,
+            "games": len(results),
+            "mean_plies": sum(ply for _, ply in results) / max(len(results), 1),
+            "mean_z": sum(z for z, _ in results) / max(len(results), 1),
+            "buffer": len(replay),
+            "selfplay_time_s": sp_dt,
+        }
 
         # --- Train ---
         loss_acc = {"loss": 0.0, "policy_loss": 0.0, "value_loss": 0.0}
@@ -91,6 +105,8 @@ def main():
                 f"pol={loss_acc['policy_loss']/n_steps:.3f} "
                 f"val={loss_acc['value_loss']/n_steps:.3f}"
             )
+            iter_summary.update({k: v / n_steps for k, v in loss_acc.items()})
+            iter_summary["train_time_s"] = tr_dt
 
         # --- Eval ---
         if (it + 1) % args.eval_every == 0:
@@ -100,12 +116,18 @@ def main():
             stats = play_match(net_pol, random_policy, n_games=args.eval_games)
             ev_dt = time.time() - t0
             print(f"  iter {it} vs random ({ev_dt:.1f}s): {stats}")
+            iter_summary.update({f"eval_random_{k}": v for k, v in stats.items()})
+            iter_summary["eval_time_s"] = ev_dt
 
             ckpt_path = os.path.join(args.ckpt_dir, f"net_iter{it:03d}.pt")
             torch.save(network.state_dict(), ckpt_path)
             print(f"  saved {ckpt_path}")
 
         print(f"  iter {it} self-play wall: {sp_dt:.1f}s")
+        if wb_run is not None:
+            wb_run.log(iter_summary)
+
+    wandb_finish(wb_run)
 
 
 if __name__ == "__main__":

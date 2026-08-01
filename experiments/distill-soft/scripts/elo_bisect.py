@@ -62,6 +62,8 @@ def run_match(ckpt: str, uci_elo: int, n_games: int, workers: int,
         "--n-filters", str(n_filters),
         "--stockfish-elo", str(uci_elo),
         "--agent-device", "cuda",
+        # The bisect owns the wandb run; per-probe eval.py runs would be noise.
+        "--no-wandb",
     ]
     print(f"\n=== probe vs UCI={uci_elo} ({n_games} games) ===", flush=True)
     out = subprocess.run(cmd, capture_output=True, text=True)
@@ -93,7 +95,13 @@ def main():
     p.add_argument("--n-filters", type=int, default=256)
     p.add_argument("--out", default=None,
                    help="optional path to dump JSON trace")
+    p.add_argument("--no-wandb", action="store_true",
+                   help="disable Weights & Biases logging")
     args = p.parse_args()
+
+    from wm_chess.wandb_utils import finish as wandb_finish, init_wandb, set_summary
+    wb_run = init_wandb(args, tags=["distill-soft", "elo-bisect"],
+                        name=f"elo-bisect-{Path(args.ckpt).name}")
 
     lo, hi = ELO_MIN, ELO_MAX
     trace: list[dict] = []
@@ -106,6 +114,10 @@ def main():
         trace.append(r)
         estimated_elo = mid + implied_elo_gap(r["score"])
         lo, hi = update_bracket(r["score"], mid, lo, hi)
+        if wb_run is not None:
+            wb_run.log({"probe": len(trace), "uci_elo": mid,
+                        "score": r["score"], "estimated_elo": estimated_elo,
+                        "bracket_lo": lo, "bracket_hi": hi})
         print(f"  -> bracket now [{lo}, {hi}], "
               f"estimated Elo ≈ {estimated_elo:.0f}", flush=True)
         if should_stop(lo, hi, r["score"]):
@@ -126,6 +138,13 @@ def main():
              "estimated_elo": estimated_elo,
              "trace": trace},
             indent=2))
+
+    set_summary(wb_run, {
+        "estimated_elo": estimated_elo,
+        "bracket_lo": lo, "bracket_hi": hi,
+        "n_probes": len(trace),
+    })
+    wandb_finish(wb_run)
 
 
 if __name__ == "__main__":

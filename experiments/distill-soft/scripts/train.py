@@ -27,7 +27,33 @@ import torch
 
 from wm_chess.config import Config
 from wm_chess.network import AlphaZeroNet, get_device
+from wm_chess.wandb_utils import finish as wandb_finish, init_wandb
 from distill_soft.train_supervised import MultipvDataset, train_step
+
+
+class _SyntheticSmokeDataset:
+    """SMOKE-ONLY stand-in for MultipvDataset.
+
+    Tiny random arrays with the same fields/shapes as the real dataset, so
+    the full train loop (batching, soft/hard targets, logging, checkpoints)
+    runs end-to-end in minutes with no data file. The loss numbers mean
+    nothing beyond "the wiring works"; never use this for real training.
+    """
+
+    def __init__(self, cfg: Config, n: int = 2048, k: int = 4, seed: int = 0):
+        r = np.random.RandomState(seed)
+        self.K = k
+        self.states = r.rand(n, cfg.n_input_planes, 8, 8).astype(np.float32)
+        self.moves = r.randint(0, cfg.policy_size, size=n).astype(np.int64)
+        self.multipv_indices = r.randint(
+            0, cfg.policy_size, size=(n, k)).astype(np.int64)
+        probs = r.rand(n, k).astype(np.float32)
+        self.multipv_logprobs = np.log(probs / probs.sum(axis=1, keepdims=True))
+        self.zs = r.choice(
+            np.array([-1.0, 0.0, 1.0], dtype=np.float32), size=n)
+
+    def __len__(self) -> int:
+        return self.states.shape[0]
 
 
 def _sync_to_s3(local_path: str, s3_base: str) -> None:
@@ -51,7 +77,8 @@ def _sync_to_s3(local_path: str, s3_base: str) -> None:
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--data", required=True)
+    p.add_argument("--data", default=None,
+                   help="training npz (required unless --smoke)")
     p.add_argument("--epochs", type=int, default=20)
     p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--lr", type=float, default=1e-3)
@@ -107,7 +134,17 @@ def main():
                         "0 = no warmup. Only honored when --lr-scheduler != none.")
     p.add_argument("--lr-min", type=float, default=1e-5,
                    help="minimum LR for cosine schedule (and starting LR for warmup).")
+    p.add_argument("--no-wandb", action="store_true",
+                   help="disable Weights & Biases logging (WANDB_MODE=disabled "
+                        "works too). Training runs identically either way; the "
+                        "JSON history files are always written.")
+    p.add_argument("--smoke", action="store_true",
+                   help="SMOKE-ONLY: train on a tiny in-memory synthetic "
+                        "dataset instead of --data. Verifies the whole loop "
+                        "(incl. wandb logging) in minutes; results are noise.")
     args = p.parse_args()
+    if not args.smoke and not args.data:
+        p.error("--data is required (unless --smoke)")
 
     cfg = replace(Config(), n_res_blocks=args.n_blocks, n_filters=args.n_filters)
     device = torch.device(args.device) if args.device else get_device()
@@ -151,11 +188,16 @@ def main():
     print(f"network: {args.n_blocks} blocks × {args.n_filters} ch = {n_params:,} params",
           flush=True)
 
-    print(f"loading {args.data} ...", flush=True)
-    # Pass max_positions through so the extractor only writes the rows
-    # we'll actually train on — at 30M positions the states array
-    # uncompresses to ~150 GB; truncating up front saves disk + time.
-    dataset = MultipvDataset(args.data, max_rows=args.max_positions)
+    if args.smoke:
+        print("SMOKE MODE: tiny synthetic in-memory dataset (results are noise)",
+              flush=True)
+        dataset = _SyntheticSmokeDataset(cfg)
+    else:
+        print(f"loading {args.data} ...", flush=True)
+        # Pass max_positions through so the extractor only writes the rows
+        # we'll actually train on: at 30M positions the states array
+        # uncompresses to ~150 GB; truncating up front saves disk + time.
+        dataset = MultipvDataset(args.data, max_rows=args.max_positions)
     if args.max_positions is not None and dataset.states.shape[0] > args.max_positions:
         n_full = dataset.states.shape[0]
         n_keep = args.max_positions
@@ -185,6 +227,17 @@ def main():
     K = dataset.K
     print(f"  {n:,} positions, multipv K={K}", flush=True)
 
+    # Experiment tracking (additive: JSON history + stdout stay authoritative).
+    wb_run = init_wandb(
+        args,
+        tags=["distill-soft", "train"] + (["smoke-ab"] if args.smoke else []),
+        # Name the smoke runs after the ablation axis they vary, so the two
+        # arms of an A/B are told apart in the run list at a glance.
+        name=(f"smoke-{'hard' if args.hard_targets else 'soft'}-targets"
+              f"-{args.n_blocks}x{args.n_filters}" if args.smoke else None),
+        config_extra={"n_params": n_params, "n_positions": n, "multipv_k": K},
+    )
+
     os.makedirs(args.ckpt_dir, exist_ok=True)
     rng = np.random.RandomState(0)
     # If resuming mid-run, advance the shared RNG past the epochs that
@@ -208,6 +261,10 @@ def main():
         with open(tmp, "w") as f:
             json.dump(payload, f)
         os.replace(tmp, progress_path)
+        # Mirror the same payload to wandb under batch/ so the sub-epoch
+        # curves don't collide with the epoch-level metrics of the same name.
+        if wb_run is not None:
+            wb_run.log({f"batch/{k}": v for k, v in payload.items()})
 
     def _gpu_stats() -> dict:
         if not torch.cuda.is_available():
@@ -311,6 +368,9 @@ def main():
             _json.dump(history, f, indent=2)
         # Per-epoch S3 sync of history so we can monitor live runs externally.
         _sync_to_s3(history_path, args.s3_ckpt_base)
+        # Mirror the exact train_history.json record to wandb (keys map 1:1).
+        if wb_run is not None:
+            wb_run.log(epoch_summary)
         print(f"epoch {epoch:02d} ({dt:.1f}s): "
               f"loss={epoch_summary['loss']:.3f} "
               f"pol={epoch_summary['policy_loss']:.3f} "
@@ -339,6 +399,8 @@ def main():
             # epoch even starts. If the pod dies after epoch 5, we keep
             # the epoch-5 ckpt instead of losing everything.
             _sync_to_s3(ckpt, args.s3_ckpt_base)
+
+    wandb_finish(wb_run)
 
 
 if __name__ == "__main__":

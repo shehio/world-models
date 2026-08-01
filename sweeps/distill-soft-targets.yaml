@@ -1,0 +1,46 @@
+# A/B: soft multipv targets vs hard (played-move) targets.
+#
+# Same data, same architecture, same optimizer. The only difference is the
+# shape of the policy target, which is exactly the ablation distill-soft
+# was built to run (scripts/train.py --hard-targets).
+#
+# Every run in a sweep writes to the same --ckpt-dir, so treat that path
+# as scratch: the comparable output of a sweep is the wandb curves, not
+# the checkpoints. Give each agent its own working directory if you do
+# want to keep them.
+#
+# Usage:
+#   wandb sweep --entity shehio --project world-models sweeps/distill-soft-targets.yaml
+#   wandb agent shehio/world-models/<SWEEP_ID>
+#
+# Run the agent from experiments/distill-soft/ and point --data at a real
+# npz first; the command below leaves it as a placeholder on purpose.
+
+program: scripts/train.py
+method: grid
+metric:
+  name: top1_acc
+  goal: maximize
+parameters:
+  data:
+    value: /work/data/multipv.npz
+  ckpt-dir:
+    value: /work/checkpoints/sweep
+  epochs:
+    value: 10
+  batch-size:
+    value: 256
+  lr:
+    value: 1e-3
+  n-blocks:
+    value: 20
+  n-filters:
+    value: 256
+  hard-targets:
+    # Boolean argparse flags: "" emits the flag, absent omits it.
+    values: [true, false]
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_boolean_flags}

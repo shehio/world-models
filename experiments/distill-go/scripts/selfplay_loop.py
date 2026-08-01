@@ -55,6 +55,7 @@ from distill_go.board import BLACK, WHITE, EMPTY, GoBoard, board_to_planes, boar
 from distill_go.config import GoConfig
 from distill_go.mcts import run_mcts, select_move, visits_to_distribution
 from distill_go.network import AlphaZeroGoNet, get_device
+from distill_go.wandb_utils import finish as wandb_finish, init_wandb
 
 
 # ----------------------------------------------------------------------------
@@ -528,6 +529,9 @@ def main():
     p.add_argument("--ckpt-dir", type=Path, required=True)
     p.add_argument("--s3-ckpt-base", type=str, default=None,
                    help="If set, sync per-iter ckpts to this S3 prefix.")
+    p.add_argument("--no-wandb", action="store_true",
+                   help="disable Weights & Biases logging (WANDB_MODE=disabled "
+                        "works too); run_metadata.json and stdout are unchanged")
 
     args = p.parse_args()
 
@@ -594,6 +598,12 @@ def main():
     print(f"PCR ON: full={args.pcr_sims_full} reduced={args.pcr_sims_reduced} p_full={args.pcr_p_full}", flush=True)
     print(f"time budget: {args.time_budget}s  max iters: {args.max_iters}", flush=True)
 
+    # Experiment tracking (additive: run_metadata.json + stdout stay authoritative).
+    wb_run = init_wandb(
+        args, tags=["distill-go", "selfplay"],
+        config_extra={"n_params": sum(p_.numel() for p_ in net.parameters())},
+    )
+
     t0 = time.time()
     ctx = mp.get_context("spawn")
 
@@ -657,6 +667,18 @@ def main():
         print(f"iter {iter_idx}: {n_games} games ({n_positions} pos) in {iter_wall:.1f}s  "
               f"buffer={len(buffer)}/{buffer.n_shards} shards  total_games={total_games}",
               flush=True)
+        # One wandb record per iteration, filled in as the iter's phases
+        # complete and logged once at the bottom of the loop body.
+        iter_summary = {
+            "iter": iter_idx,
+            "games": n_games,
+            "positions": n_positions,
+            "worker_errors": n_errors,
+            "selfplay_time_s": iter_wall,
+            "buffer_positions": len(buffer),
+            "buffer_shards": buffer.n_shards,
+            "total_games": total_games,
+        }
 
         # ---- train ----
         if len(buffer) >= args.batch_size:
@@ -683,6 +705,8 @@ def main():
                     parts.append(f"{lbl}={losses[key]:.3f}")
             print(f"  train ({args.train_steps} steps, {train_wall:.1f}s): " + " ".join(parts),
                   flush=True)
+            iter_summary.update(losses)
+            iter_summary["train_time_s"] = train_wall
         else:
             print(f"  skipping train (buffer={len(buffer)} < batch={args.batch_size})", flush=True)
 
@@ -692,6 +716,7 @@ def main():
             r = eval_vs_random(net, cfg, train_device, games=args.eval_games,
                                 sims=args.eval_sims)
             print(f"  vs random ({time.time()-eval_t0:.1f}s): {r}", flush=True)
+            iter_summary.update({f"eval_random_{k}": v for k, v in r.items()})
 
         # ---- save ckpt ----
         iter_path = args.ckpt_dir / f"net_iter{iter_idx:03d}.pt"
@@ -713,8 +738,14 @@ def main():
         print(f"  total elapsed: {elapsed_min:.1f} min  ({pct:.0f}% of budget)  "
               f"lr={args.lr:.2e}", flush=True)
 
+        iter_summary["elapsed_min"] = elapsed_min
+        iter_summary["budget_pct"] = pct
+        if wb_run is not None:
+            wb_run.log(iter_summary)
+
     print(f"done. {total_games} self-play games, {len(buffer)} buffer positions, "
           f"{(time.time()-t0)/60:.1f} min wallclock", flush=True)
+    wandb_finish(wb_run)
 
 
 if __name__ == "__main__":

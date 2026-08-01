@@ -87,6 +87,107 @@ single experiment on a bare EC2 box; the EKS Indexed Jobs in
 | Go · 9×9 distillation lower-bound Elo | **≥ 2,366** (Go-Elo, GnuGo-anchored — *not* the AlphaGo-paper scale; [caveat](https://shehio.github.io/world-models/go/)) | 8×128 ep 15 = parity with KataGo @v200, anchored to GnuGo L10 |
 | Go · self-play improvement | +17 ± 100 Elo over prior at iter 42 (24h, one L4 GPU) | h2h, 40 games, alternating colors |
 
+## Experiment Tracking and Cloud Runs
+
+Runs are tracked in [Weights & Biases](https://wandb.ai/shehio/world-models)
+under entity `shehio`, project `world-models`. Tracking is **strictly
+additive**: every script still writes the same `train_history.json`,
+`.train_progress.json`, `run_metadata.json`, `history.json` and stdout it
+always did, and every script still runs with wandb off. The shared helper
+is `wm_chess/src/wm_chess/wandb_utils.py` (and a copy in
+`experiments/distill-go/src/distill_go/wandb_utils.py`, since distill-go is
+a standalone uv project). It returns `None` instead of a run whenever
+tracking is unavailable, and callers guard every log call on that.
+
+### What Is Instrumented
+
+| Script | Hook site | Logged |
+|---|---|---|
+| `experiments/distill-soft/scripts/train.py` | epoch loop + `_write_train_progress` | the `train_history.json` epoch record verbatim; the sub-epoch progress payload under a `batch/` prefix |
+| `experiments/distill-soft/scripts/eval.py` | end of match | W/D/L, score with 95% CI, Elo gap, absolute Elo with CI, as **summary** metrics |
+| `experiments/distill-soft/scripts/elo_bisect.py` | each bisection probe | per-probe UCI Elo, score, running estimate, bracket; final Elo estimate with bracket as summary metrics |
+| `experiments/distill-go/scripts/train.py` | epoch loop | the `train_history.json` epoch record verbatim |
+| `experiments/distill-go/scripts/selfplay_loop.py` | per-iteration | games, positions, worker errors, self-play and train wallclock, buffer size, train losses (incl. the KataGo aux heads), eval vs random |
+| `experiments/distill-go/scripts/h2h.py` | end of match | the JSON summary as summary metrics, with the CIs flattened to scalars |
+| `experiments/selfplay/scripts/selfplay_loop.py` | per-iteration | games, mean plies, mean outcome, buffer, train losses, eval vs random |
+| `experiments/selfplay/scripts/selfplay_loop_mp.py` | per-iteration | the above plus LR, gate score and promote/reject, Stockfish eval timing |
+| `experiments/muzero-chess/scripts/run_local.py`, `run_cloud.py` | `on_iter_end` | the driver's `history` rows for that iter (game, losses, eval) flattened into one record |
+
+Hyperparameters land in the run config automatically: `init_wandb` takes
+the parsed argparse namespace, so every flag a script exposes is
+recorded, plus derived values such as parameter count, position count and
+multipv K.
+
+### Running With and Without wandb
+
+```bash
+export WANDB_API_KEY=...            # once per machine
+
+# tracked
+uv run --project experiments/distill-soft python experiments/distill-soft/scripts/train.py \
+    --data /work/data/multipv.npz --ckpt-dir /work/checkpoints/run01
+
+# untracked, three equivalent ways
+... scripts/train.py --no-wandb          # per-run flag
+WANDB_MODE=disabled ... scripts/train.py # env var
+                                         # or simply don't install wandb
+```
+
+Every script above takes `--no-wandb`. With wandb missing, uninstalled or
+unreachable, `init_wandb` prints one notice and the run proceeds
+untracked. `wandb` is declared in `wm_chess/pyproject.toml` (which the
+four chess members all depend on) and in
+`experiments/distill-go/pyproject.toml`; both `uv.lock` files are updated.
+
+### Launching Sweeps
+
+Sweep configs live in [`sweeps/`](./sweeps/), one per A/B question:
+
+| Config | Question |
+|---|---|
+| `sweeps/distill-soft-targets.yaml` | soft multipv targets vs hard played-move targets, same data and net |
+| `sweeps/distill-soft-value-weight-k.yaml` | value-loss weight (0.25 / 1 / 4) crossed with multipv K (4 / 8 / 16) |
+| `sweeps/distill-go-network-size.yaml` | Go network size 6×96 vs 8×128 vs 10×160, via `train.py --arch BxF` |
+
+```bash
+wandb sweep --entity shehio --project world-models sweeps/distill-soft-targets.yaml
+wandb agent shehio/world-models/<SWEEP_ID>     # run from the experiment dir
+```
+
+Each config carries the same usage comment inline. The K axis needs one
+npz per K from `generate_data.py --multipv K`; the paths in the config are
+placeholders to point at real data.
+
+### Modal
+
+[`experiments/distill-soft/modal_app.py`](./experiments/distill-soft/modal_app.py)
+sends the exact same `scripts/train.py` to a Modal GPU, with a
+`@app.local_entrypoint` that mirrors the local CLI flag for flag:
+
+```bash
+modal secret create wandb WANDB_API_KEY=...        # once
+modal run modal_app.py --data /data/multipv.npz --epochs 20
+modal run modal_app.py --gpu A100 --smoke          # wiring check, no data needed
+```
+
+Default GPU is `L40S`, matching the headline runs (one L40S, roughly 16
+GPU-hours per training run). Pass `--gpu A100` where L40S is unavailable.
+Data and checkpoints live on a Modal volume so they outlive the container.
+This is a code path, not a wired-up deployment: it has not been executed
+against a live Modal account from this repo.
+
+### Smoke Mode
+
+`experiments/distill-soft/scripts/train.py --smoke` swaps the real dataset
+for a tiny synthetic in-memory one with the same fields and shapes. It
+exercises the whole loop (batching, target shape, checkpointing, wandb
+logging) in seconds without any data file. The loss numbers are noise by
+construction and are only ever a wiring check.
+
+Fireworks and Harbor are not applicable here: this repo trains and
+evaluates its own small ResNets and MuZero networks, with no hosted LLM
+inference and no Harbor-managed services.
+
 ## Tests + CI
 
 GitHub Actions runs every workspace member's test suite on every push

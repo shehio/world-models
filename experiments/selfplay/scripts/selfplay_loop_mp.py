@@ -65,6 +65,7 @@ from wm_chess.arena import (
 )
 from wm_chess.config import Config
 from wm_chess.network import AlphaZeroNet
+from wm_chess.wandb_utils import finish as wandb_finish, init_wandb
 from selfplay.ckpt import load_net_state_dict
 from selfplay.replay import ShardedReplayBuffer
 from selfplay.selfplay import play_game, play_game_pcr
@@ -261,6 +262,9 @@ def main():
     # I/O
     p.add_argument("--ckpt-dir", default="checkpoints_mp")
     p.add_argument("--resume", default=None)
+    p.add_argument("--no-wandb", action="store_true",
+                   help="disable Weights & Biases logging (WANDB_MODE=disabled "
+                        "works too); checkpoints and stdout are unchanged")
     args = p.parse_args()
 
     # Use 'spawn' for cross-platform compat and to avoid forking PyTorch state.
@@ -405,6 +409,14 @@ def main():
     # Workers self-play from the champion when gating, else from the latest net.
     worker_ckpt = champion_ckpt if gating else current_ckpt
 
+    # Experiment tracking (additive: checkpoints + stdout stay authoritative).
+    wb_run = init_wandb(
+        args, tags=["selfplay", "chess", "mp"],
+        config_extra={"n_input_planes": n_input_planes,
+                      "gating": gating,
+                      "n_params": sum(t.numel() for t in network.parameters())},
+    )
+
     # Launch persistent worker pool. Workers inherit nothing important
     # because we use spawn; they import alphazero fresh.
     pool = mp.Pool(args.workers)
@@ -472,6 +484,18 @@ def main():
                   f"buffer={len(replay)}/{replay.n_shards} shards  "
                   f"total_games={total_games}",
                   flush=True)
+            # One wandb record per iteration, filled in as phases complete
+            # and logged once at the bottom of the loop body.
+            iter_summary = {
+                "iter": it,
+                "games": iter_games,
+                "positions": len(iter_samples),
+                "selfplay_time_s": sp_dt,
+                "buffer": len(replay),
+                "buffer_shards": replay.n_shards,
+                "total_games": total_games,
+                "lr": optimizer.param_groups[0]["lr"],
+            }
 
             # Step 4: train.
             if len(replay) >= cfg.batch_size:
@@ -491,6 +515,8 @@ def main():
                       f"val={loss_acc['value_loss']/n:.3f} "
                       f"kl={loss_acc['kl']/n:.3f}",
                       flush=True)
+                iter_summary.update({k: v / n for k, v in loss_acc.items()})
+                iter_summary["train_time_s"] = tr_dt
 
             # Save full state (net + optimizer + counters) for crash-safe resume.
             # Written every iter so a restart loses at most one iter of progress.
@@ -516,6 +542,9 @@ def main():
                 gstats = play_match(cand_pol, champ_pol, n_games=args.gate_games,
                                     max_plies=args.max_plies)
                 g_dt = time.time() - t0
+                iter_summary.update({f"gate_{k}": v for k, v in gstats.items()})
+                iter_summary["gate_time_s"] = g_dt
+                iter_summary["gate_promoted"] = int(gstats["score"] >= args.gate_threshold)
                 if gstats["score"] >= args.gate_threshold:
                     champion_net.load_state_dict(network.state_dict())
                     cpu_state = {k: v.cpu() for k, v in champion_net.state_dict().items()}
@@ -549,6 +578,8 @@ def main():
                                    max_plies=args.max_plies)
                 ev_dt = time.time() - t0
                 print(f"  vs random ({ev_dt:.1f}s): {stats}", flush=True)
+                iter_summary.update({f"eval_random_{k}": v for k, v in stats.items()})
+                iter_summary["eval_time_s"] = ev_dt
 
                 ckpt_path = os.path.join(args.ckpt_dir, f"net_iter{it:03d}.pt")
                 torch.save({k: v.cpu() for k, v in network.state_dict().items()}, ckpt_path)
@@ -566,6 +597,10 @@ def main():
                   f"({(time.time()-start)/args.time_budget*100:.0f}% of budget)  "
                   f"lr={optimizer.param_groups[0]['lr']:.2e}",
                   flush=True)
+
+            iter_summary["elapsed_min"] = (time.time() - start) / 60
+            if wb_run is not None:
+                wb_run.log(iter_summary)
     finally:
         # Always shut workers down cleanly.
         pool.close()
@@ -582,6 +617,7 @@ def main():
         print(f"total wall: {(time.time()-start)/60:.1f} min  "
               f"total games: {total_games}",
               flush=True)
+        wandb_finish(wb_run)
 
 
 if __name__ == "__main__":
