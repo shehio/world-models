@@ -54,3 +54,6 @@ site/.hugo_build.lock
 # KataGo analysis logs (generated locally during eval; not source)
 analysis_logs/
 experiments/*/analysis_logs/
+
+# Generated run logs under aws_results
+**/aws_results/**/*.log
