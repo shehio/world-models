@@ -96,6 +96,19 @@ def test_rewrite_internal_links_leaves_relative_path_links_alone():
     assert rewrite_internal_links(text) == text
 
 
+def test_strip_shortcodes_handles_shortcodes_that_are_not_charts():
+    """A non-chart shortcode must not survive into the generated file."""
+    out = strip_shortcodes("before\n{{< figure-triptych >}}\nafter")
+    assert "{{<" not in out
+    assert "figure triptych" in out
+
+
+def test_strip_shortcodes_drops_paired_closing_tags():
+    out = strip_shortcodes("{{< note >}}\nbody\n{{< /note >}}\n")
+    assert "{{<" not in out
+    assert "body" in out
+
+
 def test_transform_strips_all_hugo_artifacts_from_real_source():
     """End-to-end: transformed real source has no Hugo block-attrs, no
     shortcodes, no bare-/-prefixed markdown links."""

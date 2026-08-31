@@ -17,8 +17,10 @@ Transformations:
   - Strip the YAML frontmatter block.
   - Replace Hugo block-attribute anchors `{#id}` with inline
     `<a id="id"></a>` so GitHub still resolves intra-file anchor links.
-  - Drop chart shortcodes (`{{< chart-* >}}`) — they're SVG partials
-    that only Hugo can render; leave a one-line pointer to the site.
+  - Drop Hugo shortcodes (`{{< chart-* >}}`, `{{< figure-triptych >}}`,
+    ...) — they're partials only Hugo can render; leave a one-line
+    pointer to the site. Matched generically, by shape rather than by
+    name, so a new shortcode on the site cannot silently desync this.
   - Rewrite internal Hugo paths (`/experiments/#search`,
     `/next/`, ...) to absolute GitHub Pages URLs so they don't 404 on
     GitHub.
@@ -56,9 +58,19 @@ def rewrite_anchors(text: str) -> str:
 
 def strip_shortcodes(text: str) -> str:
     # `{{< chart-foo >}}` -> small pointer text
-    return re.sub(
+    text = re.sub(
         r"\{\{<\s*(chart-[A-Za-z0-9_-]+)\s*>\}\}",
         r"_(interactive \1 chart on the site)_",
+        text,
+    )
+    # Closing halves of paired shortcodes carry no content — drop them.
+    text = re.sub(r"\{\{<\s*/\s*[A-Za-z][A-Za-z0-9_-]*\s*>\}\}\n?", "", text)
+    # Any remaining shortcode is a Hugo partial GitHub cannot render.
+    # Match generically rather than by name, so adding a new shortcode to
+    # the site does not silently desync EXPERIMENTS_LOG.md again.
+    return re.sub(
+        r"\{\{<\s*([A-Za-z][A-Za-z0-9_-]*)[^>]*>\}\}",
+        lambda m: f"_({m.group(1).replace('-', ' ')} on the site)_",
         text,
     )
 
