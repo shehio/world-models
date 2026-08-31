@@ -69,11 +69,19 @@ class Node:
 
     @property
     def effective_value(self) -> float:
-        """Mean value INCLUDING virtual loss — used by selection only."""
+        """Mean value INCLUDING virtual loss — used by selection only.
+
+        The virtual loss is ADDED here because value_sum is in this node's OWN
+        mover's POV, and _ucb_score negates it to read from the parent. Pending
+        descents are pessimistically assumed to return +1 for THIS node's mover,
+        i.e. the worst case for the parent, which is what steers the next
+        descent in the batch away from this subtree. Subtracting it inverts the
+        penalty into a bonus and collapses the whole batch onto one leaf.
+        """
         n = self.effective_visit_count
         if n <= 0:
             return 0.0
-        return (self.value_sum - self.virtual_loss) / n
+        return (self.value_sum + self.virtual_loss) / n
 
     @property
     def is_expanded(self) -> bool:
@@ -117,13 +125,16 @@ def _ucb_score(parent: Node, child: Node, cfg: MuZeroConfig, mm: MinMaxStats) ->
     pb_c *= math.sqrt(p_n) / (1 + c_n)
     prior_score = pb_c * child.prior
     if c_n > 0:
-        # Q(parent → child) from the PARENT's perspective. The child stores its
-        # value in its OWN mover's POV (negamax backup negates each ply), so we
-        # negate to view it from the parent — this is exactly the value _backup
-        # credits to the parent for choosing this child: -(reward + γ·child.value).
-        # Without the negation the parent ranks children by what's good for the
-        # OPPONENT, inverting the search.
-        value_score = mm.normalize(-(child.reward + cfg.discount * child.effective_value))
+        # Q(parent → child) from the PARENT's perspective. Two terms, two POVs:
+        #   child.reward is ALREADY in the parent's POV — it is credited to the
+        #     player who PLAYED the action (see GameRecord.from_trajectory), so
+        #     +1 means "this move mated" and must be added, not negated.
+        #   child.effective_value is in the CHILD mover's POV (negamax backup
+        #     negates each ply), so it is subtracted to view it from the parent.
+        # This is exactly the value _backup credits to the parent for choosing
+        # this child: reward - γ·child.value. Negating the reward too would make
+        # the search actively AVOID checkmate.
+        value_score = mm.normalize(child.reward - cfg.discount * child.effective_value)
     else:
         value_score = 0.0
     return prior_score + value_score
@@ -208,10 +219,12 @@ def _backup(path: list[Node], leaf_value: float, cfg: MuZeroConfig,
         node.visit_count += 1
         # Track the SAME parent-POV edge value that _ucb_score normalizes, so the
         # min-max range matches the quantity used in selection.
-        mm.update(-(node.reward + cfg.discount * node.value))
-        # Two-player negamax: flip sign + add reward at this node (the reward
-        # was the reward of GETTING to this node, paid by the prior mover).
-        value = -(node.reward + cfg.discount * value)
+        mm.update(node.reward - cfg.discount * node.value)
+        # Two-player negamax. The reward for GETTING to this node was paid to
+        # the PRIOR mover (the parent), so it is already in the parent's POV and
+        # is added as-is; only the continuation value, which is in this node's
+        # POV, gets its sign flipped.
+        value = node.reward - cfg.discount * value
 
 
 def _apply_virtual_loss(path: list[Node], cfg: MuZeroConfig) -> None:

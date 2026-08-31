@@ -13,6 +13,8 @@ from muzero_chess.config import MuZeroConfig, INPUT_PLANES, ACTION_DIM
 from muzero_chess.mcts import (
     MinMaxStats,
     Node,
+    _apply_virtual_loss,
+    _backup,
     _select_child,
     root_visit_distribution,
     run_mcts,
@@ -244,7 +246,7 @@ def test_select_child_picks_move_good_for_parent_not_opponent():
     bad.value_sum = +0.9 * 5
     parent.children = {1: good, 2: bad}
     for c in parent.children.values():
-        mm.update(-(c.reward + cfg.discount * c.value))
+        mm.update(c.reward - cfg.discount * c.value)
     action, _ = _select_child(parent, cfg, mm)
     assert action == 1, "parent must select the move good for the PARENT (negamax POV)"
 
@@ -261,3 +263,65 @@ def test_root_visit_distribution_is_a_probability():
     assert abs(pi.sum() - 1.0) < 1e-6
     # The three nonzero entries are in the right ratio.
     assert pi[20] > pi[10] > pi[30]
+
+
+def test_backup_credits_a_mating_move_to_the_player_who_played_it():
+    """Reward-sign regression. `reward` is stored in the PARENT's POV — it is
+    credited to the player who PLAYED the action (GameRecord.from_trajectory:
+    "+1 if it delivered mate"). So after backing up a mate-delivering edge, the
+    parent's value must be +1: the root mover won. The pre-fix backup computed
+    `-(reward + γ·value)`, negating the reward along with the continuation, and
+    scored delivering checkmate as -1 — a LOSS. Every existing MCTS test used
+    reward = 0, where the two expressions coincide, so nothing caught it."""
+    cfg = MuZeroConfig()
+    mm = MinMaxStats()
+    root = Node(prior=0.0)
+    mate = Node(prior=1.0, reward=1.0)  # the action root→mate delivered mate
+    root.children = {1: mate}
+    _backup([root, mate], leaf_value=0.0, cfg=cfg, mm=mm)
+    assert mate.value == 0.0, "terminal child holds the leaf value"
+    assert root.value == 1.0, (
+        f"delivering mate must back up as +1 for the mover, got {root.value}"
+    )
+
+
+def test_select_child_prefers_the_mating_move():
+    """Selection must read `reward` in the parent's POV too, or the search
+    actively avoids checkmate. Both children are equally valued and equally
+    prior'd; only one is reached by a mating move."""
+    cfg = MuZeroConfig()
+    mm = MinMaxStats()
+    parent = Node(prior=0.0)
+    parent.visit_count = 10
+    mate = Node(prior=0.5, reward=1.0)
+    mate.visit_count = 5
+    quiet = Node(prior=0.5, reward=0.0)
+    quiet.visit_count = 5
+    parent.children = {1: mate, 2: quiet}
+    for c in parent.children.values():
+        mm.update(c.reward - cfg.discount * c.value)
+    action, _ = _select_child(parent, cfg, mm)
+    assert action == 1, "parent must pick the move that delivers mate"
+
+
+def test_virtual_loss_steers_the_next_descent_to_a_different_child():
+    """Virtual-loss regression. Within a batch, a pending descent must make its
+    path LESS attractive so the next descent diversifies. The pre-fix
+    `effective_value` subtracted the virtual loss from a value held in the
+    child's OWN POV, which _ucb_score then negated — turning the penalty into a
+    bonus and collapsing every descent in the batch onto the same leaf."""
+    cfg = MuZeroConfig()
+    mm = MinMaxStats()
+    parent = Node(prior=0.0)
+    parent.visit_count = 10
+    parent.children = {1: Node(prior=0.5), 2: Node(prior=0.5)}
+    for c in parent.children.values():
+        c.visit_count = 5
+        mm.update(c.reward - cfg.discount * c.value)
+
+    first, first_node = _select_child(parent, cfg, mm)
+    _apply_virtual_loss([parent, first_node], cfg)
+    second, _ = _select_child(parent, cfg, mm)
+    assert second != first, (
+        "the second descent in a batch must avoid the child already pending"
+    )
