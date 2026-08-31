@@ -7,6 +7,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# The token only ever needs to read this repository.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: pytest — ${{ matrix.package }}
@@ -34,7 +38,7 @@ jobs:
         run: sudo apt-get update -y && sudo apt-get install -y stockfish
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
         with:
           version: latest
 
@@ -54,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
         with:
           version: latest
       - name: Set up Python 3.12
